@@ -782,6 +782,9 @@ fn activity_series(id: String) -> Vec<u32> {
 /// Claude Code hooks that report exact session state into events.jsonl.
 #[tauri::command]
 fn install_hooks(repo_path: String, member_id: String) -> Result<String, String> {
+    if !PathBuf::from(&repo_path).join(".git").exists() {
+        return Err("not a git worktree — skipping hook install".into());
+    }
     let dir = PathBuf::from(&repo_path).join(".claude");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("settings.json");
