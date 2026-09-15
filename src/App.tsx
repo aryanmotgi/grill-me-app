@@ -13,6 +13,8 @@ import { SettingsModal } from "./components/Settings";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { Onboarding } from "./components/Onboarding";
 import { ReviewModal } from "./components/ReviewModal";
+import { HomeDashboard } from "./components/HomeDashboard";
+import { FeatureIndex } from "./components/FeatureIndex";
 
 function DragHandle({ onDrag, onDone }: { onDrag: (dx: number) => void; onDone: () => void }) {
   return (
@@ -39,7 +41,7 @@ export default function App() {
     teammates, activeId, splitId, focusMode, demoMode, themeName,
     setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen,
     dense, mergePilotOpen, setMergePilotOpen, members, setActive,
-    panelSizes, setPanelSize,
+    panelSizes, setPanelSize, view, setView,
   } = useApp();
 
   useEffect(() => {
@@ -49,6 +51,14 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "/") {
+        e.preventDefault();
+        useApp.setState({ featureIndexOpen: !useApp.getState().featureIndexOpen });
+      }
+      if (mod && e.key === "h") {
+        e.preventDefault();
+        setView("home");
+      }
       if (mod && e.key === "p") {
         e.preventDefault();
         setPickerOpen(true);
@@ -73,7 +83,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen]);
+  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen, setView]);
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
@@ -96,6 +106,10 @@ export default function App() {
             onDone={() => setPanelSize("left", panelSizes.left, true)} />
         )}
         <main className="flex-1 min-w-0 flex flex-col">
+          {view === "home" ? (
+            <HomeDashboard />
+          ) : (
+          <>
           <GlobalSearch />
           <div className="flex-1 min-h-0 flex">
             <div className="min-w-0 flex" style={{ flexBasis: split && !focusMode ? `${panelSizes.split * 100}%` : "100%" }}>
@@ -113,6 +127,8 @@ export default function App() {
               </>
             ) : null}
           </div>
+          </>
+          )}
           {mergePilotOpen && members[0] ? (
             <div className="h-[38%] flex-none border-t border-line flex flex-col">
               <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
@@ -138,6 +154,7 @@ export default function App() {
       <ProjectPicker />
       <Onboarding />
       <ReviewModal />
+      <FeatureIndex />
       <Toasts />
     </div>
   );

@@ -8,6 +8,23 @@ async function shipRaw(memberId: string, data: string) {
 }
 import type { Teammate } from "../types";
 import { XtermPane } from "./XtermPane";
+import { useApp as useVitals } from "../store";
+
+function VitalsStrip({ mateId }: { mateId: string }) {
+  const res = useVitals((s) => s.resources[s.activeProject && s.activeProject !== "default" ? `${s.activeProject}:${mateId}` : mateId]);
+  const mate = useVitals((s) => s.teammates.find((t) => t.id === mateId));
+  const tok = mate?.usage.tokens;
+  return (
+    <div className="flex items-center gap-4 px-3 h-6 border-t border-line bg-panel flex-none font-mono text-[9px] text-faint">
+      <span>{mate?.branch !== "—" ? mate?.branch : "no branch"}</span>
+      <span className="ml-auto" />
+      {res ? <span title="CPU across this session's processes">{res.cpu.toFixed(0)}% cpu</span> : null}
+      {res ? <span title="Memory">{res.memMb >= 1024 ? `${(res.memMb / 1024).toFixed(1)}G` : `${res.memMb.toFixed(0)}M`}</span> : null}
+      {tok ? <span title="Tokens this session">{(tok.output / 1000).toFixed(0)}k out · {(tok.input / 1000).toFixed(0)}k in</span> : null}
+      <span title="Session status">{mate?.status}</span>
+    </div>
+  );
+}
 import { useState as usePrState } from "react";
 import { isTauri } from "../data/sources/git";
 
@@ -158,14 +175,17 @@ export function SessionPane({ mate }: { mate: Teammate }) {
 
       {tab === "terminal" || tab === "shell" ? (
         member ? (
-          <div className="flex-1 min-h-0">
-            <XtermPane
-              key={tab}
-              id={tab === "shell" ? `${ptyIdFor(mate.id)}:shell` : ptyIdFor(mate.id)}
-              cwd={member.repoPath}
-              themeName={themeName}
-              shell={tab === "shell"}
-            />
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0">
+              <XtermPane
+                key={tab}
+                id={tab === "shell" ? `${ptyIdFor(mate.id)}:shell` : ptyIdFor(mate.id)}
+                cwd={member.repoPath}
+                themeName={themeName}
+                shell={tab === "shell"}
+              />
+            </div>
+            <VitalsStrip mateId={mate.id} />
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-faint text-[11px]">

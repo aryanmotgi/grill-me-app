@@ -66,7 +66,7 @@ export function TopBar() {
   const {
     teammates, mergeQueue, advanceMergeQueue, members, setMergePilotOpen,
     activeId, shipSession, setSwitcherOpen, setSettingsOpen, setPickerOpen,
-    activeProject, setRailTab, toast, messages,
+    activeProject, setRailTab, messages,
   } = useApp();
 
   const attention = attentionCount(teammates);
@@ -79,18 +79,23 @@ export function TopBar() {
   return (
     <header className="flex items-center gap-3 px-4 h-11 border-b border-line bg-panel flex-none">
       {/* identity + project */}
-      <button className="flex items-baseline gap-2 cursor-pointer group" title="Switch project (⌘P)"
-        onClick={() => setPickerOpen(true)}>
-        <span className="font-display font-bold text-[15px] tracking-[0.08em] text-accent">GRILL&nbsp;ME</span>
-        <span className="panel-label group-hover:text-accent transition-colors">{activeProject ?? "pick project"} ▾</span>
-      </button>
+      <div className="flex items-baseline gap-2">
+        <button className="font-display font-bold text-[15px] tracking-[0.08em] text-accent cursor-pointer hover:brightness-110"
+          title="Home — mission control (⌘H)" onClick={() => useApp.getState().setView("home")}>
+          GRILL&nbsp;ME
+        </button>
+        <button className="panel-label hover:text-accent transition-colors cursor-pointer" title="Switch project (⌘P)"
+          onClick={() => setPickerOpen(true)}>
+          {activeProject ?? "pick project"} ▾
+        </button>
+      </div>
 
       {/* one calm status cluster: who's working, who needs you */}
       <div className="flex items-center gap-2.5 text-[11px] text-dim">
         <span className="flex items-center gap-1.5"><span className="status-dot working" />{working} working</span>
         {attention > 0 ? (
           <button className="flex items-center gap-1.5 text-warn cursor-pointer hover:brightness-110"
-            title="Sessions needing attention — click to see" onClick={() => toast(`${attention} session(s) need attention — check the amber dots`)}>
+            title="Sessions needing attention — click to see" onClick={() => useApp.getState().setView("home")}>
             <span className="status-dot needs-input" />{attention} need you
           </button>
         ) : null}
