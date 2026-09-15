@@ -68,6 +68,7 @@ export interface TermSettings {
   lineHeight: number;
   palette: string;
   bgOverride: string | null;
+  fgOverride: string | null;
   bgOpacity: number;
   cursorStyle: "block" | "underline" | "bar";
   cursorBlink: boolean;
@@ -81,6 +82,7 @@ export const DEFAULT_TERM_SETTINGS: TermSettings = {
   lineHeight: 1.2,
   palette: "ember",
   bgOverride: null,
+  fgOverride: null,
   bgOpacity: 1,
   cursorStyle: "block",
   cursorBlink: true,

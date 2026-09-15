@@ -27,6 +27,11 @@ export function Inbox() {
         <div className="text-[10px] text-faint mb-2 leading-relaxed">
           Notes wait here until the receiving session checks in — nothing interrupts active work.
         </div>
+        {sorted.filter((m) => !m.answered).length > 0 ? (
+          <div className="panel-label mb-1.5">
+            needs reply · {sorted.filter((m) => !m.answered).length}
+          </div>
+        ) : null}
         {sorted.map((m) => (
           <div key={m.id} className={`rounded-sm p-2.5 mb-1 ${m.answered ? "opacity-45" : "bg-raised"}`}>
             <div className="flex items-center gap-2 text-[10px]">
@@ -44,12 +49,20 @@ export function Inbox() {
                 ),
               )}
             </div>
-            <button
-              className={`btn mt-1.5 demo-hide ${m.answered ? "" : "active"}`}
-              onClick={() => toggleAnswered(m.id)}
-            >
-              {m.answered ? "answered ✓" : "mark answered"}
-            </button>
+            <div className="flex gap-1.5 mt-1.5 demo-hide">
+              <button
+                className={`btn ${m.answered ? "" : "active"}`}
+                onClick={() => toggleAnswered(m.id)}
+              >
+                {m.answered ? "answered" : "mark answered"}
+              </button>
+              {!m.answered ? (
+                <button className="btn" title="Reply — prefills an @mention"
+                  onClick={() => { setTo(m.from === "all" ? "all" : m.from); setDraft(`@${m.from} `); }}>
+                  reply
+                </button>
+              ) : null}
+            </div>
           </div>
         ))}
       </div>

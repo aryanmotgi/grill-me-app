@@ -55,8 +55,8 @@ export function TeamPanel() {
   return (
     <div className="p-3 overflow-y-auto flex flex-col gap-5">
       {/* Claude usage — real token tallies from transcripts */}
-      <div>
-        <div className="panel-label mb-1">claude usage</div>
+      <details open>
+        <summary className="panel-label mb-1 cursor-pointer">claude usage</summary>
         <div className="text-faint text-[10px] mb-2 leading-relaxed">
           Real token counts from each session's transcript. Plan-limit % isn't
           exposed locally — check the statusline inside a session for that.
@@ -80,11 +80,11 @@ export function TeamPanel() {
             ) : null}
           </div>
         ))}
-      </div>
+      </details>
 
       {/* session health + permissions */}
-      <div>
-        <div className="panel-label mb-2">health · access</div>
+      <details open>
+        <summary className="panel-label mb-2 cursor-pointer">health · access</summary>
         {teammates.map((t) => (
           <div key={t.id} className="flex items-center gap-2 py-1 text-[11px]">
             <span className={`status-dot ${t.status}`} />
@@ -98,11 +98,11 @@ export function TeamPanel() {
             <span className="tag">{t.permission === "edit" ? "can jump in" : "view-only"}</span>
           </div>
         ))}
-      </div>
+      </details>
 
       {/* CI — real GitHub Actions runs */}
-      <div>
-        <div className="panel-label mb-2">ci — github actions</div>
+      <details open>
+        <summary className="panel-label mb-2 cursor-pointer">ci — github actions</summary>
         {ciRuns.length === 0 ? (
           <div className="text-faint text-[10px]">
             No runs found — repo has no Actions yet, or gh isn't authenticated.
@@ -123,7 +123,7 @@ export function TeamPanel() {
             </div>
           ))
         )}
-      </div>
+      </details>
 
       <SponsorList />
 
@@ -206,6 +206,11 @@ export function PreviewPane() {
 
   return (
     <div className="p-3 h-full flex flex-col gap-2">
+      <div className="text-faint text-[10px] leading-relaxed">
+        Live preview of the app THIS PROJECT is building (its dev server) — so you can
+        watch the product change while sessions work. Not Grill Me data. Hide it in
+        settings if this project has no web UI.
+      </div>
       <div className="flex items-center gap-1.5">
         <input
           className="flex-1 bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"

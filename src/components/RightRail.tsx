@@ -9,18 +9,19 @@ const TABS: { id: RailTab; label: string; demoHidden?: boolean }[] = [
   { id: "inbox", label: "inbox" },
   { id: "activity", label: "activity" },
   { id: "team", label: "team", demoHidden: true },
-  { id: "preview", label: "preview", demoHidden: true },
+  { id: "preview", label: "dev preview", demoHidden: true },
 ];
 
 export function RightRail() {
-  const { railTab, setRailTab, messages } = useApp();
+  const { railTab, setRailTab, messages, appSettings } = useApp();
   const width = useApp((s) => s.panelSizes.right);
+  const tabs = TABS.filter((t) => t.id !== "preview" || appSettings.showPreview !== false);
   const unanswered = messages.filter((m) => !m.answered).length;
 
   return (
     <aside style={{ width }} className="flex-none border-l border-line bg-panel flex flex-col overflow-hidden">
       <div className="flex border-b border-line flex-none">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             className={`panel-label px-3 py-2.5 cursor-pointer border-b-2 -mb-px transition-colors ${
