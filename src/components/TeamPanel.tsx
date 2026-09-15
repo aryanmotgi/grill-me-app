@@ -1,12 +1,7 @@
-import { useApp } from "../store";
+import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
-import type { CiStatus } from "../types";
-
-const CI_TAG: Record<CiStatus, { icon: string; cls: string }> = {
-  pass: { icon: "check", cls: "ok" },
-  fail: { icon: "cross", cls: "danger" },
-  running: { icon: "clock", cls: "" },
-};
+import { useApp } from "../store";
+import { isTauri } from "../data/sources/git";
 
 function download(filename: string, text: string) {
   const a = document.createElement("a");
@@ -16,22 +11,28 @@ function download(filename: string, text: string) {
   URL.revokeObjectURL(a.href);
 }
 
+const fmtTokens = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+
+const prettyModel = (id: string) =>
+  id.replace("claude-", "").replace(/-\d{8}$/, "").replace(/-/g, " ");
+
 export function TeamPanel() {
-  const { teammates, tasks, activity, ciWorkflows, sponsorChecklist, toast } = useApp();
+  const { teammates, tasks, activity, ciRuns, standupLines, toast } = useApp();
 
   const snapshot = () => {
     const md = [
       `# Grill Me — team snapshot`,
       "",
       ...teammates.map(
-        (t) => `- **${t.name}** · ${t.status} · ⎇ ${t.branch} · ${t.taskLabel} · editing ${t.currentFile}`,
+        (t) => `- **${t.name}** · ${t.status} · ${t.branch} · ${t.taskLabel} · editing ${t.currentFile}`,
       ),
       "",
       `## Tasks`,
       ...tasks.map((t) => `- [${t.status === "done" ? "x" : " "}] ${t.title} (${t.owner})`),
     ].join("\n");
     download("grill-me-snapshot.md", md);
-    toast("Snapshot exported → grill-me-snapshot.md");
+    toast("Snapshot exported");
   };
 
   const retro = () => {
@@ -44,35 +45,39 @@ export function TeamPanel() {
       `## Timeline`,
       ...activity.map((e) => `- ${e.ts} · ${e.actor} · ${e.text}`),
       "",
-      `## Standup notes`,
-      ...teammates.map((t) => `- **${t.name}**: ${t.standupNote}`),
+      `## Standup log`,
+      ...standupLines,
     ].join("\n");
     download("grill-me-retro.md", md);
-    toast("Retro compiled → grill-me-retro.md");
+    toast("Retro compiled");
   };
 
   return (
-    <div className="p-3 overflow-y-auto flex flex-col gap-4">
-      {/* Claude usage per session */}
+    <div className="p-3 overflow-y-auto flex flex-col gap-5">
+      {/* Claude usage — real token tallies from transcripts */}
       <div>
-        <div className="panel-label mb-2">claude usage</div>
+        <div className="panel-label mb-1">claude usage</div>
+        <div className="text-faint text-[10px] mb-2 leading-relaxed">
+          Real token counts from each session's transcript. Plan-limit % isn't
+          exposed locally — check the statusline inside a session for that.
+        </div>
         {teammates.map((t) => (
-          <div key={t.id} className="py-2 border-b border-line/60 last:border-0">
+          <div key={t.id} className="py-1.5 border-b border-line/60 last:border-0">
             <div className="flex items-center gap-2 text-[11px]">
               <span className="font-semibold">{t.name}</span>
-              <span className="tag">{t.usage.model}</span>
-              <span className="tag">{t.usage.permissionMode}</span>
+              <span className="tag">{t.usage.tokens ? prettyModel(t.usage.model) : "no session transcript"}</span>
               <span className="flex-1" />
-              <span className="text-faint text-[10px]">resets {t.usage.sessionResetsIn}</span>
+              {t.usage.tokens ? (
+                <span className="text-faint text-[10px]">{t.usage.tokens.turns} turns</span>
+              ) : null}
             </div>
-            <div className="mt-1.5 grid grid-cols-[52px_1fr_34px] items-center gap-2 text-[10px] text-faint">
-              <span>session</span>
-              <div className="meter"><div className={t.usage.sessionPct > 70 ? "hot" : ""} style={{ width: `${t.usage.sessionPct}%` }} /></div>
-              <span className="tabular-nums text-right">{t.usage.sessionPct}%</span>
-              <span>week</span>
-              <div className="meter"><div className={t.usage.weeklyPct > 70 ? "hot" : ""} style={{ width: `${t.usage.weeklyPct}%` }} /></div>
-              <span className="tabular-nums text-right">{t.usage.weeklyPct}%</span>
-            </div>
+            {t.usage.tokens ? (
+              <div className="mt-1 flex gap-4 font-mono text-[10px] text-dim tabular-nums">
+                <span>in {fmtTokens(t.usage.tokens.input)}</span>
+                <span>out {fmtTokens(t.usage.tokens.output)}</span>
+                <span>cache {fmtTokens(t.usage.tokens.cacheRead)}</span>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -95,33 +100,33 @@ export function TeamPanel() {
         ))}
       </div>
 
-      {/* CI */}
+      {/* CI — real GitHub Actions runs */}
       <div>
         <div className="panel-label mb-2">ci — github actions</div>
-        {ciWorkflows.map((w) => (
-          <div key={w.name} className="flex items-center gap-2 py-1 text-[11px]">
-            <span className={CI_TAG[w.status].cls === "ok" ? "text-ok" : CI_TAG[w.status].cls === "danger" ? "text-danger" : "text-dim"}><Icon name={CI_TAG[w.status].icon} size={11} /></span>
-            <span>{w.name}</span>
-            <span className="flex-1" />
-            <span className="font-mono text-faint text-[10px]">{w.detail}</span>
+        {ciRuns.length === 0 ? (
+          <div className="text-faint text-[10px]">
+            No runs found — repo has no Actions yet, or gh isn't authenticated.
           </div>
-        ))}
+        ) : (
+          ciRuns.map((w, i) => (
+            <div key={i} className="flex items-center gap-2 py-1 text-[11px]">
+              <span className={
+                w.conclusion === "success" ? "text-ok"
+                : w.conclusion === "failure" ? "text-danger"
+                : "text-dim"
+              }>
+                <Icon name={w.conclusion === "success" ? "check" : w.conclusion === "failure" ? "cross" : "clock"} size={11} />
+              </span>
+              <span className="truncate">{w.displayTitle || w.name}</span>
+              <span className="flex-1" />
+              <span className="font-mono text-faint text-[10px]">{w.headBranch}</span>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* sponsor checklist */}
-      <div>
-        <div className="panel-label mb-2">sponsor checklist</div>
-        {sponsorChecklist.map((s) => (
-          <div key={s.sponsor + s.requirement} className="flex items-start gap-2 py-1 text-[11px]">
-            <span className={s.done ? "text-ok" : "text-faint"}><Icon name={s.done ? "check" : "plus"} size={10} /></span>
-            <span className="text-dim leading-snug">
-              <span className="text-accent">{s.sponsor}</span> — {s.requirement}
-            </span>
-          </div>
-        ))}
-      </div>
+      <SponsorList />
 
-      {/* exports */}
       <div className="flex gap-2 demo-hide">
         <button className="btn" onClick={snapshot}><Icon name="download" size={10} /> snapshot</button>
         <button className="btn" onClick={retro}><Icon name="download" size={10} /> retro doc</button>
@@ -130,21 +135,84 @@ export function TeamPanel() {
   );
 }
 
-/** Embedded browser preview — real webview mount lands next phase. */
-export function PreviewPane() {
+function SponsorList() {
+  const { sponsorChecklist, setShared, mergeQueue } = useApp();
+  const toggle = async (i: number) => {
+    const next = sponsorChecklist.map((s, j) => (j === i ? { ...s, done: !s.done } : s));
+    setShared({ sponsorChecklist: next });
+    if (isTauri()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      invoke("shared_write", {
+        name: "team.json",
+        content: JSON.stringify({ mergeQueue, sponsor: next }, null, 2),
+      }).catch(console.error);
+    }
+  };
   return (
-    <div className="p-3 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="tag">http://localhost:1420</span>
-        <button className="btn">↻</button>
+    <div>
+      <div className="panel-label mb-2">requirements checklist</div>
+      {sponsorChecklist.map((s, i) => (
+        <button key={s.sponsor + s.requirement} className="flex items-start gap-2 py-1 text-[11px] cursor-pointer text-left w-full"
+          onClick={() => toggle(i)}>
+          <span className={s.done ? "text-ok" : "text-faint"}>
+            <Icon name={s.done ? "check" : "plus"} size={10} />
+          </span>
+          <span className="text-dim leading-snug">
+            <span className="text-accent">{s.sponsor}</span> — {s.requirement}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Live preview of the team's running app — URL persisted in settings.json. */
+export function PreviewPane() {
+  const [url, setUrl] = useState("");
+  const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      if (!isTauri()) return;
+      const { invoke } = await import("@tauri-apps/api/core");
+      const raw = await invoke<string>("shared_read", { name: "settings.json" }).catch(() => "");
+      const settings = raw?.trim() ? JSON.parse(raw) : {};
+      const u = settings.previewUrl ?? "http://localhost:1420";
+      setUrl(u);
+      setDraft(u);
+    })();
+  }, []);
+
+  const save = async () => {
+    setUrl(draft);
+    if (!isTauri()) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    const raw = await invoke<string>("shared_read", { name: "settings.json" }).catch(() => "");
+    const settings = raw?.trim() ? JSON.parse(raw) : {};
+    invoke("shared_write", {
+      name: "settings.json",
+      content: JSON.stringify({ ...settings, previewUrl: draft }, null, 2),
+    }).catch(console.error);
+  };
+
+  return (
+    <div className="p-3 h-full flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <input
+          className="flex-1 bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+        />
+        <button className="btn" onClick={save}>load</button>
       </div>
-      <div className="flex-1 hairline rounded-sm bg-raised flex items-center justify-center">
-        <div className="text-center text-faint text-[11px] leading-relaxed">
-          
-          live app preview mounts here<br />
-          (Tauri webview — next phase)
+      {url ? (
+        <iframe src={url} className="flex-1 hairline rounded-sm bg-white" title="preview" />
+      ) : (
+        <div className="flex-1 hairline rounded-sm bg-raised flex items-center justify-center text-faint text-[11px]">
+          set a URL above
         </div>
-      </div>
+      )}
     </div>
   );
 }

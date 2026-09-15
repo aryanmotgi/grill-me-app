@@ -13,15 +13,28 @@ const ICON: Record<ActivityEvent["kind"], string> = {
  *  session appends to the shared log. No API calls; pure aggregation. */
 function StandupSummary() {
   const teammates = useApp((s) => s.teammates);
+  const standupLines = useApp((s) => s.standupLines);
+  const name = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
   return (
     <div className="rounded-sm bg-raised p-2.5 mb-3">
-      <div className="panel-label mb-1.5">standup — auto-stitched</div>
-      {teammates.map((t) => (
-        <div key={t.id} className="text-[11px] leading-relaxed">
-          <span className="text-accent font-semibold">{t.name}:</span>{" "}
-          <span className="text-dim">{t.standupNote}</span>
+      <div className="panel-label mb-1.5">standup — from shared log</div>
+      {standupLines.length === 0 ? (
+        <div className="text-faint text-[10px]">
+          Nothing logged yet — lines land here as tasks finish.
         </div>
-      ))}
+      ) : (
+        standupLines.slice(-8).map((line, i) => {
+          const [ts, id, ...rest] = line.split("\t");
+          const when = new Date(Number(ts) * 1000).toTimeString().slice(0, 5);
+          return (
+            <div key={i} className="text-[11px] leading-relaxed">
+              <span className="text-faint tabular-nums">{when}</span>{" "}
+              <span className="text-accent font-semibold">{name(id)}:</span>{" "}
+              <span className="text-dim">{rest.join(" ")}</span>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }

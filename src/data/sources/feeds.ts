@@ -18,6 +18,15 @@ import {
 interface FeedStore {
   teammates: Teammate[];
   members: TeamMemberConfig[];
+  tasks: import("../../types").Task[];
+  sponsorChecklist: { sponsor: string; requirement: string; done: boolean }[];
+  setShared: (p: {
+    tasks?: import("../../types").Task[];
+    messages?: import("../../types").Message[];
+    mergeQueue?: string[];
+    sponsorChecklist?: { sponsor: string; requirement: string; done: boolean }[];
+    standupLines?: string[];
+  }) => void;
   applyTeamConfig: (members: TeamMemberConfig[]) => void;
   patchTeammate: (id: string, patch: Partial<Teammate>) => void;
   setActivity: (events: import("../../types").ActivityEvent[]) => void;
@@ -145,4 +154,162 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
     }
   };
   setInterval(tick, PTY_POLL_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Shared team state feed — polls ~/.grillme JSON files (the real transport
+// on a shared VM) and fires OS notifications on new messages + sessions
+// flipping to needs-input.
+// ---------------------------------------------------------------------------
+
+const SHARED_POLL_MS = 2000;
+
+export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  const notif = await import("@tauri-apps/plugin-notification");
+  let canNotify = await notif.isPermissionGranted().catch(() => false);
+  if (!canNotify) {
+    canNotify = (await notif.requestPermission().catch(() => "denied")) === "granted";
+  }
+  const ping = (title: string, body: string) => {
+    if (canNotify) notif.sendNotification({ title, body });
+  };
+
+  const read = async (name: string) => {
+    const raw = await invoke<string>("shared_read", { name });
+    return raw.trim() ? JSON.parse(raw) : null;
+  };
+  const write = (name: string, data: unknown) =>
+    invoke("shared_write", { name, content: JSON.stringify(data, null, 2) });
+
+  // wait for team config, then seed missing files
+  while (store.getState().members.length === 0) {
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  const st = store.getState();
+  if ((await read("tasks.json")) === null) await write("tasks.json", st.tasks);
+  if ((await read("messages.json")) === null) await write("messages.json", []);
+  if ((await read("team.json")) === null) {
+    await write("team.json", {
+      mergeQueue: st.members.map((m) => m.id),
+      sponsor: st.sponsorChecklist,
+    });
+  }
+
+  const seenMsgs = new Set<string>();
+  let first = true;
+  const prevStatus: Record<string, string> = {};
+
+  const tick = async () => {
+    try {
+      const me = store.getState().members[0]?.id;
+      const [tasks, messages, team, standupLines] = await Promise.all([
+        read("tasks.json"),
+        read("messages.json"),
+        read("team.json"),
+        invoke<string[]>("standup_tail"),
+      ]);
+      store.getState().setShared({
+        tasks: tasks ?? undefined,
+        messages: messages ?? undefined,
+        mergeQueue: team?.mergeQueue,
+        sponsorChecklist: team?.sponsor,
+        standupLines,
+      });
+
+      for (const m of (messages ?? []) as import("../../types").Message[]) {
+        if (seenMsgs.has(m.id)) continue;
+        seenMsgs.add(m.id);
+        if (!first && m.from !== me && (m.to === me || m.to === "all")) {
+          ping(`Message from ${m.from}`, m.text.slice(0, 120));
+        }
+      }
+
+      for (const t of store.getState().teammates) {
+        const prev = prevStatus[t.id];
+        prevStatus[t.id] = t.status;
+        if (!first && !t.dnd && t.id !== me && prev && prev !== "needs-input" && t.status === "needs-input") {
+          ping(`${t.name} needs input`, "Session is waiting on a decision.");
+        }
+      }
+      first = false;
+    } catch (e) {
+      console.error("[shared feed]", e);
+    }
+  };
+  tick();
+  setInterval(tick, SHARED_POLL_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Usage + CI feed. Usage = real token tallies from Claude Code's own
+// transcripts (plan-limit %s are not locally knowable — never faked).
+// CI = real GitHub Actions runs via gh.
+// ---------------------------------------------------------------------------
+
+const USAGE_POLL_MS = 30_000;
+
+interface UsageStats {
+  ok: boolean;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  turns: number;
+}
+
+export interface CiRun {
+  name: string;
+  displayTitle: string;
+  status: string;
+  conclusion: string | null;
+  headBranch: string;
+}
+
+export async function startUsageFeed(
+  store: UseBoundStore<StoreApi<FeedStore & {
+    patchTeammate: (id: string, patch: Partial<Teammate>) => void;
+    setCiRuns: (runs: CiRun[]) => void;
+  }>>,
+) {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  while (store.getState().members.length === 0) {
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  const tick = async () => {
+    for (const m of store.getState().members) {
+      try {
+        const u = await invoke<UsageStats>("usage_stats", { repoPath: m.repoPath });
+        if (u.ok) {
+          const mate = store.getState().teammates.find((t) => t.id === m.id);
+          store.getState().patchTeammate(m.id, {
+            usage: {
+              ...(mate?.usage ?? {
+                sessionPct: 0, weeklyPct: 0, sessionResetsIn: "—",
+                weeklyResetsAt: "—", permissionMode: "—", model: "—",
+              }),
+              model: u.model || mate?.usage.model || "—",
+              tokens: {
+                input: u.inputTokens,
+                output: u.outputTokens,
+                cacheRead: u.cacheReadTokens,
+                turns: u.turns,
+              },
+            },
+          });
+        }
+      } catch { /* member without transcript */ }
+    }
+    try {
+      const first = store.getState().members[0];
+      if (first) {
+        const raw = await invoke<string>("ci_state", { repoPath: first.repoPath });
+        store.getState().setCiRuns(JSON.parse(raw));
+      }
+    } catch { /* gh missing or no remote — panel shows empty state */ }
+  };
+  tick();
+  setInterval(tick, USAGE_POLL_MS);
 }

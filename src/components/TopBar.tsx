@@ -4,7 +4,7 @@ import { themes } from "../theme/themes";
 
 export function TopBar() {
   const {
-    teammates, mergeQueue, themeName, setTheme,
+    teammates, mergeQueue, advanceMergeQueue, themeName, setTheme,
     demoMode, toggleDemo, focusMode, toggleFocus,
     toast, quickCommit, activeId, setSwitcherOpen,
   } = useApp();
@@ -27,10 +27,14 @@ export function TopBar() {
         {working}/{teammates.length} working
       </div>
 
-      {/* merge/integrator indicator */}
-      <div className="tag ok demo-hide" title="Whose turn it is to merge">
+      {/* merge/integrator indicator — click passes the turn */}
+      <button
+        className="tag ok demo-hide cursor-pointer hover:text-ok"
+        title="Whose turn to merge — click when done to pass the turn"
+        onClick={advanceMergeQueue}
+      >
         <Icon name="merge" size={11} /> merge turn: {mergerName}
-      </div>
+      </button>
 
       <div className="flex-1" />
 
