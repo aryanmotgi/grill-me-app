@@ -356,7 +356,7 @@ export function SettingsModal() {
               </Row>
               <Row label="Auto-pause idle sessions" hint="Idle Claude terminals burn CPU repainting — freeze after quiet period, instant resume on view/type">
                 <Toggle checked={appSettings.autoPauseIdle !== false} onChange={(v) => setAppSetting("autoPauseIdle", v)} />
-                <select className="btn" value={String(appSettings.autoPauseIdleMin ?? 10)}
+                <select className="btn" value={String(appSettings.autoPauseIdleMin ?? 5)}
                   onChange={(e) => setAppSetting("autoPauseIdleMin", Number(e.target.value))}>
                   <option value="5">after 5 min</option>
                   <option value="10">after 10 min</option>

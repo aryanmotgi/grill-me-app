@@ -1673,6 +1673,46 @@ fn pty_screen(id: String, lines: Option<usize>) -> Result<Vec<String>, String> {
     Ok(all)
 }
 
+
+// ---------------------------------------------------------------------------
+// Git state cache: one background thread polls every worktree every 10s.
+// The frontend reads the cache — no subprocess storm from the UI tick loop.
+// ---------------------------------------------------------------------------
+
+static GIT_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static GIT_POLLER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn git_state_cached(repo_path: String) -> String {
+    if !GIT_POLLER.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        std::thread::spawn(|| loop {
+            let paths: Vec<String> = team_config()
+                .teammates
+                .iter()
+                .map(|m| m.repo_path.clone())
+                .collect();
+            for p in paths {
+                let state = git_state(p.clone());
+                if let Ok(json) = serde_json::to_string(&state) {
+                    GIT_CACHE
+                        .get_or_init(|| Mutex::new(HashMap::new()))
+                        .lock()
+                        .unwrap()
+                        .insert(p, json);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        });
+    }
+    GIT_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .get(&repo_path)
+        .cloned()
+        .unwrap_or_default()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1688,6 +1728,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             team_config,
             git_state,
+            git_state_cached,
             start_watching,
             watch_state,
             pty_ensure,

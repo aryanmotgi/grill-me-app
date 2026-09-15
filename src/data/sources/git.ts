@@ -32,8 +32,12 @@ export const isTauri = () =>
 
 export const loadTeamConfig = () => invoke<{ teammates: TeamMemberConfig[] }>("team_config");
 
-export const fetchGitState = (repoPath: string) =>
-  invoke<GitState>("git_state", { repoPath });
+export const fetchGitState = async (repoPath: string): Promise<GitState> => {
+  // reads a Rust-side cache refreshed on its own thread — no subprocess per call
+  const raw = await invoke<string>("git_state_cached", { repoPath });
+  if (raw) return JSON.parse(raw);
+  return invoke<GitState>("git_state", { repoPath });
+};
 
 const STATUS_LABEL: Record<string, string> = {
   M: "modified",
