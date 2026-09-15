@@ -1,5 +1,6 @@
 import type { StoreApi, UseBoundStore } from "zustand";
 import type { Teammate } from "../../types";
+import { ptyIdFor } from "../../store";
 import {
   fetchGitState,
   isTauri,
@@ -122,7 +123,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
 
   const ensureAll = async () => {
     for (const m of store.getState().members) {
-      await invoke("pty_ensure", { id: m.id, cwd: m.repoPath, shell: false }).catch(() => {});
+      await invoke("pty_ensure", { id: ptyIdFor(m.id), cwd: m.repoPath, shell: false }).catch(() => {});
       // exact-status hooks: sessions report notification/stop/prompt events
       await invoke("install_hooks", { repoPath: m.repoPath, memberId: m.id }).catch(() => {});
     }
@@ -149,7 +150,9 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       }
       const nowS = Date.now() / 1000;
       for (const st of statuses) {
-        const hook = latest[st.id];
+        const memberId = st.id.includes(":") ? st.id.split(":").slice(1).join(":") : st.id;
+        if (ptyIdFor(memberId) !== st.id) continue; // other project's session
+        const hook = latest[memberId];
         const hookFresh = hook && nowS - hook.ts < 30 * 60;
         let status: "idle" | "working" | "needs-input" = !st.alive
           ? "idle"
@@ -163,7 +166,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           else if (hook.event === "prompt") status = st.quietMs < 120_000 ? "working" : status;
           else if (hook.event === "stop") status = st.bell ? "needs-input" : "idle";
         }
-        store.getState().patchTeammate(st.id, {
+        store.getState().patchTeammate(memberId, {
           status,
           recording: st.recording !== null,
           terminal: st.tail.map((text) => ({ kind: "out" as const, text })),
@@ -188,10 +191,12 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
   if (!isTauri()) return;
   const { invoke } = await import("@tauri-apps/api/core");
   const notif = await import("@tauri-apps/plugin-notification");
-  let canNotify = await notif.isPermissionGranted().catch(() => false);
-  if (!canNotify) {
-    canNotify = (await notif.requestPermission().catch(() => "denied")) === "granted";
-  }
+  // never block the feed on the macOS permission dialog
+  let canNotify = false;
+  notif.isPermissionGranted().then((g) => {
+    canNotify = g;
+    if (!g) notif.requestPermission().then((r) => { canNotify = r === "granted"; }).catch(() => {});
+  }).catch(() => {});
   const ping = (title: string, body: string, kind: "msg" | "input") => {
     const st = store.getState().appSettings;
     if (st.muteAll) return;

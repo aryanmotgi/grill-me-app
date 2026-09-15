@@ -2,12 +2,25 @@ import { attentionCount, useApp } from "../store";
 import { Icon } from "./Icon";
 import { themes } from "../theme/themes";
 
+async function openBrowserPanel(label: string, url: string) {
+  // github.com / claude.ai refuse iframes (X-Frame-Options), so these open
+  // as native Tauri webview windows — real browser panels beside the app.
+  const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+  const existing = await WebviewWindow.getByLabel(label);
+  if (existing) {
+    existing.setFocus();
+    return;
+  }
+  new WebviewWindow(label, { url, title: label, width: 1100, height: 850 });
+}
+
 export function TopBar() {
   const {
     teammates, mergeQueue, advanceMergeQueue, themeName, setTheme,
     demoMode, toggleDemo, focusMode, toggleFocus,
-    toast, quickCommit, activeId, setSwitcherOpen, setSettingsOpen,
+    toast, activeId, setSwitcherOpen, setSettingsOpen,
     dense, toggleDense, members, setMergePilotOpen,
+    setPickerOpen, activeProject, shipSession,
   } = useApp();
 
   const attention = attentionCount(teammates);
@@ -20,7 +33,10 @@ export function TopBar() {
         <span className="font-display font-bold text-[15px] tracking-[0.08em] text-accent">
           GRILL&nbsp;ME
         </span>
-        <span className="panel-label hidden sm:inline">team terminal</span>
+        <button className="panel-label hidden sm:inline cursor-pointer hover:text-accent"
+          title="Switch project workspace" onClick={() => setPickerOpen(true)}>
+          {activeProject ?? "no project"} ▾
+        </button>
       </div>
 
       <div className="flex items-center gap-2 text-[11px] text-dim">
@@ -58,8 +74,15 @@ export function TopBar() {
         )}
       </button>
 
-      <button className="btn demo-hide" title="One-click commit + push (⌘S)" onClick={() => quickCommit(activeId)}>
-        <Icon name="push" size={11} /> commit
+      <button className="btn demo-hide" title="Run /ship in the active session — tests before push (⌘S)"
+        onClick={() => shipSession(activeId)}>
+        <Icon name="push" size={11} /> ship
+      </button>
+      <button className="btn demo-hide" title="Open GitHub in a native browser panel" onClick={() => openBrowserPanel("github", "https://github.com")}>
+        github
+      </button>
+      <button className="btn demo-hide" title="Open claude.ai in a native browser panel" onClick={() => openBrowserPanel("claude", "https://claude.ai")}>
+        claude
       </button>
       <button className="btn demo-hide" title="Quick switcher (⌘K)" onClick={() => setSwitcherOpen(true)}>
         ⌘K

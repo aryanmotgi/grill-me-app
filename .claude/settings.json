@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"notification\\\"}\" >> ~/.grillme/events.jsonl'",
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"notification\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
             "type": "command"
           }
         ]
@@ -14,7 +14,7 @@
       {
         "hooks": [
           {
-            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"stop\\\"}\" >> ~/.grillme/events.jsonl'",
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"stop\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
             "type": "command"
           }
         ]
@@ -24,7 +24,7 @@
       {
         "hooks": [
           {
-            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"prompt\\\"}\" >> ~/.grillme/events.jsonl'",
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"prompt\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
             "type": "command"
           }
         ]

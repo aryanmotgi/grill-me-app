@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { useApp } from "../store";
 import { themes } from "../theme/themes";
+import { TERM_FONTS, TERM_PALETTES } from "../theme/termPalettes";
 import { isTauri, type TeamMemberConfig } from "../data/sources/git";
 
 const SHORTCUTS: [string, string][] = [
@@ -16,6 +17,7 @@ export function SettingsModal() {
   const {
     settingsOpen, setSettingsOpen, members, applyTeamConfig,
     themeName, setTheme, appSettings, setAppSetting, toast,
+    termSettings, setTermSetting,
   } = useApp();
   const [draft, setDraft] = useState<TeamMemberConfig[]>([]);
 
@@ -113,6 +115,97 @@ export function SettingsModal() {
               <span className="text-dim">{label}</span>
             </label>
           ))}
+        </section>
+
+        {/* terminal customization */}
+        <section>
+          <div className="panel-label mb-2">terminal</div>
+          <div className="grid grid-cols-2 gap-3 text-[11px]">
+            <label className="flex items-center gap-2">
+              <span className="text-dim w-16">font</span>
+              <select className="btn flex-1" value={termSettings.font}
+                onChange={(e) => setTermSetting("font", e.target.value)}>
+                {TERM_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-dim w-16">size {termSettings.fontSize}px</span>
+              <input type="range" min={9} max={20} value={termSettings.fontSize} className="flex-1 accent-(--accent)"
+                onChange={(e) => setTermSetting("fontSize", Number(e.target.value))} />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-dim w-16">line {termSettings.lineHeight.toFixed(1)}</span>
+              <input type="range" min={1} max={2} step={0.1} value={termSettings.lineHeight} className="flex-1 accent-(--accent)"
+                onChange={(e) => setTermSetting("lineHeight", Number(e.target.value))} />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-dim w-16">opacity {Math.round(termSettings.bgOpacity * 100)}%</span>
+              <input type="range" min={0.5} max={1} step={0.05} value={termSettings.bgOpacity} className="flex-1 accent-(--accent)"
+                onChange={(e) => setTermSetting("bgOpacity", Number(e.target.value))} />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-dim w-16">cursor</span>
+              <select className="btn" value={termSettings.cursorStyle}
+                onChange={(e) => setTermSetting("cursorStyle", e.target.value as "block" | "underline" | "bar")}>
+                <option value="block">block</option>
+                <option value="underline">underline</option>
+                <option value="bar">bar</option>
+              </select>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" className="accent-(--accent)" checked={termSettings.cursorBlink}
+                  onChange={(e) => setTermSetting("cursorBlink", e.target.checked)} />
+                blink
+              </label>
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-dim w-16">background</span>
+              <input type="color" value={termSettings.bgOverride ?? "#0a0c0b"}
+                onChange={(e) => setTermSetting("bgOverride", e.target.value)} />
+              {termSettings.bgOverride ? (
+                <button className="btn" onClick={() => setTermSetting("bgOverride", null)}>reset</button>
+              ) : <span className="text-faint text-[10px]">theme default</span>}
+            </label>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className="text-dim text-[11px]">palette</span>
+            {Object.entries(TERM_PALETTES).map(([key, p]) => (
+              <button key={key}
+                className={`btn ${termSettings.palette === key && !termSettings.customAnsi ? "active" : ""}`}
+                onClick={() => { setTermSetting("customAnsi", null); setTermSetting("palette", key); }}>
+                <span className="inline-flex gap-0.5 mr-1 align-middle">
+                  {p.ansi.slice(1, 7).map((c) => (
+                    <span key={c} className="w-2 h-2 rounded-full inline-block" style={{ background: c }} />
+                  ))}
+                </span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+
+          <details className="mt-2">
+            <summary className="text-faint text-[10px] cursor-pointer">custom ANSI colors (overrides palette)</summary>
+            <div className="grid grid-cols-8 gap-1.5 mt-2">
+              {(termSettings.customAnsi ?? TERM_PALETTES[termSettings.palette]?.ansi ?? TERM_PALETTES.ember.ansi).map((c, i) => (
+                <input key={i} type="color" value={c} title={`ANSI ${i}`}
+                  onChange={(e) => {
+                    const base = termSettings.customAnsi ?? [...(TERM_PALETTES[termSettings.palette]?.ansi ?? TERM_PALETTES.ember.ansi)];
+                    const next = [...base];
+                    next[i] = e.target.value;
+                    setTermSetting("customAnsi", next);
+                  }} />
+              ))}
+            </div>
+          </details>
+
+          <label className="flex items-center gap-2 mt-3 text-[11px] cursor-pointer">
+            <input type="checkbox" className="accent-(--accent)" checked={termSettings.skipBanner}
+              onChange={(e) => setTermSetting("skipBanner", e.target.checked)} />
+            <span className="text-dim">Collapse the Claude Code intro banner after it renders</span>
+          </label>
+          <div className="text-faint text-[10px] mt-1">
+            Terminal styling is independent of the app theme — "ember" tracks it, everything else diverges.
+          </div>
         </section>
 
         {/* shortcuts */}

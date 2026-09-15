@@ -18,6 +18,7 @@ import type {
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, type CiRun, type WatchState } from "./data/sources/feeds";
 import type { TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
+import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
 
@@ -77,6 +78,13 @@ interface AppState {
 
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+  activeProject: string | null;
+  pickerOpen: boolean;
+  setPickerOpen: (open: boolean) => void;
+  /** Panel widths/ratios, persisted. */
+  panelSizes: { left: number; right: number; split: number };
+  setPanelSize: (key: "left" | "right" | "split", value: number, persist?: boolean) => void;
+  shipSession: (id: string) => Promise<void>;
   dense: boolean;
   toggleDense: () => void;
   mergePilotOpen: boolean;
@@ -84,6 +92,8 @@ interface AppState {
   spawnSession: (id: string, name: string, branch: string) => Promise<void>;
   appSettings: Record<string, unknown>;
   setAppSetting: (key: string, value: unknown) => void;
+  termSettings: TermSettings;
+  setTermSetting: <K extends keyof TermSettings>(key: K, value: TermSettings[K]) => void;
   setShared: (p: {
     tasks?: Task[];
     messages?: Message[];
@@ -140,7 +150,7 @@ export const useApp = create<AppState>((set, get) => ({
     const on = !t?.recording;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const path = await invoke<string | null>("pty_record", { id, on });
+      const path = await invoke<string | null>("pty_record", { id: ptyIdFor(id), on });
       set((s) => ({
         teammates: s.teammates.map((t) =>
           t.id === id ? { ...t, recording: on } : t,
@@ -293,6 +303,27 @@ export const useApp = create<AppState>((set, get) => ({
   ciRuns: [],
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  activeProject: null,
+  pickerOpen: false,
+  setPickerOpen: (pickerOpen) => set({ pickerOpen }),
+  panelSizes: { left: 276, right: 338, split: 0.5 },
+  setPanelSize: (key, value, persist) => {
+    const panelSizes = { ...get().panelSizes, [key]: value };
+    set({ panelSizes });
+    if (persist) get().setAppSetting("panelSizes", panelSizes);
+  },
+
+  /** Runs the team's real ship workflow inside that session's Claude terminal. */
+  shipSession: async (id) => {
+    if (!isTauri()) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("pty_write", { id: ptyIdFor(id), data: "/ship\n" });
+      get().toast(`Sent /ship to ${get().teammates.find((t) => t.id === id)?.name ?? id} — tests run before push`);
+    } catch (e) {
+      get().toast(`Ship failed: ${e}`, "warn");
+    }
+  },
   dense: false,
   toggleDense: () => set((s) => ({ dense: !s.dense })),
   mergePilotOpen: false,
@@ -316,6 +347,12 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
   appSettings: {},
+  termSettings: DEFAULT_TERM_SETTINGS,
+  setTermSetting: (key, value) => {
+    const termSettings = { ...get().termSettings, [key]: value };
+    set({ termSettings });
+    get().setAppSetting("terminal", termSettings);
+  },
   setAppSetting: (key, value) => {
     const appSettings = { ...get().appSettings, [key]: value };
     set({ appSettings });
@@ -387,22 +424,46 @@ function emptyTeammate(id: string): Teammate {
 
 // Phase 2: live feeds replace fake data when running inside Tauri.
 // In plain browser dev the fake seed stays so the UI is still browsable.
-startGitFeed(useApp);
-startWatchFeed(useApp);
-startPtyFeed(useApp);
-startSharedFeed(useApp);
-startUsageFeed(useApp);
-
 (async () => {
-  if (!isTauri()) return;
+  if (!isTauri()) {
+    // browser dev: fake data, no feeds
+    useApp.setState({ activeProject: "default" });
+    return;
+  }
   const { invoke } = await import("@tauri-apps/api/core");
   const raw = await invoke<string>("shared_read", { name: "settings.json" }).catch(() => "");
+  let appSettings: Record<string, unknown> = {};
   if (raw?.trim()) {
-    const appSettings = JSON.parse(raw);
+    appSettings = JSON.parse(raw);
     useApp.setState({ appSettings });
     if (typeof appSettings.theme === "string") useApp.setState({ themeName: appSettings.theme });
+    if (appSettings.panelSizes) useApp.setState({ panelSizes: appSettings.panelSizes as { left: number; right: number; split: number } });
+    if (appSettings.terminal) useApp.setState({ termSettings: { ...DEFAULT_TERM_SETTINGS, ...(appSettings.terminal as Partial<TermSettings>) } });
   }
+  const project = typeof appSettings.activeProject === "string" ? appSettings.activeProject : null;
+  if (!project) return; // ProjectPicker shows; feeds start after selection reload
+  await invoke("set_active_project", { id: project }).catch(() => {});
+  useApp.setState({ activeProject: project });
+  // per-project accent tint — always know which workspace you're in
+  try {
+    const projects = JSON.parse(await invoke<string>("projects_list"));
+    const color = projects.find((x: { id: string }) => x.id === project)?.color;
+    if (color) {
+      setTimeout(() => document.documentElement.style.setProperty("--accent", color), 300);
+    }
+  } catch { /* no color set */ }
+  startGitFeed(useApp);
+  startWatchFeed(useApp);
+  startPtyFeed(useApp);
+  startSharedFeed(useApp);
+  startUsageFeed(useApp);
 })();
+
+/** Pty ids are namespaced per project so sessions survive project switches. */
+export function ptyIdFor(memberId: string): string {
+  const proj = useApp.getState().activeProject;
+  return proj && proj !== "default" ? `${proj}:${memberId}` : memberId;
+}
 
 async function persistShared(name: string, data: unknown) {
   if (!isTauri()) return;

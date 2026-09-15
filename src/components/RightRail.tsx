@@ -14,10 +14,11 @@ const TABS: { id: RailTab; label: string; demoHidden?: boolean }[] = [
 
 export function RightRail() {
   const { railTab, setRailTab, messages } = useApp();
+  const width = useApp((s) => s.panelSizes.right);
   const unanswered = messages.filter((m) => !m.answered).length;
 
   return (
-    <aside className="w-[338px] flex-none border-l border-line bg-panel flex flex-col overflow-hidden">
+    <aside style={{ width }} className="flex-none border-l border-line bg-panel flex flex-col overflow-hidden">
       <div className="flex border-b border-line flex-none">
         {TABS.map((t) => (
           <button

@@ -29,6 +29,43 @@ function cardClass(task: Task, blocked: boolean) {
   return "card-quiet";
 }
 
+/** Walk blockedBy links upward to render sequential chains as one path. */
+function chainFor(task: Task, tasks: Task[]): string[] {
+  const chain: string[] = [];
+  let cur: Task | undefined = task;
+  const seen = new Set<string>();
+  while (cur?.blockedBy && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    const parent = tasks.find((t) => t.id === cur!.blockedBy);
+    if (!parent || parent.status === "done") break;
+    chain.unshift(parent.title);
+    cur = parent;
+  }
+  return chain;
+}
+
+const EXT_BADGE: Record<string, { label: string; cls: string }> = {
+  ts: { label: "TS", cls: "text-[#73b8ff]" },
+  tsx: { label: "TX", cls: "text-[#73b8ff]" },
+  rs: { label: "RS", cls: "text-[#ffb454]" },
+  json: { label: "{}", cls: "text-[#ffd580]" },
+  css: { label: "#", cls: "text-[#d2a6ff]" },
+  md: { label: "MD", cls: "text-faint" },
+  html: { label: "<>", cls: "text-[#f07178]" },
+  toml: { label: "TL", cls: "text-[#95e6cb]" },
+  lock: { label: "LK", cls: "text-faint" },
+};
+
+export function FileBadge({ file }: { file: string }) {
+  const ext = file.split(".").pop() ?? "";
+  const b = EXT_BADGE[ext];
+  return b ? (
+    <span className={`font-mono text-[8px] font-bold w-5 inline-block ${b.cls}`}>{b.label}</span>
+  ) : (
+    <Icon name="file" size={9} className="text-faint mr-1" />
+  );
+}
+
 function TaskCard({ task, now }: { task: Task; now: number }) {
   const { teammates, tasks, setTaskStatus } = useApp();
   const owner = teammates.find((t) => t.id === task.owner);
@@ -61,7 +98,10 @@ function TaskCard({ task, now }: { task: Task; now: number }) {
         </button>
         {blocked ? (
           <span className="tag warn" title={`Waiting on: ${blocker!.title}`}>
-            <Icon name="block" size={10} /> blocked · waiting on {blocker!.title}
+            <Icon name="block" size={10} />{" "}
+            {chainFor(task, tasks).length > 1
+              ? `chain: ${chainFor(task, tasks).join(" → ")} → this`
+              : `blocked · waiting on ${blocker!.title}`}
           </span>
         ) : null}
       </div>
@@ -93,7 +133,7 @@ function DiffPeekRow({ file, owner, ownerId, flash }: { file: string; owner: str
     <div className={`px-1 -mx-1 rounded-sm ${flash ? "flash" : ""}`}>
       <button className="font-mono text-[10px] text-dim leading-relaxed truncate cursor-pointer text-left w-full hover:text-ink"
         onClick={peek} title="Click for diff">
-        <Icon name="lock" size={10} className="mr-1 text-faint" />{file} <span className="text-faint font-sans">— {owner}</span>
+        <Icon name="lock" size={10} className="mr-1 text-faint" /><FileBadge file={file} />{file} <span className="text-faint font-sans">— {owner}</span>
       </button>
       {diff !== null ? (
         <pre className="mt-1 mb-2 max-h-48 overflow-auto bg-term-bg rounded-sm p-2 font-mono text-[9px] text-term-ink whitespace-pre-wrap">{diff}</pre>
