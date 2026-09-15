@@ -21,6 +21,7 @@ interface FeedStore {
   teammates: Teammate[];
   members: TeamMemberConfig[];
   appSettings: Record<string, unknown>;
+  toast: (text: string, kind?: "info" | "warn") => void;
   tasks: import("../../types").Task[];
   sponsorChecklist: { sponsor: string; requirement: string; done: boolean }[];
   setShared: (p: {
@@ -88,10 +89,44 @@ export async function startWatchFeed(store: UseBoundStore<StoreApi<FeedStore>>) 
   const { invoke } = await import("@tauri-apps/api/core");
 
   await invoke("start_watching");
+  // soft heads-ups: session B changed a file session A recently read
+  const notified = new Set<string>();
+  const softCheck = async (state: WatchState) => {
+    const me = store.getState().members[0]?.id;
+    if (!me) return;
+    const nowS = Date.now() / 1000;
+    const fresh = state.locks.filter((l) => nowS - l.ts < 60 && l.owner !== me);
+    if (fresh.length === 0) return;
+    const audit = await invoke<string[]>("audit_tail", { member: me }).catch(() => [] as string[]);
+    for (const lock of fresh) {
+      const key = `${lock.owner}:${lock.file}`;
+      if (notified.has(key)) continue;
+      const readIt = audit.some((line) => {
+        try {
+          const e = JSON.parse(line);
+          return (
+            (e.tool === "Read" || e.tool === "Edit") &&
+            typeof e.detail === "string" &&
+            e.detail.endsWith(lock.file) &&
+            nowS - e.ts < 30 * 60
+          );
+        } catch { return false; }
+      });
+      if (readIt) {
+        notified.add(key);
+        store.getState().toast(
+          `Heads-up: ${lock.owner} just changed ${lock.file} — you read it recently`,
+          "warn",
+        );
+      }
+    }
+  };
+
   const tick = async () => {
     try {
       const state = await invoke<WatchState>("watch_state");
       store.getState().applyWatchState(state);
+      softCheck(state);
     } catch (e) {
       console.error("[watch feed]", e);
     }
@@ -230,6 +265,17 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
 
   const seenMsgs = new Set<string>();
   let first = true;
+  // FYI digest: batch quiet messages, one summary every 15 minutes
+  const fyiQueue: import("../../types").Message[] = [];
+  setInterval(() => {
+    if (fyiQueue.length === 0) return;
+    ping(
+      `${fyiQueue.length} FYI${fyiQueue.length > 1 ? "s" : ""} waiting`,
+      fyiQueue.map((m) => `${m.from}: ${m.text.slice(0, 40)}`).join(" · ").slice(0, 140),
+      "msg",
+    );
+    fyiQueue.length = 0;
+  }, 15 * 60 * 1000);
   const prevStatus: Record<string, string> = {};
 
   const tick = async () => {
@@ -254,11 +300,16 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         seenMsgs.add(m.id);
         if (!first && m.from !== me && (m.to === me || m.to === "all")) {
           const mentioned = me && m.text.includes(`@${me}`);
-          ping(
-            mentioned ? `@you from ${m.from}` : `Message from ${m.from}`,
-            m.text.slice(0, 120),
-            mentioned ? "mention" : "msg",
-          );
+          if (m.kind === "fyi" && !mentioned) {
+            fyiQueue.push(m); // digest — no interrupt for FYIs
+          } else {
+            const urgent = m.kind === "blocking";
+            ping(
+              urgent ? `BLOCKING from ${m.from}` : mentioned ? `@you from ${m.from}` : `${m.kind ?? "Message"} from ${m.from}`,
+              m.text.slice(0, 120),
+              mentioned || urgent ? "mention" : "msg",
+            );
+          }
         }
       }
 

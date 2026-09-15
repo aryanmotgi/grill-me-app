@@ -53,7 +53,10 @@ interface AppState {
   toggleDnd: (id: string) => void;
   toggleRecording: (id: string) => void;
   toggleAnswered: (id: string) => void;
-  sendMessage: (to: string | "all", text: string) => void;
+  sendMessage: (to: string | "all", text: string, kind?: import("./types").MessageKind, threadId?: string) => void;
+  respondProposal: (id: string, response: "yes" | "no" | "unsure") => void;
+  draftReply: { to: string; threadId: string; mention: string } | null;
+  setDraftReply: (r: { to: string; threadId: string; mention: string } | null) => void;
   setTaskStatus: (id: string, status: Task["status"]) => void;
   revertChange: (teammateId: string, file: string) => void;
   quickCommit: (id: string) => void;
@@ -162,6 +165,18 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
+  draftReply: null,
+  setDraftReply: (draftReply) => set({ draftReply }),
+
+  respondProposal: (id, response) => {
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id ? { ...m, response, answered: true } : m,
+      ),
+    }));
+    persistShared("messages.json", get().messages);
+  },
+
   toggleAnswered: (id) => {
     set((s) => ({
       messages: s.messages.map((m) =>
@@ -171,14 +186,22 @@ export const useApp = create<AppState>((set, get) => ({
     persistShared("messages.json", get().messages);
   },
 
-  sendMessage: (to, text) => {
+  sendMessage: (to, text, kind = "question", threadId) => {
+    const meId = get().members[0]?.id ?? "me";
+    const me = get().teammates.find((t) => t.id === meId);
     const msg: Message = {
       id: `m${Date.now()}`,
-      from: get().members[0]?.id ?? "me",
+      from: meId,
       to,
       text,
       answered: false,
       ts: new Date().toTimeString().slice(0, 5),
+      kind,
+      threadId,
+      // auto-context: receiver sees what the sender was doing, no need to ask
+      context: me
+        ? { task: me.taskLabel, file: me.currentFile, branch: me.branch }
+        : undefined,
     };
     set((s) => ({ messages: [msg, ...s.messages] }));
     persistShared("messages.json", get().messages);

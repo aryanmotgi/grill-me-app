@@ -858,12 +858,12 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     obj.insert("Notification".into(), mk("notification"));
     obj.insert("Stop".into(), mk("stop"));
     obj.insert("UserPromptSubmit".into(), mk("prompt"));
-    let helper_hook = |mode: &str| {
-        serde_json::json!([{ "matcher": "Bash", "hooks": [{ "type": "command",
+    let helper_hook = |mode: &str, matcher: &str| {
+        serde_json::json!([{ "matcher": matcher, "hooks": [{ "type": "command",
             "command": format!("python3 {helper_s} {mode} {member_id} {proj_s}") }] }])
     };
-    obj.insert("PreToolUse".into(), helper_hook("pre"));
-    obj.insert("PostToolUse".into(), helper_hook("post"));
+    obj.insert("PreToolUse".into(), helper_hook("pre", "Bash"));
+    obj.insert("PostToolUse".into(), helper_hook("post", "Bash|Read|Edit|Write"));
     let next = serde_json::to_string_pretty(&root).unwrap();
     // idempotent: rewriting identical content still bumps mtime and can
     // trigger watcher/vite reload storms — skip when unchanged
