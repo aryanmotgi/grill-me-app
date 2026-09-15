@@ -58,8 +58,9 @@ export function TeamPanel() {
       <details open>
         <summary className="panel-label mb-1 cursor-pointer">claude usage</summary>
         <div className="text-faint text-[10px] mb-2 leading-relaxed">
-          Real token counts from each session's transcript. Plan-limit % isn't
-          exposed locally — check the statusline inside a session for that.
+          Real token counts attributed to each session since it started (from its
+          own transcript). Plan-limit % isn't exposed locally — see the statusline
+          inside a session for that.
         </div>
         {teammates.map((t) => (
           <div key={t.id} className="py-1.5 border-b border-line/60 last:border-0">

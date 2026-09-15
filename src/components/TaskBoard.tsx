@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { fileConflicts, fileLocks, predictedConflicts, useApp } from "../store";
 import { isTauri } from "../data/sources/git";
+import { FanOut } from "./FanOut";
 import type { Task, TaskStatus } from "../types";
 
 const NEXT: Record<TaskStatus, TaskStatus> = {
@@ -257,6 +258,7 @@ export function TaskBoard() {
         );
       })()}
       <TaskCreate />
+      <FanOut />
 
       {predicted.length > 0 ? (
         <div className="mt-4 demo-hide">

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { isTauri } from "../data/sources/git";
 import { useApp } from "../store";
@@ -21,6 +22,7 @@ function b64ToU8(b64: string) {
  */
 export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: string; cwd: string; themeName: string; shell?: boolean; autorun?: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const latRef = useRef<HTMLSpanElement>(null);
   const ts = useApp((s) => s.termSettings);
 
   useEffect(() => {
@@ -56,6 +58,10 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(ref.current);
+    // GPU rendering — DOM renderer chokes on full-screen TUI repaints
+    try {
+      term.loadAddon(new WebglAddon());
+    } catch { /* WebGL unavailable — DOM fallback */ }
     fit.fit();
     term.focus();
 
@@ -91,17 +97,32 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
         }, 800);
         setTimeout(() => clearInterval(t0), 8000);
       }
-      unlisten = await listen<{ id: string; data: string }>("pty-output", (e) => {
-        if (e.payload.id === id && !disposed) term.write(b64ToU8(e.payload.data));
+      // keystroke → echo round-trip latency, rolling average of last 20
+      const lat = { sentAt: 0, samples: [] as number[] };
+      unlisten = await listen<string>(`pty-output/${id}`, (e) => {
+        if (disposed) return;
+        if (lat.sentAt) {
+          const dt = performance.now() - lat.sentAt;
+          lat.sentAt = 0;
+          lat.samples.push(dt);
+          if (lat.samples.length > 20) lat.samples.shift();
+          if (latRef.current) {
+            const avg = lat.samples.reduce((a, b) => a + b, 0) / lat.samples.length;
+            latRef.current.textContent = `${avg.toFixed(0)}ms`;
+          }
+        }
+        term.write(b64ToU8(e.payload));
       });
       term.onData((data) => {
         const st = useApp.getState();
-        const mate = st.teammates.find((t) => t.id === id);
-        const isOwn = st.members[0]?.id === id;
-        if (!isOwn && mate?.permission !== "edit") {
-          st.toast(`${mate?.name ?? id} is view-only — change it in settings`, "warn");
+        const memberId = id.split(":")[id.includes(":") && st.activeProject && st.activeProject !== "default" ? 1 : 0] ?? id;
+        const mate = st.teammates.find((t) => t.id === memberId || id.startsWith(t.id));
+        const isOwn = st.members[0] && (id === st.members[0].id || id.includes(`${st.members[0].id}`));
+        if (!isOwn && mate && mate.permission !== "edit") {
+          st.toast(`${mate.name} is view-only — change it in settings`, "warn");
           return;
         }
+        lat.sentAt = performance.now();
         invoke("pty_write", { id, data }).catch(() => {});
       });
       const doResize = () => {
@@ -128,5 +149,11 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       </div>
     );
   }
-  return <div ref={ref} className="h-full w-full bg-term-bg pl-2 pt-1 pb-3" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={ref} className="h-full w-full bg-term-bg pl-2 pt-1 pb-3" />
+      <span ref={latRef} title="Keystroke to echo round-trip, rolling average"
+        className="absolute bottom-1 right-2 font-mono text-[8px] text-faint opacity-60 pointer-events-none" />
+    </div>
+  );
 }

@@ -55,6 +55,11 @@ interface AppState {
   toggleAnswered: (id: string) => void;
   sendMessage: (to: string | "all", text: string, kind?: import("./types").MessageKind, threadId?: string) => void;
   respondProposal: (id: string, response: "yes" | "no" | "unsure") => void;
+  resources: Record<string, { cpu: number; memMb: number }>;
+  setResources: (r: { id: string; cpu: number; memMb: number }[]) => void;
+  /** member id whose work is under pre-merge review, or null */
+  reviewFor: string | null;
+  setReviewFor: (id: string | null) => void;
   draftReply: { to: string; threadId: string; mention: string } | null;
   setDraftReply: (r: { to: string; threadId: string; mention: string } | null) => void;
   setTaskStatus: (id: string, status: Task["status"]) => void;
@@ -88,6 +93,7 @@ interface AppState {
   panelSizes: { left: number; right: number; split: number };
   setPanelSize: (key: "left" | "right" | "split", value: number, persist?: boolean) => void;
   shipSession: (id: string) => Promise<void>;
+  shipApproved: (id: string) => Promise<void>;
   dense: boolean;
   toggleDense: () => void;
   mergePilotOpen: boolean;
@@ -165,6 +171,11 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
+  resources: {},
+  setResources: (list) =>
+    set({ resources: Object.fromEntries(list.map((r) => [r.id, { cpu: r.cpu, memMb: r.memMb }])) }),
+  reviewFor: null,
+  setReviewFor: (reviewFor) => set({ reviewFor }),
   draftReply: null,
   setDraftReply: (draftReply) => set({ draftReply }),
 
@@ -226,6 +237,34 @@ export const useApp = create<AppState>((set, get) => ({
       }
       const next = nextUnblockedTask(get().tasks, id);
       if (next) get().toast(`Task done. Next unblocked: “${next.title}”`);
+      // fan-out dependents: spawn their session now that the blocker is done
+      const dependents = get().tasks.filter(
+        (t) => t.blockedBy === id && t.desc === "fan-out" && t.status === "not-started",
+      );
+      for (const dep of dependents) {
+        (async () => {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const base = get().members[0];
+          if (!base) return;
+          const sid = `agent-${dep.id.slice(-8)}`;
+          const parent = base.repoPath.replace(/\/[^/]+$/, "");
+          const path = `${parent}/worktrees-${sid}`;
+          try {
+            await invoke("worktree_add", { baseRepo: base.repoPath, branch: `fan/${sid}`, path });
+            const nextMembers = [...get().members, { id: sid, name: sid, repoPath: path, permission: "edit" }];
+            await invoke("team_config_write", { cfg: { teammates: nextMembers } });
+            get().applyTeamConfig(nextMembers);
+            await invoke("pty_ensure", { id: ptyIdFor(sid), cwd: path, shell: false, remote: null, tmux: null });
+            setTimeout(() => invoke("pty_write", {
+              id: ptyIdFor(sid),
+              data: `Work on this task: ${dep.title}. When done, tell the user and stop.\n`,
+            }).catch(() => {}), 6000);
+            get().toast(`Dependency cleared — spawned session for “${dep.title}”`);
+          } catch (e) {
+            get().toast(`Auto-spawn failed: ${e}`, "warn");
+          }
+        })();
+      }
     }
   },
 
@@ -336,13 +375,18 @@ export const useApp = create<AppState>((set, get) => ({
     if (persist) get().setAppSetting("panelSizes", panelSizes);
   },
 
-  /** Runs the team's real ship workflow inside that session's Claude terminal. */
+  /** Opens the pre-merge review; approving there runs /ship in the session. */
   shipSession: async (id) => {
+    set({ reviewFor: id });
+  },
+
+  /** Called from the review modal on approve. */
+  shipApproved: async (id) => {
     if (!isTauri()) return;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("pty_write", { id: ptyIdFor(id), data: "/ship\n" });
-      get().toast(`Sent /ship to ${get().teammates.find((t) => t.id === id)?.name ?? id} — tests run before push`);
+      get().toast(`Approved — /ship running in ${get().teammates.find((t) => t.id === id)?.name ?? id}'s session`);
     } catch (e) {
       get().toast(`Ship failed: ${e}`, "warn");
     }

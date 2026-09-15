@@ -111,7 +111,13 @@ export function SettingsModal() {
   if (!settingsOpen) return null;
 
   const saveTeam = async () => {
-    const cleaned = draft.filter((m) => m.id.trim() && m.repoPath.trim());
+    const cleaned = draft
+      .filter((m) => m.id.trim() && m.repoPath.trim())
+      .map((m) => ({
+        ...m,
+        remote: m.remote?.trim() || undefined,
+        tmuxSession: m.tmuxSession?.trim() || undefined,
+      }));
     if (!isTauri()) return;
     const { invoke } = await import("@tauri-apps/api/core");
     try {
@@ -193,6 +199,12 @@ export function SettingsModal() {
                       value={m.name} placeholder="name" onChange={(e) => edit(i, "name", e.target.value)} />
                     <input className="flex-1 bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"
                       value={m.repoPath} placeholder="/path/to/worktree" onChange={(e) => edit(i, "repoPath", e.target.value)} />
+                    <input className="w-28 bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"
+                      value={m.remote ?? ""} placeholder="ssh user@host" title="Optional: SSH target — attaches to the shared VM instead of spawning locally"
+                      onChange={(e) => edit(i, "remote", e.target.value)} />
+                    <input className="w-20 bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"
+                      value={m.tmuxSession ?? ""} placeholder="tmux name" title="Optional: tmux session to attach (remote via ssh, or local)"
+                      onChange={(e) => edit(i, "tmuxSession", e.target.value)} />
                     <select className="btn" value={m.permission ?? "view"} title="edit: others can type into their session. view: watch only."
                       onChange={(e) => edit(i, "permission", e.target.value)}>
                       <option value="edit">others can type</option>
@@ -341,6 +353,9 @@ export function SettingsModal() {
                   <option value="60">every hour</option>
                 </select>
                 <span className="text-faint text-[10px]">blocking / questions / @mentions are always instant</span>
+              </Row>
+              <Row label="Self-healing sessions" hint="Auto-restart crashed sessions (max 3/10min); flag stuck ones; ride out rate limits">
+                <Toggle checked={appSettings.selfHeal !== false} onChange={(v) => setAppSetting("selfHeal", v)} />
               </Row>
               <Row label="Mute everything" hint="Silences all notifications and sounds">
                 <Toggle checked={Boolean(appSettings.muteAll)} onChange={(v) => setAppSetting("muteAll", v)} />
