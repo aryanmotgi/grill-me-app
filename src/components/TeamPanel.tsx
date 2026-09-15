@@ -130,6 +130,15 @@ export function TeamPanel() {
       <div className="flex gap-2 demo-hide">
         <button className="btn" onClick={snapshot}><Icon name="download" size={10} /> snapshot</button>
         <button className="btn" onClick={retro}><Icon name="download" size={10} /> retro doc</button>
+        <button className="btn" title="Full project state bundle — tasks, messages, config, logs"
+          onClick={async () => {
+            const { invoke } = await import("@tauri-apps/api/core");
+            const bundle = await invoke<string>("project_export").catch((e) => `{"error":"${e}"}`);
+            download(`grillme-project-backup-${Date.now()}.json`, bundle);
+            toast("Project state exported");
+          }}>
+          <Icon name="download" size={10} /> backup
+        </button>
       </div>
     </div>
   );

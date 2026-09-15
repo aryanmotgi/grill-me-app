@@ -10,6 +10,28 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "python3 /Users/aryanmotgi/.grillme/bin/grillme-hook post aryan /Users/aryanmotgi/.grillme",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "python3 /Users/aryanmotgi/.grillme/bin/grillme-hook pre aryan /Users/aryanmotgi/.grillme",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
     "Stop": [
       {
         "hooks": [

@@ -13,6 +13,36 @@ const SHORTCUTS: [string, string][] = [
   ["Esc", "Close overlays"],
 ];
 
+function BlocklistEditor() {
+  const toast = useApp((s) => s.toast);
+  const [text, setText] = useState("");
+  useEffect(() => {
+    if (!isTauri()) return;
+    import("@tauri-apps/api/core").then(({ invoke }) =>
+      invoke<string>("blocklist_read").then((raw) => {
+        try { setText((JSON.parse(raw) as string[]).join("\n")); } catch { setText(""); }
+      }).catch(() => {}),
+    );
+  }, []);
+  const save = async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const list = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    try {
+      await invoke("blocklist_write", { content: JSON.stringify(list, null, 2) });
+      toast("Blocklist saved — applies to every session immediately");
+    } catch (e) {
+      toast(`Save failed: ${e}`, "warn");
+    }
+  };
+  return (
+    <>
+      <textarea className="w-full h-28 bg-raised hairline rounded-sm p-2 font-mono text-[10px] outline-none focus:border-accent resize-none"
+        value={text} onChange={(e) => setText(e.target.value)} placeholder="one regex per line" />
+      <button className="btn primary mt-1.5" onClick={save}>save blocklist</button>
+    </>
+  );
+}
+
 export function SettingsModal() {
   const {
     settingsOpen, setSettingsOpen, members, applyTeamConfig,
@@ -113,6 +143,41 @@ export function SettingsModal() {
                 checked={Boolean(appSettings[key] ?? (key !== "muteAll"))}
                 onChange={(e) => setAppSetting(key, e.target.checked)} />
               <span className="text-dim">{label}</span>
+            </label>
+          ))}
+        </section>
+
+        {/* safety */}
+        <section>
+          <div className="panel-label mb-2">safety — blocked commands</div>
+          <div className="text-faint text-[10px] mb-2 leading-relaxed">
+            Regex patterns enforced by a PreToolUse hook in every session. Matching commands are
+            denied and Claude must ask for explicit confirmation — even with skip-permissions on.
+          </div>
+          <BlocklistEditor />
+        </section>
+
+        {/* alert sounds */}
+        <section>
+          <div className="panel-label mb-2">alert sounds</div>
+          {([
+            ["message", "New message — soft two-tone"],
+            ["mention", "@mention — insistent three-tone"],
+            ["needs-input", "Session needs input — rising triple"],
+            ["conflict", "File conflict — low buzz"],
+          ] as const).map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 py-1 text-[11px] cursor-pointer">
+              <input type="checkbox" className="accent-(--accent)"
+                checked={((appSettings.sounds as Record<string, boolean>) ?? {})[key] !== false}
+                onChange={(e) => setAppSetting("sounds", {
+                  ...((appSettings.sounds as Record<string, boolean>) ?? {}),
+                  [key]: e.target.checked,
+                })} />
+              <span className="text-dim">{label}</span>
+              <button className="btn ml-auto" onClick={(ev) => {
+                ev.preventDefault();
+                import("../data/sounds").then(({ playAlert }) => playAlert(key, { sounds: {} }));
+              }}>test</button>
             </label>
           ))}
         </section>

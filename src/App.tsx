@@ -11,6 +11,7 @@ import { GlobalSearch } from "./components/GlobalSearch";
 import { ConflictBanner, Toasts } from "./components/Chrome";
 import { SettingsModal } from "./components/Settings";
 import { ProjectPicker } from "./components/ProjectPicker";
+import { Onboarding } from "./components/Onboarding";
 
 function DragHandle({ onDrag, onDone }: { onDrag: (dx: number) => void; onDone: () => void }) {
   return (
@@ -134,6 +135,7 @@ export default function App() {
       <QuickSwitcher />
       <SettingsModal />
       <ProjectPicker />
+      <Onboarding />
       <Toasts />
     </div>
   );

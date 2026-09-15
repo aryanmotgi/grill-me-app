@@ -837,6 +837,9 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({}));
 
+    let helper = ensure_safety_files()?;
+    let helper_s = helper.to_string_lossy().into_owned();
+    let proj_s = grillme_dir().to_string_lossy().into_owned();
     let events = grillme_dir().join("events.jsonl").to_string_lossy().into_owned();
     let hook_cmd = |event: &str| {
         format!(
@@ -855,6 +858,12 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     obj.insert("Notification".into(), mk("notification"));
     obj.insert("Stop".into(), mk("stop"));
     obj.insert("UserPromptSubmit".into(), mk("prompt"));
+    let helper_hook = |mode: &str| {
+        serde_json::json!([{ "matcher": "Bash", "hooks": [{ "type": "command",
+            "command": format!("python3 {helper_s} {mode} {member_id} {proj_s}") }] }])
+    };
+    obj.insert("PreToolUse".into(), helper_hook("pre"));
+    obj.insert("PostToolUse".into(), helper_hook("post"));
     let next = serde_json::to_string_pretty(&root).unwrap();
     // idempotent: rewriting identical content still bumps mtime and can
     // trigger watcher/vite reload storms — skip when unchanged
@@ -1012,6 +1021,159 @@ fn git_clone(url: String, dest: String) -> Result<(), String> {
     Ok(())
 }
 
+
+// ---------------------------------------------------------------------------
+// Safety: blocklist enforcement + audit trail via Claude Code hooks.
+// The helper script runs on PreToolUse (exit 2 = deny -> Claude must ask
+// the user explicitly, even with --dangerously-skip-permissions) and on
+// PostToolUse (appends an audit line per executed tool call).
+// ---------------------------------------------------------------------------
+
+const HOOK_HELPER: &str = r#"#!/usr/bin/env python3
+import json, sys, time, os, re
+
+mode, member, proj_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+if mode == "pre":
+    cmd = (data.get("tool_input") or {}).get("command", "") or ""
+    bl_path = os.path.expanduser("~/.grillme/blocklist.json")
+    try:
+        patterns = json.load(open(bl_path))
+    except Exception:
+        patterns = []
+    for pat in patterns:
+        try:
+            if re.search(pat, cmd):
+                print(f"BLOCKED by Grill Me safety blocklist (pattern: {pat}). "
+                      "This command is flagged destructive - ask the user for explicit confirmation first.",
+                      file=sys.stderr)
+                sys.exit(2)
+        except re.error:
+            continue
+elif mode == "post":
+    ti = data.get("tool_input") or {}
+    line = {
+        "ts": int(time.time()),
+        "id": member,
+        "tool": data.get("tool_name", ""),
+        "detail": ti.get("command") or ti.get("file_path") or "",
+    }
+    try:
+        with open(os.path.join(proj_dir, "audit.jsonl"), "a") as f:
+            f.write(json.dumps(line) + "\n")
+    except Exception:
+        pass
+sys.exit(0)
+"#;
+
+const DEFAULT_BLOCKLIST: &str = r#"[
+  "rm\\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)[a-z]*\\s+(/|~|\\*|\\$HOME)",
+  "git\\s+push\\s+[^|;]*(--force|-f)\\b[^|;]*\\b(main|master)",
+  "git\\s+push\\s+[^|;]*\\b(main|master)\\b[^|;]*(--force|-f)",
+  "git\\s+reset\\s+--hard\\s+origin",
+  "git\\s+clean\\s+-[a-z]*f[a-z]*d",
+  "DROP\\s+(TABLE|DATABASE)",
+  "mkfs",
+  ">\\s*/dev/(sd|disk)",
+  "chmod\\s+-R\\s+777\\s+/",
+  "shutdown|reboot\\b"
+]"#;
+
+fn ensure_safety_files() -> Result<PathBuf, String> {
+    let bin = grillme_root().join("bin");
+    std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
+    let helper = bin.join("grillme-hook");
+    let cur = std::fs::read_to_string(&helper).unwrap_or_default();
+    if cur != HOOK_HELPER {
+        std::fs::write(&helper, HOOK_HELPER).map_err(|e| e.to_string())?;
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+    }
+    let bl = grillme_root().join("blocklist.json");
+    if !bl.exists() {
+        std::fs::write(&bl, DEFAULT_BLOCKLIST).map_err(|e| e.to_string())?;
+    }
+    Ok(helper)
+}
+
+#[tauri::command]
+fn blocklist_read() -> String {
+    std::fs::read_to_string(grillme_root().join("blocklist.json"))
+        .unwrap_or_else(|_| DEFAULT_BLOCKLIST.into())
+}
+
+#[tauri::command]
+fn blocklist_write(content: String) -> Result<(), String> {
+    serde_json::from_str::<Vec<String>>(&content).map_err(|e| format!("invalid JSON list: {e}"))?;
+    std::fs::write(grillme_root().join("blocklist.json"), content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn audit_tail(member: Option<String>) -> Vec<String> {
+    std::fs::read_to_string(grillme_dir().join("audit.jsonl"))
+        .map(|s| {
+            let lines: Vec<String> = s
+                .lines()
+                .filter(|l| match &member {
+                    Some(m) => l.contains(&format!("\"id\": \"{m}\"")) || l.contains(&format!("\"id\":\"{m}\"")),
+                    None => true,
+                })
+                .map(str::to_string)
+                .collect();
+            let skip = lines.len().saturating_sub(200);
+            lines.into_iter().skip(skip).collect()
+        })
+        .unwrap_or_default()
+}
+
+// Reliability: pause/resume a session's process tree (SIGSTOP preserves
+// full in-memory state; SIGCONT resumes exactly where it left off).
+#[tauri::command]
+fn pty_pause(id: String, pause: bool) -> Result<(), String> {
+    let map = ptys().lock().unwrap();
+    let sess = map.get(&id).ok_or("no session")?;
+    let pid = sess.child.process_id().ok_or("no pid")?;
+    let sig = if pause { "-STOP" } else { "-CONT" };
+    // negative pid = whole process group (claude + its children)
+    let out = Command::new("kill")
+        .args([sig, &format!("-{pid}")])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        // fall back to the single pid if it isn't a group leader
+        Command::new("kill")
+            .args([sig, &pid.to_string()])
+            .output()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Full project state bundle for backup / machine moves.
+#[tauri::command]
+fn project_export() -> Result<String, String> {
+    let dir = grillme_dir();
+    let mut bundle = serde_json::Map::new();
+    for name in ["config.json", "tasks.json", "messages.json", "team.json"] {
+        if let Ok(raw) = std::fs::read_to_string(dir.join(name)) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+                bundle.insert(name.to_string(), v);
+            }
+        }
+    }
+    for name in ["standup.log", "events.jsonl", "audit.jsonl"] {
+        if let Ok(raw) = std::fs::read_to_string(dir.join(name)) {
+            bundle.insert(name.to_string(), serde_json::Value::String(raw));
+        }
+    }
+    serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1046,6 +1208,11 @@ pub fn run() {
             project_card_stats,
             discover_repos,
             git_clone,
+            blocklist_read,
+            blocklist_write,
+            audit_tail,
+            pty_pause,
+            project_export,
             activity_series,
             install_hooks,
             events_tail,

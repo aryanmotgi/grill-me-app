@@ -424,6 +424,9 @@ function emptyTeammate(id: string): Teammate {
 
 // Phase 2: live feeds replace fake data when running inside Tauri.
 // In plain browser dev the fake seed stays so the UI is still browsable.
+let restoreReady = false;
+let persistT: ReturnType<typeof setTimeout> | undefined;
+
 (async () => {
   if (!isTauri()) {
     // browser dev: fake data, no feeds
@@ -440,6 +443,15 @@ function emptyTeammate(id: string): Teammate {
     if (appSettings.panelSizes) useApp.setState({ panelSizes: appSettings.panelSizes as { left: number; right: number; split: number } });
     if (appSettings.terminal) useApp.setState({ termSettings: { ...DEFAULT_TERM_SETTINGS, ...(appSettings.terminal as Partial<TermSettings>) } });
   }
+  const vs = appSettings.viewState as { activeId?: string; railTab?: RailTab; splitId?: string | null } | undefined;
+  if (vs) {
+    useApp.setState({
+      ...(vs.activeId ? { activeId: vs.activeId } : {}),
+      ...(vs.railTab ? { railTab: vs.railTab } : {}),
+      splitId: vs.splitId ?? null,
+    });
+  }
+  restoreReady = true;
   const project = typeof appSettings.activeProject === "string" ? appSettings.activeProject : null;
   if (!project) return; // ProjectPicker shows; feeds start after selection reload
   await invoke("set_active_project", { id: project }).catch(() => {});
@@ -453,6 +465,34 @@ function emptyTeammate(id: string): Teammate {
     }
   } catch { /* no color set */ }
   startGitFeed(useApp);
+
+// crash/disconnect recovery: persist view state, restore on boot
+useApp.subscribe((st, prev) => {
+  if (!restoreReady) return;
+  if (st.activeId !== prev.activeId || st.railTab !== prev.railTab || st.splitId !== prev.splitId) {
+    clearTimeout(persistT);
+    persistT = setTimeout(
+      () => useApp.getState().setAppSetting("viewState", {
+        activeId: st.activeId, railTab: st.railTab, splitId: st.splitId,
+      }),
+      800,
+    );
+  }
+  // audible conflict alert on new real file conflicts
+  if (st.liveLocks !== prev.liveLocks) {
+    const count = (locks: typeof st.liveLocks) => {
+      const byFile = new Map<string, Set<string>>();
+      for (const l of locks) {
+        if (!byFile.has(l.file)) byFile.set(l.file, new Set());
+        byFile.get(l.file)!.add(l.owner);
+      }
+      return [...byFile.values()].filter((o) => o.size > 1).length;
+    };
+    if (count(st.liveLocks) > count(prev.liveLocks)) {
+      import("./data/sounds").then(({ playAlert }) => playAlert("conflict", st.appSettings));
+    }
+  }
+});
   startWatchFeed(useApp);
   startPtyFeed(useApp);
   startSharedFeed(useApp);
