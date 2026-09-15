@@ -282,3 +282,12 @@ body,
   border-left: 2px solid transparent;
   opacity: 0.42;
 }
+
+/* ---- dense mode: tighter everything for big teams ---- */
+.dense {
+  font-size: 12px;
+}
+.dense .px-3 { padding-left: 8px; padding-right: 8px; }
+.dense .py-3 { padding-top: 6px; padding-bottom: 6px; }
+.dense .py-2\.5 { padding-top: 4px; padding-bottom: 4px; }
+.dense .p-3 { padding: 8px; }

@@ -280,10 +280,18 @@ fn start_watching(app: tauri::AppHandle) {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs())
                         .unwrap_or(0);
-                    activity()
-                        .lock()
-                        .unwrap()
-                        .insert((id.clone(), rel.clone()), ts);
+                    {
+                        let mut reg = activity().lock().unwrap();
+                        reg.insert((id.clone(), rel.clone()), ts);
+                    }
+                    {
+                        let mut ser = series().lock().unwrap();
+                        let q = ser.entry(id.clone()).or_default();
+                        q.push_back(ts);
+                        while q.len() > 600 {
+                            q.pop_front();
+                        }
+                    }
                     let _ = app.emit(
                         "file-activity",
                         FileEvent { teammate_id: id.clone(), file: rel, ts },
@@ -375,7 +383,7 @@ fn append_stripped(s: &mut PtySession, chunk: &[u8]) {
 }
 
 #[tauri::command]
-fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String) -> Result<(), String> {
+fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String, shell: Option<bool>) -> Result<(), String> {
     use tauri::Emitter;
     {
         let mut map = ptys().lock().unwrap();
@@ -390,7 +398,11 @@ fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String) -> Result<(), Stri
         .openpty(PtySize { rows: 32, cols: 110, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
     let mut cmd = CommandBuilder::new("/bin/zsh");
-    cmd.args(["-lc", "exec claude"]);
+    if shell.unwrap_or(false) {
+        cmd.args(["-l"]);
+    } else {
+        cmd.args(["-lc", "exec claude"]);
+    }
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
@@ -737,6 +749,108 @@ fn team_config_write(cfg: TeamConfig) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+
+// ---------------------------------------------------------------------------
+// Activity series (sparklines), hooks install, events tail, worktree
+// spawner, diff peek, PR drafting.
+// ---------------------------------------------------------------------------
+
+static SERIES: OnceLock<Mutex<HashMap<String, VecDeque<u64>>>> = OnceLock::new();
+fn series() -> &'static Mutex<HashMap<String, VecDeque<u64>>> {
+    SERIES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 30 one-minute buckets of file activity, oldest first.
+#[tauri::command]
+fn activity_series(id: String) -> Vec<u32> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut buckets = vec![0u32; 30];
+    if let Some(q) = series().lock().unwrap().get(&id) {
+        for &ts in q {
+            let age_min = now.saturating_sub(ts) / 60;
+            if age_min < 30 {
+                buckets[29 - age_min as usize] += 1;
+            }
+        }
+    }
+    buckets
+}
+
+/// Claude Code hooks that report exact session state into events.jsonl.
+#[tauri::command]
+fn install_hooks(repo_path: String, member_id: String) -> Result<String, String> {
+    let dir = PathBuf::from(&repo_path).join(".claude");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("settings.json");
+    let mut root: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let hook_cmd = |event: &str| {
+        format!(
+            "sh -c 'IN=$(cat); printf \"%s\\n\" \"{{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"{member_id}\\\",\\\"event\\\":\\\"{event}\\\"}}\" >> ~/.grillme/events.jsonl'"
+        )
+    };
+    let mk = |event: &str| {
+        serde_json::json!([{ "hooks": [{ "type": "command", "command": hook_cmd(event) }] }])
+    };
+    let hooks = root
+        .as_object_mut()
+        .ok_or("bad settings.json")?
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}));
+    let obj = hooks.as_object_mut().ok_or("bad hooks")?;
+    obj.insert("Notification".into(), mk("notification"));
+    obj.insert("Stop".into(), mk("stop"));
+    obj.insert("UserPromptSubmit".into(), mk("prompt"));
+    std::fs::write(&path, serde_json::to_string_pretty(&root).unwrap()).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn events_tail() -> Vec<String> {
+    std::fs::read_to_string(grillme_dir().join("events.jsonl"))
+        .map(|s| {
+            let lines: Vec<String> = s.lines().map(str::to_string).collect();
+            let skip = lines.len().saturating_sub(100);
+            lines.into_iter().skip(skip).collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn worktree_add(base_repo: String, branch: String, path: String) -> Result<(), String> {
+    git(&base_repo, &["worktree", "add", "-b", &branch, &path, "main"]).map(|_| ())
+}
+
+#[tauri::command]
+fn git_diff_file(repo_path: String, file: String) -> Result<String, String> {
+    let diff = git(&repo_path, &["diff", "--", &file])?;
+    if diff.trim().is_empty() {
+        git(&repo_path, &["diff", "--cached", "--", &file])
+    } else {
+        Ok(diff)
+    }
+}
+
+/// One-shot claude -p over the working diff — returns a drafted PR body.
+#[tauri::command]
+fn pr_draft(repo_path: String) -> Result<String, String> {
+    let out = Command::new("/bin/zsh")
+        .args(["-lc", "git diff main 2>/dev/null | head -c 60000 | claude -p 'Write a concise PR title and body (markdown) for this diff. No preamble.'"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -761,7 +875,13 @@ pub fn run() {
             git_revert_file,
             usage_stats,
             ci_state,
-            team_config_write
+            team_config_write,
+            activity_series,
+            install_hooks,
+            events_tail,
+            worktree_add,
+            git_diff_file,
+            pr_draft
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
