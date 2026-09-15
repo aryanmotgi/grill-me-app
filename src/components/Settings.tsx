@@ -223,6 +223,14 @@ export function SettingsModal() {
               </label>
             </label>
             <label className="flex items-center gap-2">
+              <span className="text-dim w-16">text color</span>
+              <input type="color" value={termSettings.fgOverride ?? "#cfd6cf"}
+                onChange={(e) => setTermSetting("fgOverride", e.target.value)} />
+              {termSettings.fgOverride ? (
+                <button className="btn" onClick={() => setTermSetting("fgOverride", null)}>reset</button>
+              ) : <span className="text-faint text-[10px]">palette default</span>}
+            </label>
+            <label className="flex items-center gap-2">
               <span className="text-dim w-16">background</span>
               <input type="color" value={termSettings.bgOverride ?? "#0a0c0b"}
                 onChange={(e) => setTermSetting("bgOverride", e.target.value)} />
@@ -271,6 +279,17 @@ export function SettingsModal() {
           <div className="text-faint text-[10px] mt-1">
             Terminal styling is independent of the app theme — "ember" tracks it, everything else diverges.
           </div>
+        </section>
+
+        {/* panels */}
+        <section>
+          <div className="panel-label mb-2">panels</div>
+          <label className="flex items-center gap-2 py-1 text-[11px] cursor-pointer">
+            <input type="checkbox" className="accent-(--accent)"
+              checked={appSettings.showPreview !== false}
+              onChange={(e) => setAppSetting("showPreview", e.target.checked)} />
+            <span className="text-dim">Show dev-preview tab (live dev server of the project being built)</span>
+          </label>
         </section>
 
         {/* shortcuts */}

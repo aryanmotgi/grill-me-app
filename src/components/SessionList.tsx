@@ -37,8 +37,9 @@ function Sparkline({ id }: { id: string }) {
 }
 
 function SessionRow({ mate }: { mate: Teammate }) {
-  const { activeId, setActive, splitId, setSplit, toggleDnd, toast } = useApp();
+  const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members } = useApp();
   const [paused, setPaused] = useState(false);
+  const isOwnSession = members[0]?.id === mate.id;
   const isActive = activeId === mate.id;
   const inSplit = splitId === mate.id;
   const offline = mate.health !== "ok";
@@ -103,9 +104,9 @@ function SessionRow({ mate }: { mate: Teammate }) {
         >
           dnd
         </button>
-        <button
+        {isOwnSession ? <button
           className={`btn ${paused ? "active" : ""}`}
-          title={paused ? "Resume — continues exactly where it stopped" : "Pause — freezes the process, preserves all context"}
+          title={paused ? "Resume: continues exactly where it stopped" : "Pause: freezes the process, preserves all context. Only the session owner can pause."}
           onClick={async (e) => {
             e.stopPropagation();
             const { invoke } = await import("@tauri-apps/api/core");
@@ -120,7 +121,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
           }}
         >
           {paused ? "resume" : "pause"}
-        </button>
+        </button> : null}
         <span className="text-faint text-[10px]" title={mate.permission === "edit" ? "You can jump into this session" : "View-only for you"}>
           {mate.permission === "edit" ? <><Icon name="swap" size={10} /> can jump in</> : <><Icon name="eye" size={10} /> view-only</>}
         </span>

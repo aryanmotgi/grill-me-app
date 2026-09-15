@@ -32,7 +32,7 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
     const css = getComputedStyle(document.documentElement);
     const v = (name: string) => css.getPropertyValue(name).trim();
     const pal = TERM_PALETTES[ts.palette] ?? TERM_PALETTES.ember;
-    const useAppTheme = ts.palette === "ember" && !ts.bgOverride && !ts.customAnsi;
+    const useAppTheme = ts.palette === "ember" && !ts.bgOverride && !ts.customAnsi && !ts.fgOverride;
     const ansi = ts.customAnsi ?? pal.ansi;
     const bg = hexWithOpacity(ts.bgOverride ?? (useAppTheme ? v("--termBg") : pal.background), ts.bgOpacity);
     const term = new Terminal({
@@ -44,7 +44,7 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       cursorStyle: ts.cursorStyle,
       theme: {
         background: bg,
-        foreground: useAppTheme ? v("--termInk") : pal.foreground,
+        foreground: ts.fgOverride ?? (useAppTheme ? v("--termInk") : pal.foreground),
         cursor: useAppTheme ? v("--termCmd") : pal.cursor,
         selectionBackground: v("--selection"),
         black: ansi[0], red: ansi[1], green: ansi[2], yellow: ansi[3],

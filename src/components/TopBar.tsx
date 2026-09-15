@@ -78,10 +78,10 @@ export function TopBar() {
         onClick={() => shipSession(activeId)}>
         <Icon name="push" size={11} /> ship
       </button>
-      <button className="btn demo-hide" title="Open GitHub in a native browser panel" onClick={() => openBrowserPanel("github", "https://github.com")}>
+      <button className="btn demo-hide" title="Opens GitHub in a native browser window (github.com blocks embedding)" onClick={() => openBrowserPanel("github", "https://github.com")}>
         github
       </button>
-      <button className="btn demo-hide" title="Open claude.ai in a native browser panel" onClick={() => openBrowserPanel("claude", "https://claude.ai")}>
+      <button className="btn demo-hide" title="Browser shortcut only for now: opens claude.ai in a separate window. Message-bridge integration is a planned feature." onClick={() => openBrowserPanel("claude", "https://claude.ai")}>
         claude
       </button>
       <button className="btn demo-hide" title="Quick switcher (⌘K)" onClick={() => setSwitcherOpen(true)}>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
 import type { ActivityEvent } from "../types";
@@ -42,13 +43,23 @@ function StandupSummary() {
 export function ActivityTimeline() {
   const activity = useApp((s) => s.activity);
   const teammates = useApp((s) => s.teammates);
+  const [filter, setFilter] = useState<"all" | ActivityEvent["kind"]>("all");
   const name = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
+  const shown = activity.filter((e) => filter === "all" || e.kind === filter);
 
   return (
     <div className="p-3 overflow-y-auto">
       <StandupSummary />
-      <div className="panel-label mb-2">timeline</div>
-      {activity.map((e) => (
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="panel-label">timeline</span>
+        <span className="flex-1" />
+        {(["all", "commit", "merge", "message"] as const).map((f) => (
+          <button key={f} className={`btn ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)}>
+            {f}
+          </button>
+        ))}
+      </div>
+      {shown.map((e) => (
         <div key={e.id} className="flex gap-2 py-1.5 text-[11px]">
           <span className={e.kind === "merge" ? "text-ok" : e.kind === "status" ? "text-warn" : "text-faint"}>
             <Icon name={ICON[e.kind]} size={11} />

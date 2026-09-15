@@ -224,9 +224,38 @@ export function TaskBoard() {
 
   return (
     <div className="p-3 overflow-y-auto">
-      {tasks.map((task) => (
-        <TaskCard key={task.id} task={task} now={now} />
-      ))}
+      {(() => {
+        const blockedIds = new Set(
+          tasks.filter((t) => {
+            const b = t.blockedBy ? tasks.find((x) => x.id === t.blockedBy) : undefined;
+            return b && b.status !== "done";
+          }).map((t) => t.id),
+        );
+        const groups: [string, typeof tasks][] = [
+          ["blocked", tasks.filter((t) => blockedIds.has(t.id) && t.status !== "done")],
+          ["in progress", tasks.filter((t) => t.status === "in-progress" && !blockedIds.has(t.id))],
+          ["queued", tasks.filter((t) => t.status === "not-started" && !blockedIds.has(t.id))],
+        ];
+        const done = tasks.filter((t) => t.status === "done");
+        return (
+          <>
+            {groups.map(([label, list]) =>
+              list.length > 0 ? (
+                <div key={label} className="mb-2">
+                  <div className="panel-label mb-1">{label} · {list.length}</div>
+                  {list.map((task) => <TaskCard key={task.id} task={task} now={now} />)}
+                </div>
+              ) : null,
+            )}
+            {done.length > 0 ? (
+              <details className="mb-2">
+                <summary className="panel-label cursor-pointer">done · {done.length}</summary>
+                {done.map((task) => <TaskCard key={task.id} task={task} now={now} />)}
+              </details>
+            ) : null}
+          </>
+        );
+      })()}
       <TaskCreate />
 
       {predicted.length > 0 ? (

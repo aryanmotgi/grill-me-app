@@ -142,13 +142,14 @@ export function SessionPane({ mate }: { mate: Teammate }) {
           <button className={`btn ${tab === "changes" ? "active" : ""} ml-1`} onClick={() => setTab("changes")}>
             changes {mate.changes.length}
           </button>
-          <button className={`btn ${tab === "audit" ? "active" : ""} ml-1`} onClick={() => setTab("audit")}>
+          <button className={`btn ${tab === "audit" ? "active" : ""} ml-1`} onClick={() => setTab("audit")}
+            title="Audit: timestamped log of every command this session actually executed, for tracing incidents">
             audit
           </button>
           <button
             className={`btn ml-1 ${mate.recording ? "active" : ""}`}
             onClick={() => toggleRecording(mate.id)}
-            title="Log raw session output to ~/.grillme/recordings"
+            title="Record: saves this session's raw terminal output to a file for later replay (~/.grillme/recordings)"
           >
             {mate.recording ? "stop rec" : "rec"}
           </button>
