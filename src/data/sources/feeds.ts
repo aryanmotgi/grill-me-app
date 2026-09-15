@@ -265,17 +265,22 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
 
   const seenMsgs = new Set<string>();
   let first = true;
-  // FYI digest: batch quiet messages, one summary every 15 minutes
+  // FYI digest: batch quiet messages; interval user-adjustable (default 15m).
+  // Self-rescheduling so setting changes apply without a restart.
   const fyiQueue: import("../../types").Message[] = [];
-  setInterval(() => {
-    if (fyiQueue.length === 0) return;
-    ping(
-      `${fyiQueue.length} FYI${fyiQueue.length > 1 ? "s" : ""} waiting`,
-      fyiQueue.map((m) => `${m.from}: ${m.text.slice(0, 40)}`).join(" · ").slice(0, 140),
-      "msg",
-    );
-    fyiQueue.length = 0;
-  }, 15 * 60 * 1000);
+  const digestTick = () => {
+    if (fyiQueue.length > 0) {
+      ping(
+        `${fyiQueue.length} FYI${fyiQueue.length > 1 ? "s" : ""} waiting`,
+        fyiQueue.map((m) => `${m.from}: ${m.text.slice(0, 40)}`).join(" · ").slice(0, 140),
+        "msg",
+      );
+      fyiQueue.length = 0;
+    }
+    const min = Number(store.getState().appSettings.fyiDigestMin) || 15;
+    setTimeout(digestTick, min * 60 * 1000);
+  };
+  setTimeout(digestTick, (Number(store.getState().appSettings.fyiDigestMin) || 15) * 60 * 1000);
   const prevStatus: Record<string, string> = {};
 
   const tick = async () => {

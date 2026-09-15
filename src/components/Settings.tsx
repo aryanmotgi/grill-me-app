@@ -281,6 +281,24 @@ export function SettingsModal() {
           </div>
         </section>
 
+        {/* fyi digest interval */}
+        <section>
+          <div className="panel-label mb-2">fyi digest</div>
+          <label className="flex items-center gap-3 text-[11px]">
+            <span className="text-dim">Batch FYI notifications every</span>
+            <select className="btn" value={String(appSettings.fyiDigestMin ?? 15)}
+              onChange={(e) => setAppSetting("fyiDigestMin", Number(e.target.value))}>
+              <option value="5">5 min</option>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hour</option>
+            </select>
+            <span className="text-faint text-[10px]">
+              Blocking, questions, and @mentions always deliver instantly.
+            </span>
+          </label>
+        </section>
+
         {/* panels */}
         <section>
           <div className="panel-label mb-2">panels</div>
