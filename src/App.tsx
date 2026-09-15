@@ -12,6 +12,7 @@ import { ConflictBanner, Toasts } from "./components/Chrome";
 import { SettingsModal } from "./components/Settings";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { Onboarding } from "./components/Onboarding";
+import { ReviewModal } from "./components/ReviewModal";
 
 function DragHandle({ onDrag, onDone }: { onDrag: (dx: number) => void; onDone: () => void }) {
   return (
@@ -136,6 +137,7 @@ export default function App() {
       <SettingsModal />
       <ProjectPicker />
       <Onboarding />
+      <ReviewModal />
       <Toasts />
     </div>
   );

@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"notification\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"Aryan\\\",\\\"event\\\":\\\"notification\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
             "type": "command"
           }
         ]
@@ -14,7 +14,7 @@
       {
         "hooks": [
           {
-            "command": "python3 /Users/aryanmotgi/.grillme/bin/grillme-hook post aryan /Users/aryanmotgi/.grillme",
+            "command": "python3 /Users/aryanmotgi/.grillme/bin/grillme-hook post Aryan /Users/aryanmotgi/.grillme",
             "type": "command"
           }
         ],
@@ -25,7 +25,7 @@
       {
         "hooks": [
           {
-            "command": "python3 /Users/aryanmotgi/.grillme/bin/grillme-hook pre aryan /Users/aryanmotgi/.grillme",
+            "command": "python3 /Users/aryanmotgi/.grillme/bin/grillme-hook pre Aryan /Users/aryanmotgi/.grillme",
             "type": "command"
           }
         ],
@@ -36,7 +36,7 @@
       {
         "hooks": [
           {
-            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"stop\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"Aryan\\\",\\\"event\\\":\\\"stop\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
             "type": "command"
           }
         ]
@@ -46,7 +46,7 @@
       {
         "hooks": [
           {
-            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"prompt\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"Aryan\\\",\\\"event\\\":\\\"prompt\\\"}\" >> /Users/aryanmotgi/.grillme/events.jsonl'",
             "type": "command"
           }
         ]

@@ -12,6 +12,10 @@ export interface TeamMemberConfig {
   name: string;
   repoPath: string;
   permission?: string;
+  /** SSH target (user@host) — attach remotely instead of spawning locally. */
+  remote?: string;
+  /** tmux session to attach (with remote: over ssh; alone: local tmux). */
+  tmuxSession?: string;
 }
 
 interface GitState {

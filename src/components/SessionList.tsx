@@ -40,6 +40,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
   const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members } = useApp();
   const [paused, setPaused] = useState(false);
   const isOwnSession = members[0]?.id === mate.id;
+  const res = useApp((s) => s.resources[mate.id] ?? s.resources[`${s.activeProject}:${mate.id}`]);
   const isActive = activeId === mate.id;
   const inSplit = splitId === mate.id;
   const offline = mate.health !== "ok";
@@ -70,6 +71,12 @@ function SessionRow({ mate }: { mate: Teammate }) {
           {mate.taskLabel}
         </span>
         <span className="flex-1" />
+        {res ? (
+          <span className={`font-mono text-[9px] tabular-nums ${res.cpu > 80 ? "text-danger" : "text-faint"}`}
+            title="Live CPU / memory for this session's process tree">
+            {res.cpu.toFixed(0)}% · {res.memMb >= 1024 ? `${(res.memMb / 1024).toFixed(1)}G` : `${res.memMb.toFixed(0)}M`}
+          </span>
+        ) : null}
         <span className="tag">{SETUP_LABEL[mate.setup]}</span>
         {offline ? (
           <span

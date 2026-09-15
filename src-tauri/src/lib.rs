@@ -16,6 +16,12 @@ pub struct TeamMember {
     /// "edit" = others may type into this session; "view" = watch only.
     #[serde(default)]
     pub permission: Option<String>,
+    /// SSH target ("user@host") — session attaches remotely instead of local spawn.
+    #[serde(default)]
+    pub remote: Option<String>,
+    /// tmux session name to attach (remote via ssh -t, or local tmux new -A).
+    #[serde(default, rename = "tmuxSession")]
+    pub tmux_session: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -38,6 +44,8 @@ fn default_config() -> TeamConfig {
             name: "Me".into(),
             repo_path: cwd,
             permission: Some("edit".into()),
+            remote: None,
+            tmux_session: None,
         }],
     }
 }
@@ -323,11 +331,16 @@ struct PtySession {
     lines: VecDeque<String>,
     partial: String,
     esc: u8, // 0 none, 1 saw ESC, 2 in CSI, 3 in OSC
+    osc_buf: String,
+    /// exact needs-input signal: OSC 9 / 99 / 777 notification received
+    osc_notify: bool,
     last_output: Instant,
     bell: bool,
     alive: bool,
     recording: Option<std::fs::File>,
     recording_path: Option<String>,
+    /// epoch seconds when this pty was spawned — scopes usage attribution
+    started_at: u64,
 }
 
 static PTYS: OnceLock<Mutex<HashMap<String, PtySession>>> = OnceLock::new();
@@ -354,7 +367,18 @@ fn append_stripped(s: &mut PtySession, chunk: &[u8]) {
             }
             3 => {
                 if b == 0x07 {
+                    // OSC terminator: check for standard notification codes
+                    if s.osc_buf.starts_with("9;")
+                        || s.osc_buf.starts_with("99;")
+                        || s.osc_buf.starts_with("99:")
+                        || s.osc_buf.starts_with("777;notify")
+                    {
+                        s.osc_notify = true;
+                    }
+                    s.osc_buf.clear();
                     s.esc = 0;
+                } else if s.osc_buf.len() < 512 {
+                    s.osc_buf.push(b as char);
                 }
             }
             _ => match b {
@@ -382,7 +406,25 @@ fn append_stripped(s: &mut PtySession, chunk: &[u8]) {
 }
 
 #[tauri::command]
-fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String, shell: Option<bool>) -> Result<(), String> {
+fn pty_ensure(
+    app: tauri::AppHandle,
+    id: String,
+    cwd: String,
+    shell: Option<bool>,
+    remote: Option<String>,
+    tmux: Option<String>,
+) -> Result<(), String> {
+    pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux)
+}
+
+fn pty_ensure_inner(
+    app: tauri::AppHandle,
+    id: String,
+    cwd: String,
+    shell: bool,
+    remote: Option<String>,
+    tmux: Option<String>,
+) -> Result<(), String> {
     use tauri::Emitter;
     {
         let mut map = ptys().lock().unwrap();
@@ -397,10 +439,25 @@ fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String, shell: Option<bool
         .openpty(PtySize { rows: 32, cols: 110, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
     let mut cmd = CommandBuilder::new("/bin/zsh");
-    if shell.unwrap_or(false) {
-        cmd.args(["-l"]);
-    } else {
-        cmd.args(["-lc", "exec claude --dangerously-skip-permissions"]);
+    match (&remote, &tmux) {
+        (Some(host), Some(sess)) => {
+            // remote VM: attach the already-running tmux session over ssh
+            cmd.args(["-lc", &format!("exec ssh -t {host} tmux new -A -s {sess}")]);
+        }
+        (Some(host), None) => {
+            cmd.args(["-lc", &format!("exec ssh -t {host}")]);
+        }
+        (None, Some(sess)) => {
+            // local tmux attach-or-create
+            cmd.args(["-lc", &format!("exec tmux new -A -s {sess}")]);
+        }
+        (None, None) => {
+            if shell {
+                cmd.args(["-l"]);
+            } else {
+                cmd.args(["-lc", "exec claude --dangerously-skip-permissions"]);
+            }
+        }
     }
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
@@ -418,11 +475,17 @@ fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String, shell: Option<bool
             lines: VecDeque::new(),
             partial: String::new(),
             esc: 0,
+            osc_buf: String::new(),
+            osc_notify: false,
             last_output: Instant::now(),
             bell: false,
             alive: true,
             recording: None,
             recording_path: None,
+            started_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         },
     );
 
@@ -458,10 +521,8 @@ fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String, shell: Option<bool
                     }
                     use base64::Engine;
                     let b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
-                    let _ = app.emit(
-                        "pty-output",
-                        serde_json::json!({ "id": id, "data": b64 }),
-                    );
+                    // per-session channel: panes subscribe only to their own stream
+                    let _ = app.emit(&format!("pty-output/{id}"), b64);
                 }
             }
         }
@@ -474,6 +535,7 @@ fn pty_write(id: String, data: String) -> Result<(), String> {
     let mut map = ptys().lock().unwrap();
     let s = map.get_mut(&id).ok_or("no session")?;
     s.bell = false;
+    s.osc_notify = false;
     s.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())
 }
 
@@ -506,8 +568,12 @@ struct PtyStatus {
     #[serde(rename = "quietMs")]
     quiet_ms: u128,
     bell: bool,
+    #[serde(rename = "oscNotify")]
+    osc_notify: bool,
     tail: Vec<String>,
     recording: Option<String>,
+    #[serde(rename = "startedAt")]
+    started_at: u64,
 }
 
 #[tauri::command]
@@ -525,8 +591,10 @@ fn pty_status() -> Vec<PtyStatus> {
                 alive: s.alive,
                 quiet_ms: s.last_output.elapsed().as_millis(),
                 bell: s.bell,
+                osc_notify: s.osc_notify,
                 tail: s.lines.iter().rev().take(40).rev().cloned().collect(),
                 recording: s.recording_path.clone(),
+                started_at: s.started_at,
             }
         })
         .collect()
@@ -708,6 +776,28 @@ struct UsageStats {
     #[serde(rename = "cacheReadTokens")]
     cache_read_tokens: u64,
     turns: u64,
+}
+
+/// Minimal ISO8601 UTC parse — good enough for transcript timestamps.
+fn chrono_lite_parse(ts: &str) -> Result<u64, ()> {
+    let b = ts.as_bytes();
+    if b.len() < 19 {
+        return Err(());
+    }
+    let num = |r: std::ops::Range<usize>| -> Result<u64, ()> {
+        ts.get(r).and_then(|x| x.parse().ok()).ok_or(())
+    };
+    let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (h, mi, sec) = (num(11..13)?, num(14..16)?, num(17..19)?);
+    let days_from_civil = {
+        let y = y as i64 - if mo <= 2 { 1 } else { 0 };
+        let era = y.div_euclid(400);
+        let yoe = (y - era * 400) as u64;
+        let doy = (153 * (if mo > 2 { mo - 3 } else { mo + 9 }) + 2) / 5 + d - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146097 + doe as i64 - 719468
+    };
+    Ok((days_from_civil as u64) * 86400 + h * 3600 + mi * 60 + sec)
 }
 
 fn project_slug(path: &str) -> String {
@@ -1174,9 +1264,344 @@ fn project_export() -> Result<String, String> {
     serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())
 }
 
+
+// ---------------------------------------------------------------------------
+// Scriptable session-control API (cmux-style): a localhost HTTP endpoint +
+// `grillme` CLI so one agent session can orchestrate others — spawn panes,
+// send prompts, read screens. Token-protected; loopback only.
+// ---------------------------------------------------------------------------
+
+const API_PORT: u16 = 4517;
+
+const CLI_SCRIPT: &str = r#"#!/bin/bash
+# grillme — control Grill Me sessions from any terminal or Claude Code agent.
+#   grillme sessions                  list sessions (id, alive, status)
+#   grillme send <id> <text...>       send a prompt + Enter into a session
+#   grillme type <id> <text...>       type text without pressing Enter
+#   grillme read <id> [lines]         read a session's recent screen text
+#   grillme new <id> <branch>         create worktree + spawn a live session
+T=$(cat "$HOME/.grillme/api-token" 2>/dev/null)
+B="http://127.0.0.1:4517"
+A="Authorization: Bearer $T"
+jsonstr() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
+case "$1" in
+  sessions) curl -sf -H "$A" "$B/sessions" ;;
+  send) id="$2"; shift 2; curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":$(jsonstr "$*
+")}" ;;
+  type) id="$2"; shift 2; curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":$(jsonstr "$*")}" ;;
+  read) curl -sf -H "$A" "$B/read?id=$2&lines=${3:-40}" ;;
+  new)  curl -sf -H "$A" -X POST "$B/new" --data "{\"id\":$(jsonstr "$2"),\"branch\":$(jsonstr "$3")}" ;;
+  *) grep '^#   ' "$0" | sed 's/^#   //' ;;
+esac
+"#;
+
+fn api_token() -> String {
+    let path = grillme_root().join("api-token");
+    if let Ok(t) = std::fs::read_to_string(&path) {
+        let t = t.trim().to_string();
+        if !t.is_empty() {
+            return t;
+        }
+    }
+    let tok: String = (0..32)
+        .map(|i| {
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos() as u64 + d.as_secs())
+                .unwrap_or(0);
+            let c = (seed.wrapping_mul(6364136223846793005).wrapping_add(i as u64 * 31)) % 36;
+            char::from_digit((c % 36) as u32, 36).unwrap_or('x')
+        })
+        .collect();
+    let _ = std::fs::write(&path, &tok);
+    tok
+}
+
+fn start_api_server(app: tauri::AppHandle) {
+    use std::io::{BufRead, BufReader, Write as _};
+    let token = api_token();
+    // install the CLI next to the hook helper
+    let bin = grillme_root().join("bin");
+    let _ = std::fs::create_dir_all(&bin);
+    let cli = bin.join("grillme");
+    if std::fs::read_to_string(&cli).map(|c| c != CLI_SCRIPT).unwrap_or(true) {
+        if std::fs::write(&cli, CLI_SCRIPT).is_ok() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    std::thread::spawn(move || {
+        let listener = match std::net::TcpListener::bind(("127.0.0.1", API_PORT)) {
+            Ok(l) => l,
+            Err(e) => return eprintln!("[api] bind failed: {e}"),
+        };
+        for stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(match stream.try_clone() {
+                Ok(s) => s,
+                Err(_) => continue,
+            });
+            let mut stream = stream;
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() {
+                continue;
+            }
+            let mut parts = line.split_whitespace();
+            let method = parts.next().unwrap_or("").to_string();
+            let path = parts.next().unwrap_or("").to_string();
+            let mut authed = false;
+            let mut content_len = 0usize;
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
+                    break;
+                }
+                let hl = h.to_lowercase();
+                if hl.starts_with("authorization:") && h.contains(&token) {
+                    authed = true;
+                }
+                if let Some(v) = hl.strip_prefix("content-length:") {
+                    content_len = v.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0u8; content_len.min(65536)];
+            if content_len > 0 {
+                use std::io::Read as _;
+                let _ = reader.read_exact(&mut body);
+            }
+            let respond = |stream: &mut std::net::TcpStream, code: u16, body: &str| {
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {code} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            };
+            if !authed {
+                respond(&mut stream, 401, "{\"error\":\"bad token\"}");
+                continue;
+            }
+            let route = path.split('?').next().unwrap_or("");
+            match (method.as_str(), route) {
+                ("GET", "/sessions") => {
+                    let out = serde_json::to_string(&pty_status()).unwrap_or_else(|_| "[]".into());
+                    respond(&mut stream, 200, &out);
+                }
+                ("GET", "/read") => {
+                    let q: std::collections::HashMap<_, _> = path
+                        .split('?')
+                        .nth(1)
+                        .unwrap_or("")
+                        .split('&')
+                        .filter_map(|kv| kv.split_once('='))
+                        .collect();
+                    let id = q.get("id").copied().unwrap_or("").to_string();
+                    let n: usize = q.get("lines").and_then(|v| v.parse().ok()).unwrap_or(40);
+                    match pty_screen(id, Some(n)) {
+                        Ok(lines) => {
+                            let out = serde_json::to_string(&lines).unwrap_or_else(|_| "[]".into());
+                            respond(&mut stream, 200, &out);
+                        }
+                        Err(e) => respond(&mut stream, 404, &format!("{{\"error\":\"{e}\"}}")),
+                    }
+                }
+                ("POST", "/send") => {
+                    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+                    let id = v["id"].as_str().unwrap_or("").to_string();
+                    let data = v["data"].as_str().unwrap_or("").to_string();
+                    match pty_write(id, data) {
+                        Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
+                        Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
+                    }
+                }
+                ("POST", "/new") => {
+                    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+                    let id = v["id"].as_str().unwrap_or("").to_string();
+                    let branch = v["branch"].as_str().unwrap_or("").to_string();
+                    if id.is_empty() || branch.is_empty() {
+                        respond(&mut stream, 400, "{\"error\":\"need id and branch\"}");
+                        continue;
+                    }
+                    let mut cfg = team_config();
+                    let base = match cfg.teammates.first() {
+                        Some(m) => m.repo_path.clone(),
+                        None => {
+                            respond(&mut stream, 400, "{\"error\":\"no base repo configured\"}");
+                            continue;
+                        }
+                    };
+                    let parent = std::path::Path::new(&base)
+                        .parent()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| ".".into());
+                    let path_new = format!("{parent}/worktrees-{id}");
+                    if let Err(e) = worktree_add(base, branch, path_new.clone()) {
+                        respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}"));
+                        continue;
+                    }
+                    cfg.teammates.push(TeamMember {
+                        id: id.clone(),
+                        name: id.clone(),
+                        repo_path: path_new.clone(),
+                        permission: Some("edit".into()),
+                        remote: None,
+                        tmux_session: None,
+                    });
+                    let _ = team_config_write(cfg);
+                    match pty_ensure_inner(app.clone(), id, path_new, false, None, None) {
+                        Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
+                        Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
+                    }
+                }
+                _ => respond(&mut stream, 404, "{\"error\":\"unknown route\"}"),
+            }
+        }
+    });
+}
+
+
+// ---------------------------------------------------------------------------
+// Self-healing + resource monitoring + session-scoped usage + review data.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn pty_kill(id: String) -> Result<(), String> {
+    let mut map = ptys().lock().unwrap();
+    if let Some(mut sess) = map.remove(&id) {
+        let _ = sess.child.kill();
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct SessionResources {
+    id: String,
+    cpu: f32,
+    #[serde(rename = "memMb")]
+    mem_mb: f32,
+}
+
+/// CPU% + RSS summed over each session's process tree.
+#[tauri::command]
+fn pty_resources() -> Vec<SessionResources> {
+    let roots: Vec<(String, u32)> = ptys()
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, s)| s.alive)
+        .filter_map(|(id, s)| s.child.process_id().map(|p| (id.clone(), p)))
+        .collect();
+    if roots.is_empty() {
+        return vec![];
+    }
+    let Ok(out) = Command::new("ps").args(["-axo", "pid=,ppid=,%cpu=,rss="]).output() else {
+        return vec![];
+    };
+    let mut procs: Vec<(u32, u32, f32, u64)> = vec![];
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() == 4 {
+            if let (Ok(pid), Ok(ppid), Ok(cpu), Ok(rss)) =
+                (f[0].parse(), f[1].parse(), f[2].parse::<f32>(), f[3].parse::<u64>())
+            {
+                procs.push((pid, ppid, cpu, rss));
+            }
+        }
+    }
+    roots
+        .into_iter()
+        .map(|(id, root)| {
+            // walk descendants
+            let mut set = vec![root];
+            loop {
+                let before = set.len();
+                for (pid, ppid, ..) in &procs {
+                    if set.contains(ppid) && !set.contains(pid) {
+                        set.push(*pid);
+                    }
+                }
+                if set.len() == before {
+                    break;
+                }
+            }
+            let (cpu, rss) = procs
+                .iter()
+                .filter(|(pid, ..)| set.contains(pid))
+                .fold((0f32, 0u64), |(c, r), (_, _, cpu, rss)| (c + cpu, r + rss));
+            SessionResources { id, cpu, mem_mb: rss as f32 / 1024.0 }
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+struct ReviewData {
+    branch: String,
+    log: String,
+    diffstat: String,
+    diff: String,
+}
+
+/// Everything the pre-merge review modal needs, in one call.
+#[tauri::command]
+fn git_review(repo_path: String) -> Result<ReviewData, String> {
+    let branch = git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
+    let log = git(&repo_path, &["log", "--oneline", "main..HEAD"]).unwrap_or_default();
+    let diffstat = git(&repo_path, &["diff", "--stat", "main"]).unwrap_or_default();
+    let mut diff = git(&repo_path, &["diff", "main"]).unwrap_or_default();
+    if diff.len() > 120_000 {
+        diff.truncate(120_000);
+        diff.push_str("\n… diff truncated at 120KB …");
+    }
+    Ok(ReviewData { branch, log, diffstat, diff })
+}
+
+
+/// Approximate current screen text: strip ANSI from the raw ring tail.
+/// TUIs repaint with cursor moves (no newlines), so the line-history
+/// buffer misses them — this reads what's actually on screen.
+fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    let mut cur = String::new();
+    let mut esc = 0u8;
+    for &b in bytes {
+        match esc {
+            1 => esc = match b { b'[' => 2, b']' => 3, _ => 0 },
+            2 => { if (0x40..=0x7e).contains(&b) { esc = 0; } }
+            3 => { if b == 0x07 { esc = 0; } }
+            _ => match b {
+                0x1b => esc = 1,
+                b'\n' | b'\r' => {
+                    if !cur.trim().is_empty() { out.push(cur.trim_end().to_string()); }
+                    cur.clear();
+                }
+                0x00..=0x1f => {}
+                _ => { if cur.len() < 4000 { cur.push(b as char); } }
+            },
+        }
+    }
+    if !cur.trim().is_empty() { out.push(cur.trim_end().to_string()); }
+    out
+}
+
+#[tauri::command]
+fn pty_screen(id: String, lines: Option<usize>) -> Result<Vec<String>, String> {
+    let map = ptys().lock().unwrap();
+    let sess = map.get(&id).ok_or("no such session")?;
+    let bytes: Vec<u8> = sess.ring.iter().copied().collect();
+    let start = bytes.len().saturating_sub(48_000);
+    let mut all = strip_ansi_stateless(&bytes[start..]);
+    let n = lines.unwrap_or(40);
+    let skip = all.len().saturating_sub(n);
+    all.drain(..skip);
+    Ok(all)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            start_api_server(app.handle().clone());
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
@@ -1212,6 +1637,10 @@ pub fn run() {
             blocklist_write,
             audit_tail,
             pty_pause,
+            pty_kill,
+            pty_screen,
+            pty_resources,
+            git_review,
             project_export,
             activity_series,
             install_hooks,

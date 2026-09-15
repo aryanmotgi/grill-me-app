@@ -149,8 +149,10 @@ interface PtyStatus {
   alive: boolean;
   quietMs: number;
   bell: boolean;
+  oscNotify: boolean;
   tail: string[];
   recording: string | null;
+  startedAt: number;
 }
 
 export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
@@ -159,7 +161,10 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
 
   const ensureAll = async () => {
     for (const m of store.getState().members) {
-      await invoke("pty_ensure", { id: ptyIdFor(m.id), cwd: m.repoPath, shell: false }).catch(() => {});
+      await invoke("pty_ensure", {
+        id: ptyIdFor(m.id), cwd: m.repoPath, shell: false,
+        remote: m.remote ?? null, tmux: m.tmuxSession ?? null,
+      }).catch(() => {});
       // exact-status hooks: sessions report notification/stop/prompt events
       await invoke("install_hooks", { repoPath: m.repoPath, memberId: m.id }).catch(() => {});
     }
@@ -171,6 +176,10 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       ensureAll();
     }
   }, 500);
+
+  // self-healing: crash restarts (bounded), stuck + rate-limit detection
+  const restarts: Record<string, number[]> = {};
+  const wasAlive: Record<string, boolean> = {};
 
   const tick = async () => {
     try {
@@ -190,9 +199,10 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         if (ptyIdFor(memberId) !== st.id) continue; // other project's session
         const hook = latest[memberId];
         const hookFresh = hook && nowS - hook.ts < 30 * 60;
+        // OSC 9/99/777 is an explicit signal from the agent — trust it first
         let status: "idle" | "working" | "needs-input" = !st.alive
           ? "idle"
-          : st.bell
+          : st.oscNotify || st.bell
             ? "needs-input"
             : st.quietMs < 4000
               ? "working"
@@ -200,13 +210,52 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         if (st.alive && hookFresh) {
           if (hook.event === "notification") status = "needs-input";
           else if (hook.event === "prompt") status = st.quietMs < 120_000 ? "working" : status;
-          else if (hook.event === "stop") status = st.bell ? "needs-input" : "idle";
+          else if (hook.event === "stop") status = st.oscNotify || st.bell ? "needs-input" : "idle";
+        }
+        const stg = store.getState();
+        const member = stg.members.find((m) => m.id === memberId);
+        const selfHealOn = stg.appSettings.selfHeal !== false;
+        const tailText = st.tail.slice(-8).join(" ").toLowerCase();
+        const rateLimited = /rate.?limit|usage limit reached|429|overloaded/.test(tailText);
+
+        // crashed: was alive, now dead -> bounded auto-restart
+        if (selfHealOn && wasAlive[st.id] && !st.alive && member) {
+          const now = Date.now();
+          restarts[st.id] = (restarts[st.id] ?? []).filter((t) => now - t < 10 * 60_000);
+          if (restarts[st.id].length < 3) {
+            restarts[st.id].push(now);
+            stg.toast(`${member.name}'s session crashed — restarting (${restarts[st.id].length}/3)`, "warn");
+            invoke("pty_ensure", {
+              id: st.id, cwd: member.repoPath, shell: false,
+              remote: member.remote ?? null, tmux: member.tmuxSession ?? null,
+            }).catch(() => {});
+          } else {
+            stg.toast(`${member.name}'s session keeps crashing — auto-restart paused, restart manually`, "warn");
+          }
+        }
+        wasAlive[st.id] = st.alive;
+
+        // stuck: no output for 20+ min while alive and not rate-limited -> flag loudly
+        const stuck = st.alive && !rateLimited && st.quietMs > 20 * 60_000;
+
+        const cur = store.getState().teammates.find((t) => t.id === memberId);
+        const recording = st.recording !== null;
+        const lastNew = st.tail[st.tail.length - 1];
+        const lastCur = cur?.terminal[cur.terminal.length - 1]?.text;
+        // skip no-op patches — every patch re-renders panes and the list
+        if (cur && cur.status === status && cur.recording === recording &&
+            cur.terminal.length === st.tail.length && lastCur === lastNew) {
+          continue;
         }
         store.getState().patchTeammate(memberId, {
-          status,
-          recording: st.recording !== null,
+          status: rateLimited ? "needs-input" : status,
+          recording,
+          health: stuck ? "stale" : cur?.health === "disconnected" ? "disconnected" : "ok",
           terminal: st.tail.map((text) => ({ kind: "out" as const, text })),
         });
+        if (rateLimited && cur?.status !== "needs-input") {
+          store.getState().toast(`${cur?.name ?? memberId}: rate limit hit — session waits and resumes on its own`, "warn");
+        }
       }
     } catch (e) {
       console.error("[pty feed]", e);
@@ -359,6 +408,8 @@ export interface CiRun {
   headBranch: string;
 }
 
+export interface SessionRes { id: string; cpu: number; memMb: number }
+
 export async function startUsageFeed(
   store: UseBoundStore<StoreApi<FeedStore & {
     patchTeammate: (id: string, patch: Partial<Teammate>) => void;
@@ -371,9 +422,20 @@ export async function startUsageFeed(
     await new Promise((r) => setTimeout(r, 400));
   }
   const tick = async () => {
+    // per-session resource monitor
+    try {
+      const res = await invoke<SessionRes[]>("pty_resources");
+      (store.getState() as unknown as { setResources: (r: SessionRes[]) => void }).setResources(res);
+    } catch { /* ps unavailable */ }
+    // session start times scope token attribution
+    const ptys = await invoke<PtyStatus[]>("pty_status").catch(() => [] as PtyStatus[]);
     for (const m of store.getState().members) {
       try {
-        const u = await invoke<UsageStats>("usage_stats", { repoPath: m.repoPath });
+        const mine = ptys.find((p) => p.id === ptyIdFor(m.id));
+        const u = await invoke<UsageStats>("usage_stats", {
+          repoPath: m.repoPath,
+          since: mine?.startedAt ?? null,
+        });
         if (u.ok) {
           const mate = store.getState().teammates.find((t) => t.id === m.id);
           store.getState().patchTeammate(m.id, {
