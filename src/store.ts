@@ -15,7 +15,7 @@ import type {
   Teammate,
   Toast,
 } from "./types";
-import { startGitFeed } from "./data/sources/feeds";
+import { startGitFeed, startWatchFeed, type WatchState } from "./data/sources/feeds";
 import type { TeamMemberConfig } from "./data/sources/git";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
@@ -62,6 +62,10 @@ interface AppState {
   applyTeamConfig: (members: TeamMemberConfig[]) => void;
   patchTeammate: (id: string, patch: Partial<Teammate>) => void;
   setActivity: (events: ActivityEvent[]) => void;
+  applyWatchState: (state: WatchState) => void;
+
+  /** Live lock claims from the Rust file watcher (survives page reloads). */
+  liveLocks: WatchState["locks"];
 }
 
 let toastSeq = 0;
@@ -193,7 +197,35 @@ export const useApp = create<AppState>((set, get) => ({
     })),
 
   setActivity: (activity) => set({ activity }),
+
+  liveLocks: [],
+
+  applyWatchState: (ws) =>
+    set((s) => {
+      const now = Math.floor(Date.now() / 1000);
+      const latest: Record<string, { file: string; ts: number }> = {};
+      for (const l of ws.locks) {
+        if (!latest[l.owner] || l.ts > latest[l.owner].ts) {
+          latest[l.owner] = { file: l.file, ts: l.ts };
+        }
+      }
+      return {
+        liveLocks: ws.locks,
+        teammates: s.teammates.map((t) => {
+          const seen = ws.lastSeen[t.id];
+          if (seen === undefined || t.health === "disconnected") return t;
+          const min = Math.floor(Math.max(0, now - seen) / 60);
+          return {
+            ...t,
+            currentFile: latest[t.id]?.file ?? t.currentFile,
+            lastActiveMin: min,
+            health: min >= 15 ? "stale" : "ok",
+          };
+        }),
+      };
+    }),
 }));
+
 
 /** Base for config members with no fake seed — unwired fields stay visibly empty. */
 function emptyTeammate(id: string): Teammate {
@@ -228,13 +260,22 @@ function emptyTeammate(id: string): Teammate {
 // Phase 2: live feeds replace fake data when running inside Tauri.
 // In plain browser dev the fake seed stays so the UI is still browsable.
 startGitFeed(useApp);
+startWatchFeed(useApp);
 
 // ---------------------------------------------------------------------------
 // Derived helpers — pure functions over store state
 // ---------------------------------------------------------------------------
 
-/** Files currently claimed: every file on an in-progress task, keyed to owner. */
+/**
+ * Files currently claimed. When the file watcher is live (Tauri), claims are
+ * real recently-touched files per teammate; in browser dev it falls back to
+ * the fake task-derived locks. Signature unchanged — components untouched.
+ */
 export function fileLocks(tasks: Task[]): { file: string; owner: string }[] {
+  const live = useApp.getState().liveLocks;
+  if (live.length > 0) {
+    return live.map((l) => ({ owner: l.owner, file: l.file }));
+  }
   return tasks
     .filter((t) => t.status === "in-progress")
     .flatMap((t) => t.files.map((file) => ({ file, owner: t.owner })));
