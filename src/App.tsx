@@ -10,12 +10,34 @@ import { QuickSwitcher } from "./components/QuickSwitcher";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { ConflictBanner, Toasts } from "./components/Chrome";
 import { SettingsModal } from "./components/Settings";
+import { ProjectPicker } from "./components/ProjectPicker";
+
+function DragHandle({ onDrag, onDone }: { onDrag: (dx: number) => void; onDone: () => void }) {
+  return (
+    <div
+      className="w-[5px] flex-none cursor-col-resize bg-line/40 hover:bg-accent/60 transition-colors"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        let last = e.clientX;
+        const move = (ev: MouseEvent) => { onDrag(ev.clientX - last); last = ev.clientX; };
+        const up = () => {
+          window.removeEventListener("mousemove", move);
+          window.removeEventListener("mouseup", up);
+          onDone();
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+      }}
+    />
+  );
+}
 
 export default function App() {
   const {
     teammates, activeId, splitId, focusMode, demoMode, themeName,
-    setSwitcherOpen, toggleFocus, quickCommit, setRailTab,
+    setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen,
     dense, mergePilotOpen, setMergePilotOpen, members, setActive,
+    panelSizes, setPanelSize,
   } = useApp();
 
   useEffect(() => {
@@ -25,13 +47,17 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "p") {
+        e.preventDefault();
+        setPickerOpen(true);
+      }
       if (mod && e.key === "k") {
         e.preventDefault();
         setSwitcherOpen(!useApp.getState().switcherOpen);
       }
       if (mod && e.key === "s") {
         e.preventDefault();
-        quickCommit(useApp.getState().activeId);
+        shipSession(useApp.getState().activeId);
       }
       if (mod && e.key === ".") {
         e.preventDefault();
@@ -45,7 +71,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setSwitcherOpen, toggleFocus, quickCommit, setRailTab]);
+  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen]);
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
@@ -63,12 +89,26 @@ export default function App() {
           ))}
         </div>
         {focusMode ? null : <SessionList />}
+        {focusMode ? null : (
+          <DragHandle onDrag={(dx) => setPanelSize("left", Math.min(480, Math.max(180, panelSizes.left + dx)))}
+            onDone={() => setPanelSize("left", panelSizes.left, true)} />
+        )}
         <main className="flex-1 min-w-0 flex flex-col">
           <GlobalSearch />
-          <div className="flex-1 min-h-0 flex divide-x divide-line">
-            <SessionPane mate={active} />
+          <div className="flex-1 min-h-0 flex">
+            <div className="min-w-0 flex" style={{ flexBasis: split && !focusMode ? `${panelSizes.split * 100}%` : "100%" }}>
+              <SessionPane mate={active} />
+            </div>
             {split && split.id !== active.id && !focusMode ? (
-              <SessionPane mate={split} />
+              <>
+                <DragHandle onDrag={(dx) => {
+                  const el = document.querySelector("main");
+                  if (el) setPanelSize("split", Math.min(0.8, Math.max(0.2, panelSizes.split + dx / el.clientWidth)));
+                }} onDone={() => setPanelSize("split", panelSizes.split, true)} />
+                <div className="min-w-0 flex flex-1">
+                  <SessionPane mate={split} />
+                </div>
+              </>
             ) : null}
           </div>
           {mergePilotOpen && members[0] ? (
@@ -85,10 +125,15 @@ export default function App() {
             </div>
           ) : null}
         </main>
+        {focusMode ? null : (
+          <DragHandle onDrag={(dx) => setPanelSize("right", Math.min(560, Math.max(240, panelSizes.right - dx)))}
+            onDone={() => setPanelSize("right", panelSizes.right, true)} />
+        )}
         {focusMode ? null : <RightRail />}
       </div>
       <QuickSwitcher />
       <SettingsModal />
+      <ProjectPicker />
       <Toasts />
     </div>
   );

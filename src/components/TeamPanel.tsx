@@ -166,7 +166,7 @@ function SponsorList() {
   );
 }
 
-/** Live preview of the team's running app — URL persisted in settings.json. */
+/** Live preview of the PROJECT UNDER DEVELOPMENT (its dev server), not Grill Me — URL persisted in settings.json. */
 export function PreviewPane() {
   const [url, setUrl] = useState("");
   const [draft, setDraft] = useState("");

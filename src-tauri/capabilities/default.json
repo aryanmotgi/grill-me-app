@@ -42,6 +42,9 @@
           "args": true
         }
       ]
-    }
+    },
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-focus",
+    "dialog:default"
   ]
 }

@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
-import { useApp } from "../store";
+import { ptyIdFor, useApp } from "../store";
+
+async function shipRaw(memberId: string, data: string) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  invoke("pty_write", { id: ptyIdFor(memberId), data }).catch(() => {});
+}
 import type { Teammate } from "../types";
 import { XtermPane } from "./XtermPane";
 import { useState as usePrState } from "react";
@@ -41,7 +46,7 @@ function PrDraft({ repoPath }: { repoPath?: string }) {
 type PaneTab = "terminal" | "shell" | "changes";
 
 export function SessionPane({ mate }: { mate: Teammate }) {
-  const { toggleRecording, revertChange, quickCommit, members, themeName } = useApp();
+  const { toggleRecording, revertChange, shipSession, members, themeName } = useApp();
   const [tab, setTab] = useState<PaneTab>("terminal");
   const member = members.find((m) => m.id === mate.id);
 
@@ -52,6 +57,12 @@ export function SessionPane({ mate }: { mate: Teammate }) {
         <span className="font-display font-semibold text-[12px]">{mate.name}</span>
         <span className="font-mono text-faint text-[10px]"><Icon name="branch" size={11} /> {mate.branch}</span>
         {mate.recording ? <span className="tag danger"><Icon name="record" size={9} /> rec</span> : null}
+        {mate.terminal.some((l) => l.text.includes("need authentication")) ? (
+          <button className="tag warn cursor-pointer" title="MCP servers need auth — click to run /mcp in this session"
+            onClick={() => shipRaw(mate.id, "/mcp\n")}>
+            <Icon name="warn" size={9} /> mcp auth
+          </button>
+        ) : null}
         <span className="flex-1" />
         <div className="flex demo-hide">
           <button className={`btn ${tab === "terminal" ? "active" : ""}`} onClick={() => setTab("terminal")}>
@@ -78,7 +89,7 @@ export function SessionPane({ mate }: { mate: Teammate }) {
           <div className="flex-1 min-h-0">
             <XtermPane
               key={tab}
-              id={tab === "shell" ? `${mate.id}:shell` : mate.id}
+              id={tab === "shell" ? `${ptyIdFor(mate.id)}:shell` : ptyIdFor(mate.id)}
               cwd={member.repoPath}
               themeName={themeName}
               shell={tab === "shell"}
@@ -105,8 +116,9 @@ export function SessionPane({ mate }: { mate: Teammate }) {
             ))
           )}
           <div className="flex gap-2 mt-3">
-            <button className="btn primary" onClick={() => quickCommit(mate.id)}>
-              commit + push all
+            <button className="btn primary" title="Runs the team workflow: tests, review, push — inside this session"
+              onClick={() => shipSession(mate.id)}>
+              /ship
             </button>
             <PrDraft repoPath={member?.repoPath} />
           </div>

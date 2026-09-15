@@ -112,8 +112,9 @@ function SessionRow({ mate }: { mate: Teammate }) {
 
 export function SessionList() {
   const teammates = useApp((s) => s.teammates);
+  const width = useApp((s) => s.panelSizes.left);
   return (
-    <aside className="w-[276px] flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
+    <aside style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
       <div className="px-3 py-2 flex items-center justify-between">
         <span className="panel-label">sessions</span>
         <span className="text-faint text-[10px]">{teammates.length} on vm</span>

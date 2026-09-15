@@ -24,8 +24,7 @@ pub struct TeamConfig {
 }
 
 fn config_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".grillme").join("config.json")
+    grillme_dir().join("config.json")
 }
 
 fn default_config() -> TeamConfig {
@@ -401,7 +400,7 @@ fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String, shell: Option<bool
     if shell.unwrap_or(false) {
         cmd.args(["-l"]);
     } else {
-        cmd.args(["-lc", "exec claude"]);
+        cmd.args(["-lc", "exec claude --dangerously-skip-permissions"]);
     }
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
@@ -564,21 +563,66 @@ fn pty_record(id: String, on: bool) -> Result<Option<String>, String> {
 // Writes are atomic (tmp + rename). Names are allow-listed.
 // ---------------------------------------------------------------------------
 
-fn grillme_dir() -> PathBuf {
+
+// ---------------------------------------------------------------------------
+// Multi-project workspaces. Each project gets its own state dir under
+// ~/.grillme/projects/<id>; the legacy root files serve project "default".
+// settings.json stays global (UI preferences follow the user, not a project).
+// ---------------------------------------------------------------------------
+
+static ACTIVE_PROJECT: Mutex<String> = Mutex::new(String::new());
+
+fn grillme_root() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let dir = PathBuf::from(home).join(".grillme");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
+#[tauri::command]
+fn projects_list() -> String {
+    std::fs::read_to_string(grillme_root().join("projects.json")).unwrap_or_else(|_| "[]".into())
+}
+
+#[tauri::command]
+fn projects_write(content: String) -> Result<(), String> {
+    std::fs::write(grillme_root().join("projects.json"), content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_active_project(id: String) -> Result<(), String> {
+    let dir = grillme_root().join("projects").join(&id);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    *ACTIVE_PROJECT.lock().unwrap() = id;
+    Ok(())
+}
+
+fn grillme_dir() -> PathBuf {
+    let active = ACTIVE_PROJECT.lock().unwrap().clone();
+    if active.is_empty() || active == "default" {
+        return grillme_root();
+    }
+    let dir = grillme_root().join("projects").join(active);
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json"];
+
+fn shared_path(name: &str) -> PathBuf {
+    if name == "settings.json" {
+        grillme_root().join(name)
+    } else {
+        grillme_dir().join(name)
+    }
+}
 
 #[tauri::command]
 fn shared_read(name: String) -> Result<String, String> {
     if !SHARED_FILES.contains(&name.as_str()) {
         return Err("unknown shared file".into());
     }
-    Ok(std::fs::read_to_string(grillme_dir().join(&name)).unwrap_or_default())
+    Ok(std::fs::read_to_string(shared_path(&name)).unwrap_or_default())
 }
 
 #[tauri::command]
@@ -586,10 +630,10 @@ fn shared_write(name: String, content: String) -> Result<(), String> {
     if !SHARED_FILES.contains(&name.as_str()) {
         return Err("unknown shared file".into());
     }
-    let dir = grillme_dir();
-    let tmp = dir.join(format!("{name}.tmp-write"));
+    let target = shared_path(&name);
+    let tmp = target.with_extension("tmp-write");
     std::fs::write(&tmp, &content).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, dir.join(&name)).map_err(|e| e.to_string())
+    std::fs::rename(&tmp, &target).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -793,9 +837,10 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({}));
 
+    let events = grillme_dir().join("events.jsonl").to_string_lossy().into_owned();
     let hook_cmd = |event: &str| {
         format!(
-            "sh -c 'IN=$(cat); printf \"%s\\n\" \"{{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"{member_id}\\\",\\\"event\\\":\\\"{event}\\\"}}\" >> ~/.grillme/events.jsonl'"
+            "sh -c 'IN=$(cat); printf \"%s\\n\" \"{{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"{member_id}\\\",\\\"event\\\":\\\"{event}\\\"}}\" >> {events}'"
         )
     };
     let mk = |event: &str| {
@@ -810,7 +855,13 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     obj.insert("Notification".into(), mk("notification"));
     obj.insert("Stop".into(), mk("stop"));
     obj.insert("UserPromptSubmit".into(), mk("prompt"));
-    std::fs::write(&path, serde_json::to_string_pretty(&root).unwrap()).map_err(|e| e.to_string())?;
+    let next = serde_json::to_string_pretty(&root).unwrap();
+    // idempotent: rewriting identical content still bumps mtime and can
+    // trigger watcher/vite reload storms — skip when unchanged
+    if std::fs::read_to_string(&path).map(|cur| cur == next).unwrap_or(false) {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+    std::fs::write(&path, next).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -854,6 +905,113 @@ fn pr_draft(repo_path: String) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+
+#[derive(Serialize, Default)]
+struct ProjectCardStats {
+    #[serde(rename = "tasksInProgress")]
+    tasks_in_progress: u32,
+    unanswered: u32,
+    #[serde(rename = "lastCommitAgeMin")]
+    last_commit_age_min: Option<u64>,
+    #[serde(rename = "sessionsAlive")]
+    sessions_alive: u32,
+    #[serde(rename = "needsInput")]
+    needs_input: bool,
+}
+
+/// Card stats for the launch screen — read without opening the project.
+#[tauri::command]
+fn project_card_stats(id: String, path: String) -> ProjectCardStats {
+    let mut st = ProjectCardStats::default();
+    let dir = if id == "default" {
+        grillme_root()
+    } else {
+        grillme_root().join("projects").join(&id)
+    };
+    if let Ok(raw) = std::fs::read_to_string(dir.join("tasks.json")) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(arr) = v.as_array() {
+                st.tasks_in_progress = arr
+                    .iter()
+                    .filter(|t| t["status"] == "in-progress")
+                    .count() as u32;
+            }
+        }
+    }
+    if let Ok(raw) = std::fs::read_to_string(dir.join("messages.json")) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(arr) = v.as_array() {
+                st.unanswered = arr
+                    .iter()
+                    .filter(|m| m["answered"] == false)
+                    .count() as u32;
+            }
+        }
+    }
+    if !path.is_empty() {
+        if let Ok(out) = git(&path, &["log", "-1", "--pretty=format:%ct"]) {
+            if let Ok(ts) = out.trim().parse::<u64>() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                st.last_commit_age_min = Some(now.saturating_sub(ts) / 60);
+            }
+        }
+    }
+    let prefix = format!("{id}:");
+    for (pid, sess) in ptys().lock().unwrap().iter() {
+        let matches = if id == "default" {
+            !pid.contains(':') || pid.starts_with("default:")
+        } else {
+            pid.starts_with(&prefix)
+        };
+        if matches && sess.alive {
+            st.sessions_alive += 1;
+            if sess.bell {
+                st.needs_input = true;
+            }
+        }
+    }
+    st
+}
+
+/// Git repos on disk that aren't registered projects yet.
+#[tauri::command]
+fn discover_repos(known: Vec<String>) -> Vec<String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let roots = ["Terminal", "worktrees", "Projects", "Developer", "code", "dev"];
+    let mut found = vec![];
+    for root in roots {
+        let base = PathBuf::from(&home).join(root);
+        let Ok(entries) = std::fs::read_dir(&base) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.join(".git").exists() {
+                let ps = p.to_string_lossy().into_owned();
+                if !known.contains(&ps) {
+                    found.push(ps);
+                }
+            }
+        }
+    }
+    found.sort();
+    found.truncate(8);
+    found
+}
+
+#[tauri::command]
+fn git_clone(url: String, dest: String) -> Result<(), String> {
+    let out = Command::new("git")
+        .args(["clone", "--depth", "50", &url, &dest])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -861,6 +1019,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             team_config,
             git_state,
@@ -881,6 +1040,12 @@ pub fn run() {
             usage_stats,
             ci_state,
             team_config_write,
+            projects_list,
+            projects_write,
+            set_active_project,
+            project_card_stats,
+            discover_repos,
+            git_clone,
             activity_series,
             install_hooks,
             events_tail,
