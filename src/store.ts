@@ -348,7 +348,17 @@ export const useApp = create<AppState>((set, get) => ({
     set(() => ({
       ...(p.tasks ? { tasks: p.tasks } : {}),
       ...(p.messages ? { messages: p.messages } : {}),
-      ...(p.mergeQueue ? { mergeQueue: p.mergeQueue } : {}),
+      ...(p.mergeQueue
+        ? {
+            mergeQueue: (() => {
+              const members = get().members;
+              if (members.length === 0) return p.mergeQueue!;
+              const valid = p.mergeQueue!.filter((id) => members.some((m) => m.id === id));
+              const missing = members.filter((m) => !valid.includes(m.id)).map((m) => m.id);
+              return [...valid, ...missing];
+            })(),
+          }
+        : {}),
       ...(p.sponsorChecklist ? { sponsorChecklist: p.sponsorChecklist } : {}),
       ...(p.standupLines ? { standupLines: p.standupLines } : {}),
     })),
