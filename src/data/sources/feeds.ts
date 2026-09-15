@@ -21,6 +21,8 @@ interface FeedStore {
   teammates: Teammate[];
   members: TeamMemberConfig[];
   appSettings: Record<string, unknown>;
+  activeId: string;
+  view: "home" | "session";
   toast: (text: string, kind?: "info" | "warn") => void;
   tasks: import("../../types").Task[];
   sponsorChecklist: { sponsor: string; requirement: string; done: boolean }[];
@@ -53,7 +55,18 @@ export function startGitFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         })),
       );
       for (const { member, state } of states) {
-        store.getState().patchTeammate(member.id, toTeammatePatch(state));
+        const patch = toTeammatePatch(state);
+        const cur = store.getState().teammates.find((t) => t.id === member.id);
+        if (
+          cur &&
+          cur.branch === (patch.branch ?? cur.branch) &&
+          cur.changes.length === (patch.changes?.length ?? cur.changes.length) &&
+          cur.setup === (patch.setup ?? cur.setup) &&
+          cur.health === (patch.health ?? cur.health)
+        ) {
+          continue;
+        }
+        store.getState().patchTeammate(member.id, patch);
       }
       store.getState().setActivity(toActivity(states));
     } catch (e) {
@@ -153,6 +166,7 @@ interface PtyStatus {
   tail: string[];
   recording: string | null;
   startedAt: number;
+  paused: boolean;
 }
 
 export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
@@ -186,6 +200,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   // self-healing: crash restarts (bounded), stuck + rate-limit detection
   const restarts: Record<string, number[]> = {};
   const wasAlive: Record<string, boolean> = {};
+  const autoPaused = new Set<string>();
 
   const tick = async () => {
     try {
@@ -242,7 +257,24 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         wasAlive[st.id] = st.alive;
 
         // stuck: no output for 20+ min while alive and not rate-limited -> flag loudly
-        const stuck = st.alive && !rateLimited && st.quietMs > 20 * 60_000;
+        const stuck = st.alive && !rateLimited && st.quietMs > 20 * 60_000 && !st.paused;
+
+        // auto-pause: idle claude TUIs burn 10-25% CPU each just repainting.
+        // SIGSTOP after quiet threshold; typing/viewing resumes instantly.
+        const idleMin = Number(stg.appSettings.autoPauseIdleMin ?? 10);
+        const isViewed = stg.activeId === memberId && stg.view === "session";
+        if (
+          stg.appSettings.autoPauseIdle !== false &&
+          st.alive && !st.paused && !rateLimited && !isViewed &&
+          st.quietMs > idleMin * 60_000
+        ) {
+          autoPaused.add(st.id);
+          invoke("pty_pause", { id: st.id, pause: true }).catch(() => {});
+        }
+        if (st.paused && isViewed) {
+          autoPaused.delete(st.id);
+          invoke("pty_pause", { id: st.id, pause: false }).catch(() => {});
+        }
 
         const cur = store.getState().teammates.find((t) => t.id === memberId);
         const recording = st.recording !== null;
@@ -254,7 +286,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           continue;
         }
         store.getState().patchTeammate(memberId, {
-          status: rateLimited ? "needs-input" : status,
+          status: st.paused ? "idle" : rateLimited ? "needs-input" : status,
+          paused: st.paused,
           recording,
           health: stuck ? "stale" : cur?.health === "disconnected" ? "disconnected" : "ok",
           terminal: st.tail.map((text) => ({ kind: "out" as const, text })),
@@ -297,9 +330,13 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
     if (canNotify) notif.sendNotification({ title, body });
   };
 
+  const rawCache: Record<string, string> = {};
   const read = async (name: string) => {
     const raw = await invoke<string>("shared_read", { name });
-    return raw.trim() ? JSON.parse(raw) : null;
+    if (!raw.trim()) return null;
+    if (rawCache[name] === raw) return "__unchanged__" as const;
+    rawCache[name] = raw;
+    return JSON.parse(raw);
   };
   const write = (name: string, data: unknown) =>
     invoke("shared_write", { name, content: JSON.stringify(data, null, 2) });
@@ -348,14 +385,15 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         invoke<string[]>("standup_tail"),
       ]);
       store.getState().setShared({
-        tasks: tasks ?? undefined,
-        messages: messages ?? undefined,
-        mergeQueue: team?.mergeQueue,
-        sponsorChecklist: team?.sponsor,
+        tasks: tasks === "__unchanged__" ? undefined : tasks ?? undefined,
+        messages: messages === "__unchanged__" ? undefined : messages ?? undefined,
+        mergeQueue: team === "__unchanged__" ? undefined : team?.mergeQueue,
+        sponsorChecklist: team === "__unchanged__" ? undefined : team?.sponsor,
         standupLines,
       });
 
-      for (const m of (messages ?? []) as import("../../types").Message[]) {
+      const msgList = messages === "__unchanged__" ? [] : ((messages ?? []) as import("../../types").Message[]);
+      for (const m of msgList) {
         if (seenMsgs.has(m.id)) continue;
         seenMsgs.add(m.id);
         if (!first && m.from !== me && (m.to === me || m.to === "all")) {

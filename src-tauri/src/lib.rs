@@ -341,6 +341,8 @@ struct PtySession {
     recording_path: Option<String>,
     /// epoch seconds when this pty was spawned — scopes usage attribution
     started_at: u64,
+    /// SIGSTOPped (manual or auto-idle) — resumes on view/type
+    paused: bool,
 }
 
 static PTYS: OnceLock<Mutex<HashMap<String, PtySession>>> = OnceLock::new();
@@ -486,6 +488,7 @@ fn pty_ensure_inner(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
+            paused: false,
         },
     );
 
@@ -534,6 +537,13 @@ fn pty_ensure_inner(
 fn pty_write(id: String, data: String) -> Result<(), String> {
     let mut map = ptys().lock().unwrap();
     let s = map.get_mut(&id).ok_or("no session")?;
+    if s.paused {
+        if let Some(pid) = s.child.process_id() {
+            let _ = Command::new("kill").args(["-CONT", &format!("-{pid}")]).output();
+            let _ = Command::new("kill").args(["-CONT", &pid.to_string()]).output();
+        }
+        s.paused = false;
+    }
     s.bell = false;
     s.osc_notify = false;
     s.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())
@@ -574,6 +584,7 @@ struct PtyStatus {
     recording: Option<String>,
     #[serde(rename = "startedAt")]
     started_at: u64,
+    paused: bool,
 }
 
 #[tauri::command]
@@ -604,6 +615,7 @@ fn pty_status() -> Vec<PtyStatus> {
                 },
                 recording: s.recording_path.clone(),
                 started_at: s.started_at,
+                paused: s.paused,
             }
         })
         .collect()
@@ -840,32 +852,84 @@ fn newest_transcript(repo_path: &str) -> Option<PathBuf> {
     None
 }
 
+#[derive(Default, Clone)]
+struct UsageCacheEntry {
+    offset: u64,
+    stats: UsageStatsInner,
+}
+
+#[derive(Default, Clone)]
+struct UsageStatsInner {
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
+    turns: u64,
+}
+
+static USAGE_CACHE: OnceLock<Mutex<HashMap<String, UsageCacheEntry>>> = OnceLock::new();
+
 #[tauri::command]
-fn usage_stats(repo_path: String) -> UsageStats {
+fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
+    use std::io::{Read as _, Seek as _};
     let Some(path) = newest_transcript(&repo_path) else {
         return UsageStats::default();
     };
-    let Ok(raw) = std::fs::read_to_string(&path) else {
+    let key = format!("{}|{}", path.to_string_lossy(), since.unwrap_or(0));
+    let cache = USAGE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut entry = cache.lock().unwrap().get(&key).cloned().unwrap_or_default();
+    let Ok(mut f) = std::fs::File::open(&path) else {
         return UsageStats::default();
     };
-    let mut st = UsageStats { ok: true, ..Default::default() };
-    for line in raw.lines() {
-        if !line.contains("\"usage\"") {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
-        let msg = &v["message"];
-        if let Some(u) = msg.get("usage") {
-            st.turns += 1;
-            st.input_tokens += u["input_tokens"].as_u64().unwrap_or(0);
-            st.output_tokens += u["output_tokens"].as_u64().unwrap_or(0);
-            st.cache_read_tokens += u["cache_read_input_tokens"].as_u64().unwrap_or(0);
-        }
-        if let Some(m) = msg.get("model").and_then(|m| m.as_str()) {
-            st.model = m.to_string();
+    let flen = f.metadata().map(|m| m.len()).unwrap_or(0);
+    if flen < entry.offset {
+        entry = UsageCacheEntry::default(); // rotated/truncated
+    }
+    // parse only bytes appended since last call — transcripts grow to tens of MB
+    let _ = f.seek(std::io::SeekFrom::Start(entry.offset));
+    let mut raw = String::new();
+    let _ = f.take(8_000_000).read_to_string(&mut raw);
+    let consumed = raw.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let complete = &raw[..consumed];
+    entry.offset += consumed as u64;
+    {
+        let st = &mut entry.stats;
+        for line in complete.lines() {
+            if !line.contains("\"usage\"") {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            if let Some(cut) = since {
+                if let Some(ts) = v["timestamp"].as_str() {
+                    if let Ok(t) = chrono_lite_parse(ts) {
+                        if t < cut {
+                            continue;
+                        }
+                    }
+                }
+            }
+            let msg = &v["message"];
+            if let Some(u) = msg.get("usage") {
+                st.turns += 1;
+                st.input_tokens += u["input_tokens"].as_u64().unwrap_or(0);
+                st.output_tokens += u["output_tokens"].as_u64().unwrap_or(0);
+                st.cache_read_tokens += u["cache_read_input_tokens"].as_u64().unwrap_or(0);
+            }
+            if let Some(m) = msg.get("model").and_then(|m| m.as_str()) {
+                st.model = m.to_string();
+            }
         }
     }
-    st
+    cache.lock().unwrap().insert(key, entry.clone());
+    let s2 = entry.stats;
+    UsageStats {
+        ok: true,
+        model: s2.model,
+        input_tokens: s2.input_tokens,
+        output_tokens: s2.output_tokens,
+        cache_read_tokens: s2.cache_read_tokens,
+        turns: s2.turns,
+    }
 }
 
 #[tauri::command]
@@ -1234,8 +1298,9 @@ fn audit_tail(member: Option<String>) -> Vec<String> {
 // full in-memory state; SIGCONT resumes exactly where it left off).
 #[tauri::command]
 fn pty_pause(id: String, pause: bool) -> Result<(), String> {
-    let map = ptys().lock().unwrap();
-    let sess = map.get(&id).ok_or("no session")?;
+    let mut map = ptys().lock().unwrap();
+    let sess = map.get_mut(&id).ok_or("no session")?;
+    sess.paused = pause;
     let pid = sess.child.process_id().ok_or("no pid")?;
     let sig = if pause { "-STOP" } else { "-CONT" };
     // negative pid = whole process group (claude + its children)
