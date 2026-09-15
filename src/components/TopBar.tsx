@@ -24,6 +24,10 @@ export function TopBar() {
   } = useApp();
 
   const attention = attentionCount(teammates);
+  const waiting = useApp((s) => s.messages.filter(
+    (m) => !m.answered && (m.kind === "blocking" || m.kind === "question"),
+  ));
+  const blockingCount = waiting.filter((m) => m.kind === "blocking").length;
   const working = teammates.filter((t) => t.status === "working").length;
   const mergerName = teammates.find((t) => t.id === mergeQueue[0])?.name;
 
@@ -59,6 +63,17 @@ export function TopBar() {
       </button>
 
       <div className="flex-1" />
+
+      {/* team-wide waiting-on-reply */}
+      {waiting.length > 0 ? (
+        <button
+          className={`tag ${blockingCount > 0 ? "danger" : "warn"} demo-hide cursor-pointer`}
+          title={waiting.map((m) => `${m.from} → ${m.to}: ${m.text.slice(0, 50)}`).join("\n")}
+          onClick={() => useApp.getState().setRailTab("inbox")}
+        >
+          {blockingCount > 0 ? `${blockingCount} blocked · ` : ""}{waiting.length} waiting on reply
+        </button>
+      ) : null}
 
       {/* notification badge */}
       <button

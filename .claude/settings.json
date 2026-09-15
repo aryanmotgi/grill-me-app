@@ -18,7 +18,7 @@
             "type": "command"
           }
         ],
-        "matcher": "Bash"
+        "matcher": "Bash|Read|Edit|Write"
       }
     ],
     "PreToolUse": [

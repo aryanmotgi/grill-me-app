@@ -59,6 +59,8 @@ export interface Task {
   startedAt?: number;
 }
 
+export type MessageKind = "question" | "fyi" | "blocking" | "proposal";
+
 export interface Message {
   id: string;
   from: string;
@@ -66,6 +68,14 @@ export interface Message {
   text: string;
   answered: boolean;
   ts: string;
+  /** Urgency/type. Legacy messages without one render as plain notes. */
+  kind?: MessageKind;
+  /** Auto-attached sender context at send time. */
+  context?: { task?: string; file?: string; branch?: string };
+  /** Set on replies: id of the root message — groups into a thread. */
+  threadId?: string;
+  /** One-click answer on proposals. */
+  response?: "yes" | "no" | "unsure";
 }
 
 export interface ActivityEvent {
