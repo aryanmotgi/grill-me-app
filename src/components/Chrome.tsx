@@ -1,4 +1,5 @@
 import { fileConflicts, useApp } from "../store";
+import { Icon } from "./Icon";
 
 /** Banner shown only when two people's claimed files actually overlap. */
 export function ConflictBanner() {
@@ -16,13 +17,13 @@ export function ConflictBanner() {
       title="Jump to these files in the claimed list"
       onClick={() => flashFiles(conflicts.map((c) => c.file))}
     >
-      <span className="font-display font-bold">⚠ FILE CONFLICT</span>
+      <span className="font-display font-bold flex items-center gap-1.5"><Icon name="warn" size={12} /> FILE CONFLICT</span>
       {conflicts.map((c) => (
         <span key={c.file}>
           <span className="font-mono">{c.file}</span> — claimed by {c.owners.map(name).join(" and ")}
         </span>
       ))}
-      <span className="ml-auto text-warn/70">show ↓</span>
+      <span className="ml-auto text-warn/70">show below</span>
     </button>
   );
 }

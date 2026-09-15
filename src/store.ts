@@ -15,7 +15,7 @@ import type {
   Teammate,
   Toast,
 } from "./types";
-import { startGitFeed, startWatchFeed, type WatchState } from "./data/sources/feeds";
+import { startGitFeed, startWatchFeed, startPtyFeed, type WatchState } from "./data/sources/feeds";
 import type { TeamMemberConfig } from "./data/sources/git";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
@@ -67,6 +67,9 @@ interface AppState {
   /** Live lock claims from the Rust file watcher (survives page reloads). */
   liveLocks: WatchState["locks"];
 
+  /** Team config as loaded from ~/.grillme/config.json. */
+  members: TeamMemberConfig[];
+
   /** Files to flash in the claimed list after a conflict-banner click. */
   highlightFiles: string[];
   flashFiles: (files: string[]) => void;
@@ -109,18 +112,21 @@ export const useApp = create<AppState>((set, get) => ({
       ),
     })),
 
-  toggleRecording: (id) => {
+  toggleRecording: async (id) => {
     const t = get().teammates.find((t) => t.id === id);
-    set((s) => ({
-      teammates: s.teammates.map((t) =>
-        t.id === id ? { ...t, recording: !t.recording } : t,
-      ),
-    }));
-    get().toast(
-      t?.recording
-        ? `Recording saved → sessions/${id}-${Date.now() % 100000}.log`
-        : `Recording ${id}'s session output`,
-    );
+    const on = !t?.recording;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const path = await invoke<string | null>("pty_record", { id, on });
+      set((s) => ({
+        teammates: s.teammates.map((t) =>
+          t.id === id ? { ...t, recording: on } : t,
+        ),
+      }));
+      get().toast(on ? `Recording → ${path}` : "Recording stopped, file saved");
+    } catch (e) {
+      get().toast(`Recording failed: ${e}`, "warn");
+    }
   },
 
   toggleAnswered: (id) =>
@@ -186,6 +192,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   applyTeamConfig: (members) =>
     set((s) => ({
+      members,
       teammates: members.map((m) => {
         const seed = s.teammates.find((t) => t.id === m.id);
         return { ...(seed ?? emptyTeammate(m.id)), id: m.id, name: m.name };
@@ -203,6 +210,7 @@ export const useApp = create<AppState>((set, get) => ({
   setActivity: (activity) => set({ activity }),
 
   liveLocks: [],
+  members: [],
 
   highlightFiles: [],
   flashFiles: (files) => {
@@ -271,6 +279,7 @@ function emptyTeammate(id: string): Teammate {
 // In plain browser dev the fake seed stays so the UI is still browsable.
 startGitFeed(useApp);
 startWatchFeed(useApp);
+startPtyFeed(useApp);
 
 // ---------------------------------------------------------------------------
 // Derived helpers — pure functions over store state

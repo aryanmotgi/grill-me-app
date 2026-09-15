@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "./Icon";
 import { useApp } from "../store";
 
 export function QuickSwitcher() {
@@ -54,7 +55,7 @@ export function QuickSwitcher() {
           >
             <span className={`status-dot ${t.status}`} />
             <span className="font-display font-semibold">{t.name}</span>
-            <span className="text-faint">⎇ {t.branch}</span>
+            <span className="font-mono text-faint text-[10px]"><Icon name="branch" size={10} /> {t.branch}</span>
             <span className="flex-1" />
             <span className="text-dim text-[11px] truncate">{t.taskLabel}</span>
           </div>

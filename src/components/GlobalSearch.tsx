@@ -1,4 +1,5 @@
 import { useApp } from "../store";
+import { Icon } from "./Icon";
 
 /** One search bar across every session's output; results grouped by teammate. */
 export function GlobalSearch() {
@@ -18,7 +19,7 @@ export function GlobalSearch() {
   return (
     <div className="relative flex-none border-b border-line bg-panel demo-hide">
       <div className="flex items-center gap-2 px-3 h-8">
-        <span className="text-faint">⌕</span>
+        <span className="text-faint"><Icon name="search" size={11} /></span>
         <input
           className="flex-1 bg-transparent text-[11px] outline-none placeholder:text-faint"
           placeholder="Search across all sessions…"

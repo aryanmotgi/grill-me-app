@@ -47,7 +47,7 @@ export function Inbox() {
       <div className="border-t border-line p-2.5 flex-none demo-hide">
         <div className="flex gap-1.5 mb-1.5">
           <select className="btn" value={to} onChange={(e) => setTo(e.target.value)}>
-            <option value="all">📢 everyone</option>
+            <option value="all">everyone</option>
             {teammates.filter((t) => t.id !== "aryan").map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
