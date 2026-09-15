@@ -18,6 +18,7 @@ import {
 interface FeedStore {
   teammates: Teammate[];
   members: TeamMemberConfig[];
+  appSettings: Record<string, unknown>;
   tasks: import("../../types").Task[];
   sponsorChecklist: { sponsor: string; requirement: string; done: boolean }[];
   setShared: (p: {
@@ -172,7 +173,11 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
   if (!canNotify) {
     canNotify = (await notif.requestPermission().catch(() => "denied")) === "granted";
   }
-  const ping = (title: string, body: string) => {
+  const ping = (title: string, body: string, kind: "msg" | "input") => {
+    const st = store.getState().appSettings;
+    if (st.muteAll) return;
+    if (kind === "msg" && st.notifyMessages === false) return;
+    if (kind === "input" && st.notifyNeedsInput === false) return;
     if (canNotify) notif.sendNotification({ title, body });
   };
 
@@ -222,7 +227,7 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         if (seenMsgs.has(m.id)) continue;
         seenMsgs.add(m.id);
         if (!first && m.from !== me && (m.to === me || m.to === "all")) {
-          ping(`Message from ${m.from}`, m.text.slice(0, 120));
+          ping(`Message from ${m.from}`, m.text.slice(0, 120), "msg");
         }
       }
 
@@ -230,7 +235,7 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         const prev = prevStatus[t.id];
         prevStatus[t.id] = t.status;
         if (!first && !t.dnd && t.id !== me && prev && prev !== "needs-input" && t.status === "needs-input") {
-          ping(`${t.name} needs input`, "Session is waiting on a decision.");
+          ping(`${t.name} needs input`, "Session is waiting on a decision.", "input");
         }
       }
       first = false;
