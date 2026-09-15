@@ -7,6 +7,8 @@ export type CiStatus = "pass" | "fail" | "running";
 
 export interface UsageInfo {
   model: string;
+  /** Real token tallies from the session transcript. */
+  tokens?: { input: number; output: number; cacheRead: number; turns: number };
   sessionPct: number;
   weeklyPct: number;
   sessionResetsIn: string;

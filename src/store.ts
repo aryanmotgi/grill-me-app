@@ -15,8 +15,9 @@ import type {
   Teammate,
   Toast,
 } from "./types";
-import { startGitFeed, startWatchFeed, startPtyFeed, type WatchState } from "./data/sources/feeds";
+import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, type CiRun, type WatchState } from "./data/sources/feeds";
 import type { TeamMemberConfig } from "./data/sources/git";
+import { isTauri } from "./data/sources/git";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
 
@@ -69,6 +70,18 @@ interface AppState {
 
   /** Team config as loaded from ~/.grillme/config.json. */
   members: TeamMemberConfig[];
+
+  standupLines: string[];
+  ciRuns: CiRun[];
+  setCiRuns: (runs: CiRun[]) => void;
+  setShared: (p: {
+    tasks?: Task[];
+    messages?: Message[];
+    mergeQueue?: string[];
+    sponsorChecklist?: typeof sponsorChecklist;
+    standupLines?: string[];
+  }) => void;
+  advanceMergeQueue: () => void;
 
   /** Files to flash in the claimed list after a conflict-banner click. */
   highlightFiles: string[];
@@ -129,24 +142,27 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  toggleAnswered: (id) =>
+  toggleAnswered: (id) => {
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === id ? { ...m, answered: !m.answered } : m,
       ),
-    })),
+    }));
+    persistShared("messages.json", get().messages);
+  },
 
   sendMessage: (to, text) => {
     const msg: Message = {
       id: `m${Date.now()}`,
-      from: "aryan",
+      from: get().members[0]?.id ?? "me",
       to,
       text,
       answered: false,
       ts: new Date().toTimeString().slice(0, 5),
     };
     set((s) => ({ messages: [msg, ...s.messages] }));
-    get().toast(to === "all" ? "Broadcast sent to all 4 sessions" : `Queued for ${to} — delivered at next check-in`);
+    persistShared("messages.json", get().messages);
+    get().toast(to === "all" ? "Broadcast sent to every session" : `Queued for ${to} — delivered at next check-in`);
   },
 
   setTaskStatus: (id, status) => {
@@ -157,26 +173,53 @@ export const useApp = create<AppState>((set, get) => ({
           : t,
       ),
     }));
+    persistShared("tasks.json", get().tasks);
     if (status === "done") {
+      const task = get().tasks.find((t) => t.id === id);
+      if (task && isTauri()) {
+        import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("standup_append", { id: task.owner, note: `finished: ${task.title}` }).catch(() => {}),
+        );
+      }
       const next = nextUnblockedTask(get().tasks, id);
       if (next) get().toast(`Task done. Next unblocked: “${next.title}”`);
     }
   },
 
-  revertChange: (teammateId, file) => {
-    set((s) => ({
-      teammates: s.teammates.map((t) =>
-        t.id === teammateId
-          ? { ...t, changes: t.changes.filter((c) => c.file !== file) }
-          : t,
-      ),
-    }));
-    get().toast(`Reverted ${file} (git checkout — stubbed)`, "warn");
+  revertChange: async (teammateId, file) => {
+    const member = get().members.find((m) => m.id === teammateId);
+    if (!member || !isTauri()) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("git_revert_file", { repoPath: member.repoPath, file });
+      set((s) => ({
+        teammates: s.teammates.map((t) =>
+          t.id === teammateId
+            ? { ...t, changes: t.changes.filter((c) => c.file !== file) }
+            : t,
+        ),
+      }));
+      get().toast(`Reverted ${file}`, "warn");
+    } catch (e) {
+      get().toast(`Revert failed: ${e}`, "warn");
+    }
   },
 
-  quickCommit: (id) => {
+  quickCommit: async (id) => {
+    const member = get().members.find((m) => m.id === id);
     const t = get().teammates.find((t) => t.id === id);
-    get().toast(`Committed + pushed ${t?.changes.length ?? 0} files on ${t?.branch} (stubbed)`);
+    if (!member || !isTauri()) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const msg = `wip: ${t?.taskLabel ?? "checkpoint"} (${new Date().toISOString().slice(0, 16)})`;
+      const result = await invoke<string>("git_commit_push", {
+        repoPath: member.repoPath,
+        message: msg,
+      });
+      get().toast(`${t?.name ?? id}: ${result}`);
+    } catch (e) {
+      get().toast(`Commit failed: ${e}`, "warn");
+    }
   },
 
   toast: (text, kind = "info") => {
@@ -209,8 +252,30 @@ export const useApp = create<AppState>((set, get) => ({
 
   setActivity: (activity) => set({ activity }),
 
+  setShared: (p) =>
+    set(() => ({
+      ...(p.tasks ? { tasks: p.tasks } : {}),
+      ...(p.messages ? { messages: p.messages } : {}),
+      ...(p.mergeQueue ? { mergeQueue: p.mergeQueue } : {}),
+      ...(p.sponsorChecklist ? { sponsorChecklist: p.sponsorChecklist } : {}),
+      ...(p.standupLines ? { standupLines: p.standupLines } : {}),
+    })),
+
+  setCiRuns: (ciRuns) => set({ ciRuns }),
+
+  advanceMergeQueue: () => {
+    const q = get().mergeQueue;
+    const next = [...q.slice(1), q[0]];
+    set({ mergeQueue: next });
+    persistShared("team.json", { mergeQueue: next, sponsor: get().sponsorChecklist });
+    const name = get().teammates.find((t) => t.id === next[0])?.name ?? next[0];
+    get().toast(`Merge turn passed to ${name}`);
+  },
+
   liveLocks: [],
   members: [],
+  standupLines: [],
+  ciRuns: [],
 
   highlightFiles: [],
   flashFiles: (files) => {
@@ -280,6 +345,14 @@ function emptyTeammate(id: string): Teammate {
 startGitFeed(useApp);
 startWatchFeed(useApp);
 startPtyFeed(useApp);
+startSharedFeed(useApp);
+startUsageFeed(useApp);
+
+async function persistShared(name: string, data: unknown) {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("shared_write", { name, content: JSON.stringify(data, null, 2) }).catch(console.error);
+}
 
 // ---------------------------------------------------------------------------
 // Derived helpers — pure functions over store state

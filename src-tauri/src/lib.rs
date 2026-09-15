@@ -541,10 +541,203 @@ fn pty_record(id: String, on: bool) -> Result<Option<String>, String> {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Shared team state — plain JSON files under ~/.grillme. On the shared VM
+// every session reads/writes the same files; that IS the transport.
+// Writes are atomic (tmp + rename). Names are allow-listed.
+// ---------------------------------------------------------------------------
+
+fn grillme_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let dir = PathBuf::from(home).join(".grillme");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json"];
+
+#[tauri::command]
+fn shared_read(name: String) -> Result<String, String> {
+    if !SHARED_FILES.contains(&name.as_str()) {
+        return Err("unknown shared file".into());
+    }
+    Ok(std::fs::read_to_string(grillme_dir().join(&name)).unwrap_or_default())
+}
+
+#[tauri::command]
+fn shared_write(name: String, content: String) -> Result<(), String> {
+    if !SHARED_FILES.contains(&name.as_str()) {
+        return Err("unknown shared file".into());
+    }
+    let dir = grillme_dir();
+    let tmp = dir.join(format!("{name}.tmp-write"));
+    std::fs::write(&tmp, &content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, dir.join(&name)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn standup_append(id: String, note: String) -> Result<(), String> {
+    use std::io::Write as _;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(grillme_dir().join("standup.log"))
+        .map_err(|e| e.to_string())?;
+    writeln!(f, "{ts}\t{id}\t{}", note.replace(['\n', '\t'], " "))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn standup_tail() -> Vec<String> {
+    std::fs::read_to_string(grillme_dir().join("standup.log"))
+        .map(|s| {
+            let lines: Vec<String> = s.lines().map(str::to_string).collect();
+            let skip = lines.len().saturating_sub(20);
+            lines.into_iter().skip(skip).collect()
+        })
+        .unwrap_or_default()
+}
+
+
+#[tauri::command]
+fn git_commit_push(repo_path: String, message: String) -> Result<String, String> {
+    git(&repo_path, &["add", "-A"])?;
+    let staged = git(&repo_path, &["diff", "--cached", "--name-only"])?;
+    if staged.trim().is_empty() {
+        return Err("nothing to commit".into());
+    }
+    git(&repo_path, &["commit", "-m", &message])?;
+    let branch = git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    match git(&repo_path, &["push", "-u", "origin", branch.trim()]) {
+        Ok(_) => Ok(format!("committed + pushed {} files", staged.lines().count())),
+        Err(e) => Ok(format!("committed {} files, push failed: {e}", staged.lines().count())),
+    }
+}
+
+#[tauri::command]
+fn git_revert_file(repo_path: String, file: String) -> Result<(), String> {
+    // untracked files need clean, tracked need checkout
+    let status = git(&repo_path, &["status", "--porcelain", "--", &file])?;
+    if status.starts_with("??") {
+        git(&repo_path, &["clean", "-f", "--", &file]).map(|_| ())
+    } else {
+        git(&repo_path, &["checkout", "--", &file]).map(|_| ())
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Real Claude usage — token tallies parsed from the session transcripts
+// Claude Code itself writes under ~/.claude/projects. Plan-limit
+// percentages are NOT knowable locally; we only report real counts.
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Default)]
+struct UsageStats {
+    ok: bool,
+    model: String,
+    #[serde(rename = "inputTokens")]
+    input_tokens: u64,
+    #[serde(rename = "outputTokens")]
+    output_tokens: u64,
+    #[serde(rename = "cacheReadTokens")]
+    cache_read_tokens: u64,
+    turns: u64,
+}
+
+fn project_slug(path: &str) -> String {
+    path.replace(['/', '.'], "-")
+}
+
+fn newest_transcript(repo_path: &str) -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let projects = PathBuf::from(home).join(".claude").join("projects");
+    // exact slug, then parent dirs (sessions often run from a parent of the worktree)
+    let mut candidates = vec![repo_path.to_string()];
+    let mut cur = PathBuf::from(repo_path);
+    while let Some(parent) = cur.parent() {
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+        candidates.push(parent.to_string_lossy().into_owned());
+        cur = parent.to_path_buf();
+    }
+    for cand in candidates {
+        let dir = projects.join(project_slug(&cand));
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let newest = entries
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+        if let Some(e) = newest {
+            return Some(e.path());
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn usage_stats(repo_path: String) -> UsageStats {
+    let Some(path) = newest_transcript(&repo_path) else {
+        return UsageStats::default();
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return UsageStats::default();
+    };
+    let mut st = UsageStats { ok: true, ..Default::default() };
+    for line in raw.lines() {
+        if !line.contains("\"usage\"") {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let msg = &v["message"];
+        if let Some(u) = msg.get("usage") {
+            st.turns += 1;
+            st.input_tokens += u["input_tokens"].as_u64().unwrap_or(0);
+            st.output_tokens += u["output_tokens"].as_u64().unwrap_or(0);
+            st.cache_read_tokens += u["cache_read_input_tokens"].as_u64().unwrap_or(0);
+        }
+        if let Some(m) = msg.get("model").and_then(|m| m.as_str()) {
+            st.model = m.to_string();
+        }
+    }
+    st
+}
+
+#[tauri::command]
+fn ci_state(repo_path: String) -> Result<String, String> {
+    let out = Command::new("gh")
+        .args(["run", "list", "--limit", "5", "--json", "name,displayTitle,status,conclusion,headBranch"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+
+#[tauri::command]
+fn team_config_write(cfg: TeamConfig) -> Result<(), String> {
+    let path = config_path();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             team_config,
             git_state,
@@ -555,7 +748,16 @@ pub fn run() {
             pty_resize,
             pty_scrollback,
             pty_status,
-            pty_record
+            pty_record,
+            shared_read,
+            shared_write,
+            standup_append,
+            standup_tail,
+            git_commit_push,
+            git_revert_file,
+            usage_stats,
+            ci_state,
+            team_config_write
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -12,7 +12,7 @@ import { ConflictBanner, Toasts } from "./components/Chrome";
 export default function App() {
   const {
     teammates, activeId, splitId, focusMode, demoMode, themeName,
-    setSwitcherOpen, toggleFocus, quickCommit,
+    setSwitcherOpen, toggleFocus, quickCommit, setRailTab,
   } = useApp();
 
   useEffect(() => {
@@ -34,11 +34,15 @@ export default function App() {
         e.preventDefault();
         toggleFocus();
       }
+      if (mod && e.key >= "1" && e.key <= "5") {
+        e.preventDefault();
+        setRailTab((["tasks", "inbox", "activity", "team", "preview"] as const)[Number(e.key) - 1]);
+      }
       if (e.key === "Escape") setSwitcherOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setSwitcherOpen, toggleFocus, quickCommit]);
+  }, [setSwitcherOpen, toggleFocus, quickCommit, setRailTab]);
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
