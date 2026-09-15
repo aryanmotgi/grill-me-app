@@ -8,6 +8,40 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "notification:default"
+    "notification:default",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        {
+          "path": "$HOME/.grillme/**"
+        },
+        {
+          "path": "$HOME/.claude/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        {
+          "path": "$HOME/.grillme/**"
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "git",
+          "cmd": "git",
+          "args": true
+        },
+        {
+          "name": "gh",
+          "cmd": "gh",
+          "args": true
+        }
+      ]
+    }
   ]
 }
