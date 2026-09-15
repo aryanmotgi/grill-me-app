@@ -1,51 +1,67 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect } from "react";
+import { useApp } from "./store";
+import { applyTheme, themes } from "./theme/themes";
+import { TopBar } from "./components/TopBar";
+import { SessionList } from "./components/SessionList";
+import { SessionPane } from "./components/SessionPane";
+import { RightRail } from "./components/RightRail";
+import { QuickSwitcher } from "./components/QuickSwitcher";
+import { GlobalSearch } from "./components/GlobalSearch";
+import { ConflictBanner, Toasts } from "./components/Chrome";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+export default function App() {
+  const {
+    teammates, activeId, splitId, focusMode, demoMode, themeName,
+    setSwitcherOpen, toggleFocus, quickCommit,
+  } = useApp();
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    applyTheme(themes[themeName] ?? themes.ember);
+  }, [themeName]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "k") {
+        e.preventDefault();
+        setSwitcherOpen(!useApp.getState().switcherOpen);
+      }
+      if (mod && e.key === "s") {
+        e.preventDefault();
+        quickCommit(useApp.getState().activeId);
+      }
+      if (mod && e.key === ".") {
+        e.preventDefault();
+        toggleFocus();
+      }
+      if (e.key === "Escape") setSwitcherOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setSwitcherOpen, toggleFocus, quickCommit]);
+
+  const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
+  const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""}`}>
+      <TopBar />
+      <ConflictBanner />
+      <div className="flex-1 min-h-0 flex">
+        {focusMode ? null : <SessionList />}
+        <main className="flex-1 min-w-0 flex flex-col">
+          <GlobalSearch />
+          <div className="flex-1 min-h-0 flex divide-x divide-line">
+            <SessionPane mate={active} />
+            {split && split.id !== active.id && !focusMode ? (
+              <SessionPane mate={split} />
+            ) : null}
+          </div>
+        </main>
+        {focusMode ? null : <RightRail />}
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <QuickSwitcher />
+      <Toasts />
+    </div>
   );
 }
-
-export default App;
