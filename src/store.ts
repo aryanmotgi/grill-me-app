@@ -15,6 +15,8 @@ import type {
   Teammate,
   Toast,
 } from "./types";
+import { startGitFeed } from "./data/sources/feeds";
+import type { TeamMemberConfig } from "./data/sources/git";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
 
@@ -55,6 +57,11 @@ interface AppState {
   quickCommit: (id: string) => void;
   toast: (text: string, kind?: Toast["kind"]) => void;
   dismissToast: (id: number) => void;
+
+  /** Real-feed hydration (Phase 2) — components never call these. */
+  applyTeamConfig: (members: TeamMemberConfig[]) => void;
+  patchTeammate: (id: string, patch: Partial<Teammate>) => void;
+  setActivity: (events: ActivityEvent[]) => void;
 }
 
 let toastSeq = 0;
@@ -168,7 +175,59 @@ export const useApp = create<AppState>((set, get) => ({
   },
   dismissToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  applyTeamConfig: (members) =>
+    set((s) => ({
+      teammates: members.map((m) => {
+        const seed = s.teammates.find((t) => t.id === m.id);
+        return { ...(seed ?? emptyTeammate(m.id)), id: m.id, name: m.name };
+      }),
+      activeId: members.some((m) => m.id === s.activeId)
+        ? s.activeId
+        : (members[0]?.id ?? s.activeId),
+    })),
+
+  patchTeammate: (id, patch) =>
+    set((s) => ({
+      teammates: s.teammates.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+    })),
+
+  setActivity: (activity) => set({ activity }),
 }));
+
+/** Base for config members with no fake seed — unwired fields stay visibly empty. */
+function emptyTeammate(id: string): Teammate {
+  return {
+    id,
+    name: id,
+    initials: id.slice(0, 2).toUpperCase(),
+    branch: "—",
+    taskLabel: "—",
+    status: "idle",
+    setup: "worktree",
+    currentFile: "—",
+    lastActiveMin: 0,
+    health: "ok",
+    permission: "view",
+    dnd: false,
+    recording: false,
+    usage: {
+      model: "—",
+      sessionPct: 0,
+      weeklyPct: 0,
+      sessionResetsIn: "—",
+      weeklyResetsAt: "—",
+      permissionMode: "—",
+    },
+    terminal: [{ kind: "out", text: "— session feed not wired yet (slice 3) —" }],
+    changes: [],
+    standupNote: "—",
+  };
+}
+
+// Phase 2: live feeds replace fake data when running inside Tauri.
+// In plain browser dev the fake seed stays so the UI is still browsable.
+startGitFeed(useApp);
 
 // ---------------------------------------------------------------------------
 // Derived helpers — pure functions over store state
