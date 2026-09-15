@@ -24,9 +24,10 @@ export function TopBar() {
   } = useApp();
 
   const attention = attentionCount(teammates);
-  const waiting = useApp((s) => s.messages.filter(
+  const messages = useApp((s) => s.messages);
+  const waiting = messages.filter(
     (m) => !m.answered && (m.kind === "blocking" || m.kind === "question"),
-  ));
+  );
   const blockingCount = waiting.filter((m) => m.kind === "blocking").length;
   const working = teammates.filter((t) => t.status === "working").length;
   const mergerName = teammates.find((t) => t.id === mergeQueue[0])?.name;
