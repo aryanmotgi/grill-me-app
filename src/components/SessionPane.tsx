@@ -3,8 +3,42 @@ import { Icon } from "./Icon";
 import { useApp } from "../store";
 import type { Teammate } from "../types";
 import { XtermPane } from "./XtermPane";
+import { useState as usePrState } from "react";
+import { isTauri } from "../data/sources/git";
 
-type PaneTab = "terminal" | "changes";
+function PrDraft({ repoPath }: { repoPath?: string }) {
+  const [busy, setBusy] = usePrState(false);
+  const [draft, setDraft] = usePrState("");
+  const run = async () => {
+    if (!repoPath || !isTauri()) return;
+    setBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      setDraft(await invoke<string>("pr_draft", { repoPath }));
+    } catch (e) {
+      setDraft(`draft failed: ${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button className="btn" disabled={busy} onClick={run}>
+        {busy ? "drafting…" : "draft PR body"}
+      </button>
+      {draft ? (
+        <textarea
+          readOnly
+          className="w-full h-40 mt-2 bg-raised hairline rounded-sm p-2 font-mono text-[10px] outline-none"
+          value={draft}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+      ) : null}
+    </>
+  );
+}
+
+type PaneTab = "terminal" | "shell" | "changes";
 
 export function SessionPane({ mate }: { mate: Teammate }) {
   const { toggleRecording, revertChange, quickCommit, members, themeName } = useApp();
@@ -23,6 +57,9 @@ export function SessionPane({ mate }: { mate: Teammate }) {
           <button className={`btn ${tab === "terminal" ? "active" : ""}`} onClick={() => setTab("terminal")}>
             terminal
           </button>
+          <button className={`btn ${tab === "shell" ? "active" : ""} ml-1`} onClick={() => setTab("shell")}>
+            shell
+          </button>
           <button className={`btn ${tab === "changes" ? "active" : ""} ml-1`} onClick={() => setTab("changes")}>
             changes {mate.changes.length}
           </button>
@@ -36,10 +73,16 @@ export function SessionPane({ mate }: { mate: Teammate }) {
         </div>
       </div>
 
-      {tab === "terminal" ? (
+      {tab === "terminal" || tab === "shell" ? (
         member ? (
           <div className="flex-1 min-h-0">
-            <XtermPane id={mate.id} cwd={member.repoPath} themeName={themeName} />
+            <XtermPane
+              key={tab}
+              id={tab === "shell" ? `${mate.id}:shell` : mate.id}
+              cwd={member.repoPath}
+              themeName={themeName}
+              shell={tab === "shell"}
+            />
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-faint text-[11px]">
@@ -61,9 +104,12 @@ export function SessionPane({ mate }: { mate: Teammate }) {
               </div>
             ))
           )}
-          <button className="btn primary mt-3" onClick={() => quickCommit(mate.id)}>
-            commit + push all
-          </button>
+          <div className="flex gap-2 mt-3">
+            <button className="btn primary" onClick={() => quickCommit(mate.id)}>
+              commit + push all
+            </button>
+            <PrDraft repoPath={member?.repoPath} />
+          </div>
         </div>
       )}
     </section>

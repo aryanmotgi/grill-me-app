@@ -7,6 +7,7 @@ export function TopBar() {
     teammates, mergeQueue, advanceMergeQueue, themeName, setTheme,
     demoMode, toggleDemo, focusMode, toggleFocus,
     toast, quickCommit, activeId, setSwitcherOpen, setSettingsOpen,
+    dense, toggleDense, members, setMergePilotOpen,
   } = useApp();
 
   const attention = attentionCount(teammates);
@@ -31,9 +32,14 @@ export function TopBar() {
       <button
         className="tag ok demo-hide cursor-pointer hover:text-ok"
         title="Whose turn to merge — click when done to pass the turn"
-        onClick={advanceMergeQueue}
+        onClick={() => {
+          if (mergeQueue[0] === members[0]?.id) setMergePilotOpen(true);
+          else advanceMergeQueue();
+        }}
+        onContextMenu={(e) => { e.preventDefault(); advanceMergeQueue(); }}
       >
         <Icon name="merge" size={11} /> merge turn: {mergerName}
+        {mergeQueue[0] === members[0]?.id ? " — run it" : ""}
       </button>
 
       <div className="flex-1" />
@@ -63,6 +69,9 @@ export function TopBar() {
       </button>
       <button className={`btn ${demoMode ? "primary" : ""}`} onClick={toggleDemo} title="Clean view for demoing">
         demo
+      </button>
+      <button className={`btn demo-hide ${dense ? "active" : ""}`} title="Compact density" onClick={toggleDense}>
+        dense
       </button>
       <button className="btn demo-hide" title="Settings" onClick={() => setSettingsOpen(true)}>
         <Icon name="gear" size={11} />

@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"notification\\\"}\" >> ~/.grillme/events.jsonl'",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"stop\\\"}\" >> ~/.grillme/events.jsonl'",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"aryan\\\",\\\"event\\\":\\\"prompt\\\"}\" >> ~/.grillme/events.jsonl'",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

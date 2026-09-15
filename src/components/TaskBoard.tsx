@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { fileConflicts, fileLocks, predictedConflicts, useApp } from "../store";
+import { isTauri } from "../data/sources/git";
 import type { Task, TaskStatus } from "../types";
 
 const NEXT: Record<TaskStatus, TaskStatus> = {
@@ -77,6 +78,30 @@ function TaskCard({ task, now }: { task: Task; now: number }) {
   );
 }
 
+function DiffPeekRow({ file, owner, ownerId, flash }: { file: string; owner: string; ownerId: string; flash: boolean }) {
+  const members = useApp((s) => s.members);
+  const [diff, setDiff] = useState<string | null>(null);
+  const peek = async () => {
+    if (diff !== null) return setDiff(null);
+    const m = members.find((mm) => mm.id === ownerId);
+    if (!m || !isTauri()) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    const d = await invoke<string>("git_diff_file", { repoPath: m.repoPath, file }).catch((e) => `diff failed: ${e}`);
+    setDiff(d || "(no diff — file is new or unchanged)");
+  };
+  return (
+    <div className={`px-1 -mx-1 rounded-sm ${flash ? "flash" : ""}`}>
+      <button className="font-mono text-[10px] text-dim leading-relaxed truncate cursor-pointer text-left w-full hover:text-ink"
+        onClick={peek} title="Click for diff">
+        <Icon name="lock" size={10} className="mr-1 text-faint" />{file} <span className="text-faint font-sans">— {owner}</span>
+      </button>
+      {diff !== null ? (
+        <pre className="mt-1 mb-2 max-h-48 overflow-auto bg-term-bg rounded-sm p-2 font-mono text-[9px] text-term-ink whitespace-pre-wrap">{diff}</pre>
+      ) : null}
+    </div>
+  );
+}
+
 export function TaskBoard() {
   const tasks = useApp((s) => s.tasks);
   const teammates = useApp((s) => s.teammates);
@@ -123,14 +148,8 @@ export function TaskBoard() {
           <div className="text-faint text-[10px]">No active claims.</div>
         ) : (
           locks.map((l) => (
-            <div
-              key={l.file + l.owner}
-              className={`font-mono text-[10px] text-dim leading-relaxed truncate px-1 -mx-1 rounded-sm ${
-                highlightFiles.includes(l.file) ? "flash" : ""
-              }`}
-            >
-              <Icon name="lock" size={10} className="mr-1 text-faint" />{l.file} <span className="text-faint font-sans">— {name(l.owner)}</span>
-            </div>
+            <DiffPeekRow key={l.file + l.owner} file={l.file} owner={name(l.owner)}
+              flash={highlightFiles.includes(l.file)} ownerId={l.owner} />
           ))
         )}
       </div>

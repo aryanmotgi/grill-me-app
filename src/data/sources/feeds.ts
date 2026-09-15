@@ -122,7 +122,9 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
 
   const ensureAll = async () => {
     for (const m of store.getState().members) {
-      await invoke("pty_ensure", { id: m.id, cwd: m.repoPath }).catch(() => {});
+      await invoke("pty_ensure", { id: m.id, cwd: m.repoPath, shell: false }).catch(() => {});
+      // exact-status hooks: sessions report notification/stop/prompt events
+      await invoke("install_hooks", { repoPath: m.repoPath, memberId: m.id }).catch(() => {});
     }
   };
   // config may not be loaded yet — retry until members appear
@@ -136,14 +138,31 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   const tick = async () => {
     try {
       const statuses = await invoke<PtyStatus[]>("pty_status");
+      // exact status via Claude Code hooks when available
+      const events = await invoke<string[]>("events_tail").catch(() => [] as string[]);
+      const latest: Record<string, { event: string; ts: number }> = {};
+      for (const line of events) {
+        try {
+          const e = JSON.parse(line);
+          if (!latest[e.id] || e.ts >= latest[e.id].ts) latest[e.id] = e;
+        } catch { /* partial line */ }
+      }
+      const nowS = Date.now() / 1000;
       for (const st of statuses) {
-        const status = !st.alive
+        const hook = latest[st.id];
+        const hookFresh = hook && nowS - hook.ts < 30 * 60;
+        let status: "idle" | "working" | "needs-input" = !st.alive
           ? "idle"
           : st.bell
             ? "needs-input"
             : st.quietMs < 4000
               ? "working"
               : "idle";
+        if (st.alive && hookFresh) {
+          if (hook.event === "notification") status = "needs-input";
+          else if (hook.event === "prompt") status = st.quietMs < 120_000 ? "working" : status;
+          else if (hook.event === "stop") status = st.bell ? "needs-input" : "idle";
+        }
         store.getState().patchTeammate(st.id, {
           status,
           recording: st.recording !== null,

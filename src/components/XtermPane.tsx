@@ -18,7 +18,7 @@ function b64ToU8(b64: string) {
  * output streams back live. Scrollback replays from the Rust ring buffer
  * so remounts and reloads lose nothing.
  */
-export function XtermPane({ id, cwd, themeName }: { id: string; cwd: string; themeName: string }) {
+export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: string; cwd: string; themeName: string; shell?: boolean; autorun?: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,7 +51,11 @@ export function XtermPane({ id, cwd, themeName }: { id: string; cwd: string; the
       const { invoke } = await import("@tauri-apps/api/core");
       const { listen } = await import("@tauri-apps/api/event");
       try {
-        await invoke("pty_ensure", { id, cwd });
+        await invoke("pty_ensure", { id, cwd, shell });
+        if (autorun) {
+          const sb0 = await invoke<string>("pty_scrollback", { id });
+          if (!sb0) await invoke("pty_write", { id, data: autorun + "\n" });
+        }
       } catch (e) {
         term.writeln(`\x1b[31mCould not start claude here: ${e}\x1b[0m`);
         return;
@@ -86,7 +90,7 @@ export function XtermPane({ id, cwd, themeName }: { id: string; cwd: string; the
       ro?.disconnect();
       term.dispose();
     };
-  }, [id, cwd, themeName]);
+  }, [id, cwd, themeName, shell, autorun]);
 
   if (!isTauri()) {
     return (

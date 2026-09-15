@@ -4,6 +4,7 @@ import { applyTheme, themes } from "./theme/themes";
 import { TopBar } from "./components/TopBar";
 import { SessionList } from "./components/SessionList";
 import { SessionPane } from "./components/SessionPane";
+import { XtermPane } from "./components/XtermPane";
 import { RightRail } from "./components/RightRail";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { GlobalSearch } from "./components/GlobalSearch";
@@ -14,6 +15,7 @@ export default function App() {
   const {
     teammates, activeId, splitId, focusMode, demoMode, themeName,
     setSwitcherOpen, toggleFocus, quickCommit, setRailTab,
+    dense, mergePilotOpen, setMergePilotOpen, members, setActive,
   } = useApp();
 
   useEffect(() => {
@@ -49,10 +51,17 @@ export default function App() {
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
 
   return (
-    <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""}`}>
+    <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
       <TopBar />
       <ConflictBanner />
       <div className="flex-1 min-h-0 flex">
+        {/* attention rail — one tick per session needing input */}
+        <div className="w-[22px] flex-none bg-bg border-r border-line flex flex-col items-center gap-2 pt-3 demo-hide">
+          {teammates.filter((t) => t.status === "needs-input").map((t) => (
+            <button key={t.id} className="status-dot needs-input cursor-pointer" title={`${t.name} needs input`}
+              onClick={() => setActive(t.id)} />
+          ))}
+        </div>
         {focusMode ? null : <SessionList />}
         <main className="flex-1 min-w-0 flex flex-col">
           <GlobalSearch />
@@ -62,6 +71,19 @@ export default function App() {
               <SessionPane mate={split} />
             ) : null}
           </div>
+          {mergePilotOpen && members[0] ? (
+            <div className="h-[38%] flex-none border-t border-line flex flex-col">
+              <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
+                <span className="panel-label">merge pilot — {members[0].repoPath}</span>
+                <span className="flex-1" />
+                <button className="btn" onClick={() => setMergePilotOpen(false)}>close</button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <XtermPane id="merge-pilot" cwd={members[0].repoPath} themeName={themeName} shell
+                  autorun="git fetch origin && git merge origin/main --no-edit && npm run build" />
+              </div>
+            </div>
+          ) : null}
         </main>
         {focusMode ? null : <RightRail />}
       </div>

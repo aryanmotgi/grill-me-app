@@ -77,6 +77,11 @@ interface AppState {
 
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+  dense: boolean;
+  toggleDense: () => void;
+  mergePilotOpen: boolean;
+  setMergePilotOpen: (open: boolean) => void;
+  spawnSession: (id: string, name: string, branch: string) => Promise<void>;
   appSettings: Record<string, unknown>;
   setAppSetting: (key: string, value: unknown) => void;
   setShared: (p: {
@@ -288,6 +293,28 @@ export const useApp = create<AppState>((set, get) => ({
   ciRuns: [],
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  dense: false,
+  toggleDense: () => set((s) => ({ dense: !s.dense })),
+  mergePilotOpen: false,
+  setMergePilotOpen: (mergePilotOpen) => set({ mergePilotOpen }),
+
+  spawnSession: async (id, name, branch) => {
+    if (!isTauri()) return;
+    const base = get().members[0];
+    if (!base) return;
+    const path = `${base.repoPath.replace(/\/[^/]+$/, "")}/worktrees-${id}`;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("worktree_add", { baseRepo: base.repoPath, branch, path });
+      const members = [...get().members, { id, name, repoPath: path, permission: "edit" }];
+      await invoke("team_config_write", { cfg: { teammates: members } });
+      get().applyTeamConfig(members);
+      await invoke("pty_ensure", { id, cwd: path, shell: false });
+      get().toast(`Spawned ${name} on ${branch} at ${path}`);
+    } catch (e) {
+      get().toast(`Spawn failed: ${e}`, "warn");
+    }
+  },
   appSettings: {},
   setAppSetting: (key, value) => {
     const appSettings = { ...get().appSettings, [key]: value };

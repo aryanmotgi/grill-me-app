@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { useApp } from "../store";
+import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
 import type { Teammate } from "../types";
 
@@ -7,6 +9,32 @@ const SETUP_LABEL: Record<Teammate["setup"], string> = {
   env: "env linked",
   ready: "ready",
 };
+
+function Sparkline({ id }: { id: string }) {
+  const [buckets, setBuckets] = useState<number[]>([]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let live = true;
+    const load = async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const b = await invoke<number[]>("activity_series", { id }).catch(() => []);
+      if (live) setBuckets(b);
+    };
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { live = false; clearInterval(t); };
+  }, [id]);
+  const max = Math.max(1, ...buckets);
+  if (buckets.every((b) => b === 0)) return null;
+  return (
+    <svg width="60" height="10" className="opacity-70" aria-hidden>
+      {buckets.map((b, i) => (
+        <rect key={i} x={i * 2} y={10 - (b / max) * 9 - 1} width="1.4" height={(b / max) * 9 + 1}
+          fill="currentColor" className={b > 0 ? "text-ok" : "text-line"} />
+      ))}
+    </svg>
+  );
+}
 
 function SessionRow({ mate }: { mate: Teammate }) {
   const { activeId, setActive, splitId, setSplit, toggleDnd } = useApp();
@@ -51,6 +79,8 @@ function SessionRow({ mate }: { mate: Teammate }) {
         ) : null}
       </div>
 
+      <div className="mt-0.5 pl-4 text-ok"><Sparkline id={mate.id} /></div>
+
       {/* live presence */}
       <div className="mt-0.5 pl-4 font-mono text-[10px] text-faint truncate" title={mate.currentFile}>
         <Icon name="file" size={10} /> {mate.currentFile}
@@ -93,6 +123,33 @@ export function SessionList() {
           <SessionRow key={mate.id} mate={mate} />
         ))}
       </div>
+      <Spawner />
     </aside>
+  );
+}
+
+function Spawner() {
+  const spawnSession = useApp((s) => s.spawnSession);
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState("");
+  const [branch, setBranch] = useState("");
+  if (!open) {
+    return (
+      <button className="btn m-2 demo-hide" onClick={() => setOpen(true)}>+ new session</button>
+    );
+  }
+  return (
+    <div className="p-2 border-t border-line flex flex-col gap-1.5 demo-hide">
+      <input className="bg-raised hairline rounded-sm px-2 py-1 text-[11px] outline-none focus:border-accent"
+        placeholder="member id (e.g. mei)" value={id} onChange={(e) => setId(e.target.value)} />
+      <input className="bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"
+        placeholder="branch (e.g. feature/inbox)" value={branch} onChange={(e) => setBranch(e.target.value)} />
+      <div className="flex gap-1.5">
+        <button className="btn primary" onClick={() => { if (id && branch) { spawnSession(id, id, branch); setOpen(false); } }}>
+          create worktree + spawn
+        </button>
+        <button className="btn" onClick={() => setOpen(false)}>cancel</button>
+      </div>
+    </div>
   );
 }
