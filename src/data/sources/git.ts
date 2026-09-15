@@ -1,0 +1,89 @@
+import { invoke } from "@tauri-apps/api/core";
+import type { ActivityEvent, FileChange, Teammate } from "../../types";
+
+// ---------------------------------------------------------------------------
+// Slice 1 real feed: git. Polls each configured worktree via the Rust
+// `git_state` command and maps the result onto the exact Teammate/Activity
+// shapes the components already render — no component changes.
+// ---------------------------------------------------------------------------
+
+export interface TeamMemberConfig {
+  id: string;
+  name: string;
+  repoPath: string;
+}
+
+interface GitState {
+  ok: boolean;
+  error: string | null;
+  branch: string;
+  changes: { file: string; status: string }[];
+  commits: { hash: string; message: string; author: string; timestamp: number }[];
+}
+
+/** True when running inside the Tauri webview (not plain browser dev). */
+export const isTauri = () =>
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+export const loadTeamConfig = () => invoke<{ teammates: TeamMemberConfig[] }>("team_config");
+
+export const fetchGitState = (repoPath: string) =>
+  invoke<GitState>("git_state", { repoPath });
+
+const STATUS_LABEL: Record<string, string> = {
+  M: "modified",
+  A: "added",
+  D: "deleted",
+  R: "renamed",
+  "??": "untracked",
+};
+
+/** branch name → human task label ("feature/real-git-data" → "real git data") */
+export function branchToLabel(branch: string): string {
+  const tail = branch.split("/").pop() ?? branch;
+  return tail.replace(/[-_]/g, " ");
+}
+
+export function toChanges(state: GitState): FileChange[] {
+  return state.changes.map((c) => ({
+    file: c.file,
+    summary: STATUS_LABEL[c.status] ?? c.status,
+  }));
+}
+
+/** Patch of Teammate fields this slice owns. Everything else stays untouched. */
+export function toTeammatePatch(state: GitState): Partial<Teammate> {
+  if (!state.ok) {
+    return { health: "disconnected", setup: "worktree", branch: "—", changes: [] };
+  }
+  return {
+    branch: state.branch,
+    taskLabel: branchToLabel(state.branch),
+    changes: toChanges(state),
+    setup: "ready",
+  };
+}
+
+const fmtTime = (ts: number) =>
+  new Date(ts * 1000).toTimeString().slice(0, 5);
+
+export function toActivity(
+  states: { member: TeamMemberConfig; state: GitState }[],
+): ActivityEvent[] {
+  const seen = new Set<string>();
+  return states
+    .flatMap(({ member, state }) =>
+      state.commits.map((c) => ({
+        id: `git-${c.hash}`,
+        kind: (c.message.toLowerCase().startsWith("merge") ? "merge" : "commit") as ActivityEvent["kind"],
+        actor: member.id,
+        text: c.message,
+        ts: fmtTime(c.timestamp),
+        _sort: c.timestamp,
+      })),
+    )
+    .sort((a, b) => b._sort - a._sort)
+    .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)))
+    .slice(0, 40)
+    .map(({ _sort, ...e }) => e);
+}
