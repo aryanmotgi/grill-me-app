@@ -56,7 +56,7 @@ export function TeamPanel() {
       <div>
         <div className="panel-label mb-2">claude usage</div>
         {teammates.map((t) => (
-          <div key={t.id} className="hairline rounded-sm bg-raised p-2 mb-1.5">
+          <div key={t.id} className="py-2 border-b border-line/60 last:border-0">
             <div className="flex items-center gap-2 text-[11px]">
               <span className="font-semibold">{t.name}</span>
               <span className="tag">{t.usage.model}</span>
@@ -80,7 +80,7 @@ export function TeamPanel() {
       <div>
         <div className="panel-label mb-2">health · access</div>
         {teammates.map((t) => (
-          <div key={t.id} className="flex items-center gap-2 py-1 text-[11px] border-b border-line">
+          <div key={t.id} className="flex items-center gap-2 py-1 text-[11px]">
             <span className={`status-dot ${t.status}`} />
             <span>{t.name}</span>
             <span className="flex-1" />
@@ -98,11 +98,11 @@ export function TeamPanel() {
       <div>
         <div className="panel-label mb-2">ci — github actions</div>
         {ciWorkflows.map((w) => (
-          <div key={w.name} className="flex items-center gap-2 py-1 text-[11px] border-b border-line">
+          <div key={w.name} className="flex items-center gap-2 py-1 text-[11px]">
             <span className={`tag ${CI_TAG[w.status].cls}`}>{CI_TAG[w.status].icon}</span>
             <span>{w.name}</span>
             <span className="flex-1" />
-            <span className="text-faint text-[10px]">{w.detail}</span>
+            <span className="font-mono text-faint text-[10px]">{w.detail}</span>
           </div>
         ))}
       </div>

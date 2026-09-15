@@ -66,6 +66,10 @@ interface AppState {
 
   /** Live lock claims from the Rust file watcher (survives page reloads). */
   liveLocks: WatchState["locks"];
+
+  /** Files to flash in the claimed list after a conflict-banner click. */
+  highlightFiles: string[];
+  flashFiles: (files: string[]) => void;
 }
 
 let toastSeq = 0;
@@ -199,6 +203,12 @@ export const useApp = create<AppState>((set, get) => ({
   setActivity: (activity) => set({ activity }),
 
   liveLocks: [],
+
+  highlightFiles: [],
+  flashFiles: (files) => {
+    set({ highlightFiles: files, railTab: "tasks" });
+    setTimeout(() => set({ highlightFiles: [] }), 2600);
+  },
 
   applyWatchState: (ws) =>
     set((s) => {

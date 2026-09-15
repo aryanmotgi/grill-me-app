@@ -23,11 +23,12 @@
   --color-term-cmd: var(--termCmd);
 
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-  --font-display: "Chakra Petch", "IBM Plex Mono", sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-display: "Chakra Petch", "IBM Plex Sans", sans-serif;
 }
 
 :root {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 13px;
   color-scheme: dark;
 }
@@ -114,25 +115,27 @@ body,
   }
 }
 
+/* Routine metadata: quiet text, no box. Border + color = needs attention. */
 .tag {
   font-size: 10px;
-  padding: 1px 6px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--dim);
+  padding: 1px 2px;
+  color: var(--faint);
   white-space: nowrap;
 }
 .tag.ok {
-  color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  color: color-mix(in srgb, var(--ok) 75%, var(--dim));
 }
 .tag.warn {
   color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: 3px;
+  padding: 1px 6px;
 }
 .tag.danger {
   color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 3px;
+  padding: 1px 6px;
 }
 
 .btn {
@@ -183,6 +186,7 @@ body,
 .term {
   background: var(--termBg);
   color: var(--termInk);
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.7;
   user-select: text;
@@ -240,4 +244,41 @@ body,
 }
 .toast.warn {
   border-left-color: var(--danger);
+}
+
+/* ---- claimed-file flash when jumping from the conflict banner ---- */
+.flash {
+  animation: flashbg 2.4s ease-out both;
+}
+@keyframes flashbg {
+  0%, 35% {
+    background: color-mix(in srgb, var(--warn) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* ---- task card urgency tiers ---- */
+.card-blocked {
+  background: var(--raised);
+  border-left: 2px solid var(--warn);
+  padding: 10px;
+  border-radius: 2px;
+}
+.card-active {
+  background: var(--raised);
+  border-left: 2px solid transparent;
+  padding: 10px;
+  border-radius: 2px;
+}
+.card-quiet {
+  padding: 8px 10px;
+  border-left: 2px solid transparent;
+  opacity: 0.75;
+}
+.card-done {
+  padding: 6px 10px;
+  border-left: 2px solid transparent;
+  opacity: 0.42;
 }
