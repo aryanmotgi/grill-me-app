@@ -354,6 +354,15 @@ export function SettingsModal() {
                 </select>
                 <span className="text-faint text-[10px]">blocking / questions / @mentions are always instant</span>
               </Row>
+              <Row label="Auto-pause idle sessions" hint="Idle Claude terminals burn CPU repainting — freeze after quiet period, instant resume on view/type">
+                <Toggle checked={appSettings.autoPauseIdle !== false} onChange={(v) => setAppSetting("autoPauseIdle", v)} />
+                <select className="btn" value={String(appSettings.autoPauseIdleMin ?? 10)}
+                  onChange={(e) => setAppSetting("autoPauseIdleMin", Number(e.target.value))}>
+                  <option value="5">after 5 min</option>
+                  <option value="10">after 10 min</option>
+                  <option value="20">after 20 min</option>
+                </select>
+              </Row>
               <Row label="Self-healing sessions" hint="Auto-restart crashed sessions (max 3/10min); flag stuck ones; ride out rate limits">
                 <Toggle checked={appSettings.selfHeal !== false} onChange={(v) => setAppSetting("selfHeal", v)} />
               </Row>

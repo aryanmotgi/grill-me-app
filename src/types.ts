@@ -41,6 +41,7 @@ export interface Teammate {
   permission: Permission;
   dnd: boolean;
   recording: boolean;
+  paused?: boolean;
   usage: UsageInfo;
   terminal: TerminalLine[];
   changes: FileChange[];
