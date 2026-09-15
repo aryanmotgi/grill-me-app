@@ -1,6 +1,7 @@
 import type { StoreApi, UseBoundStore } from "zustand";
 import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
+import { playAlert } from "../sounds";
 import {
   fetchGitState,
   isTauri,
@@ -197,11 +198,12 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
     canNotify = g;
     if (!g) notif.requestPermission().then((r) => { canNotify = r === "granted"; }).catch(() => {});
   }).catch(() => {});
-  const ping = (title: string, body: string, kind: "msg" | "input") => {
+  const ping = (title: string, body: string, kind: "msg" | "input" | "mention") => {
     const st = store.getState().appSettings;
     if (st.muteAll) return;
-    if (kind === "msg" && st.notifyMessages === false) return;
+    if ((kind === "msg" || kind === "mention") && st.notifyMessages === false) return;
     if (kind === "input" && st.notifyNeedsInput === false) return;
+    playAlert(kind === "msg" ? "message" : kind === "mention" ? "mention" : "needs-input", st);
     if (canNotify) notif.sendNotification({ title, body });
   };
 
@@ -251,7 +253,12 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         if (seenMsgs.has(m.id)) continue;
         seenMsgs.add(m.id);
         if (!first && m.from !== me && (m.to === me || m.to === "all")) {
-          ping(`Message from ${m.from}`, m.text.slice(0, 120), "msg");
+          const mentioned = me && m.text.includes(`@${me}`);
+          ping(
+            mentioned ? `@you from ${m.from}` : `Message from ${m.from}`,
+            m.text.slice(0, 120),
+            mentioned ? "mention" : "msg",
+          );
         }
       }
 

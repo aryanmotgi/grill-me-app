@@ -37,7 +37,8 @@ function Sparkline({ id }: { id: string }) {
 }
 
 function SessionRow({ mate }: { mate: Teammate }) {
-  const { activeId, setActive, splitId, setSplit, toggleDnd } = useApp();
+  const { activeId, setActive, splitId, setSplit, toggleDnd, toast } = useApp();
+  const [paused, setPaused] = useState(false);
   const isActive = activeId === mate.id;
   const inSplit = splitId === mate.id;
   const offline = mate.health !== "ok";
@@ -101,6 +102,24 @@ function SessionRow({ mate }: { mate: Teammate }) {
           title="Silence notifications from this session"
         >
           dnd
+        </button>
+        <button
+          className={`btn ${paused ? "active" : ""}`}
+          title={paused ? "Resume — continues exactly where it stopped" : "Pause — freezes the process, preserves all context"}
+          onClick={async (e) => {
+            e.stopPropagation();
+            const { invoke } = await import("@tauri-apps/api/core");
+            const { ptyIdFor } = await import("../store");
+            try {
+              await invoke("pty_pause", { id: ptyIdFor(mate.id), pause: !paused });
+              setPaused(!paused);
+              toast(paused ? `${mate.name} resumed` : `${mate.name} paused — state preserved`);
+            } catch (err) {
+              toast(`Pause failed: ${err}`, "warn");
+            }
+          }}
+        >
+          {paused ? "resume" : "pause"}
         </button>
         <span className="text-faint text-[10px]" title={mate.permission === "edit" ? "You can jump into this session" : "View-only for you"}>
           {mate.permission === "edit" ? <><Icon name="swap" size={10} /> can jump in</> : <><Icon name="eye" size={10} /> view-only</>}

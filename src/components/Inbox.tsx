@@ -14,7 +14,10 @@ export function Inbox() {
   const send = () => {
     const text = draft.trim();
     if (!text) return;
-    sendMessage(to, text);
+    // @mention routing: "@mei ..." targets mei regardless of the dropdown
+    const mention = text.match(/@([a-z0-9-]+)/i);
+    const target = mention && teammates.some((t) => t.id === mention[1]) ? mention[1] : to;
+    sendMessage(target, text);
     setDraft("");
   };
 
@@ -32,7 +35,15 @@ export function Inbox() {
               <span className="flex-1" />
               <span className="text-faint tabular-nums">{m.ts}</span>
             </div>
-            <div className="mt-1 text-[11px] leading-relaxed">{m.text}</div>
+            <div className="mt-1 text-[11px] leading-relaxed">
+              {m.text.split(/(@[a-z0-9-]+)/gi).map((part, i) =>
+                part.startsWith("@") ? (
+                  <span key={i} className="text-accent font-semibold">{part}</span>
+                ) : (
+                  part
+                ),
+              )}
+            </div>
             <button
               className={`btn mt-1.5 demo-hide ${m.answered ? "" : "active"}`}
               onClick={() => toggleAnswered(m.id)}

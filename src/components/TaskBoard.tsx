@@ -142,6 +142,63 @@ function DiffPeekRow({ file, owner, ownerId, flash }: { file: string; owner: str
   );
 }
 
+function taskWords(text: string): Set<string> {
+  return new Set(text.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
+}
+
+function TaskCreate() {
+  const { tasks, teammates, setShared, toast } = useApp();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [owner, setOwner] = useState("");
+  const dupe = title.length > 6
+    ? tasks.find((t) => {
+        const a = taskWords(title);
+        const b = taskWords(`${t.title} ${t.desc}`);
+        return [...a].filter((w) => b.has(w)).length >= 2 && t.status !== "done";
+      })
+    : undefined;
+  const create = async () => {
+    if (!title.trim()) return;
+    const next = [...tasks, {
+      id: `t${Date.now()}`,
+      title: title.trim(),
+      desc: "",
+      owner: owner || teammates[0]?.id || "me",
+      status: "not-started" as const,
+      files: [],
+    }];
+    setShared({ tasks: next });
+    const { invoke } = await import("@tauri-apps/api/core");
+    invoke("shared_write", { name: "tasks.json", content: JSON.stringify(next, null, 2) }).catch(console.error);
+    toast(`Task added${dupe ? " (possible duplicate flagged)" : ""}`);
+    setTitle(""); setOpen(false);
+  };
+  if (!open) {
+    return <button className="btn mt-1 demo-hide" onClick={() => setOpen(true)}>+ task</button>;
+  }
+  return (
+    <div className="mt-1 flex flex-col gap-1.5 demo-hide">
+      <input className="bg-raised hairline rounded-sm px-2 py-1.5 text-[11px] outline-none focus:border-accent"
+        placeholder="task title" value={title} autoFocus
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && create()} />
+      {dupe ? (
+        <div className="text-warn text-[10px] leading-relaxed">
+          <Icon name="warn" size={9} /> possible duplicate of “{dupe.title}” ({dupe.owner}) — same wording
+        </div>
+      ) : null}
+      <div className="flex gap-1.5">
+        <select className="btn" value={owner} onChange={(e) => setOwner(e.target.value)}>
+          {teammates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button className="btn primary" onClick={create}>add</button>
+        <button className="btn" onClick={() => setOpen(false)}>cancel</button>
+      </div>
+    </div>
+  );
+}
+
 export function TaskBoard() {
   const tasks = useApp((s) => s.tasks);
   const teammates = useApp((s) => s.teammates);
@@ -170,6 +227,7 @@ export function TaskBoard() {
       {tasks.map((task) => (
         <TaskCard key={task.id} task={task} now={now} />
       ))}
+      <TaskCreate />
 
       {predicted.length > 0 ? (
         <div className="mt-4 demo-hide">

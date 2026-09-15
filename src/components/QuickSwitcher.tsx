@@ -2,8 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { useApp } from "../store";
 
+interface Action {
+  label: string;
+  hint: string;
+  run: () => void;
+}
+
 export function QuickSwitcher() {
-  const { teammates, switcherOpen, setSwitcherOpen, setActive } = useApp();
+  const {
+    teammates, switcherOpen, setSwitcherOpen, setActive,
+    shipSession, activeId, setPickerOpen, setSettingsOpen,
+    setTheme, themeName, toggleDense, toggleFocus, setMergePilotOpen, setRailTab,
+  } = useApp();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -11,6 +21,20 @@ export function QuickSwitcher() {
   const hits = teammates.filter((t) =>
     `${t.name} ${t.branch} ${t.taskLabel}`.toLowerCase().includes(query.toLowerCase()),
   );
+
+  const actions: Action[] = [
+    { label: "ship active session", hint: "runs /ship — tests before push", run: () => shipSession(activeId) },
+    { label: "switch project", hint: "open the project picker", run: () => setPickerOpen(true) },
+    { label: "open settings", hint: "team, terminal, safety, sounds", run: () => setSettingsOpen(true) },
+    { label: "toggle theme", hint: "ember / paperwhite", run: () => setTheme(themeName === "ember" ? "paperwhite" : "ember") },
+    { label: "toggle dense mode", hint: "compact layout", run: toggleDense },
+    { label: "focus mode", hint: "collapse to your pane", run: toggleFocus },
+    { label: "merge pilot", hint: "run the merge in a terminal", run: () => setMergePilotOpen(true) },
+    { label: "go to inbox", hint: "right rail", run: () => setRailTab("inbox") },
+    { label: "go to activity", hint: "right rail", run: () => setRailTab("activity") },
+  ].filter((a) => a.label.includes(query.toLowerCase()) || a.hint.includes(query.toLowerCase()));
+
+  const total = hits.length + actions.length;
 
   useEffect(() => {
     if (switcherOpen) {
@@ -34,14 +58,20 @@ export function QuickSwitcher() {
         <input
           ref={inputRef}
           className="w-full bg-transparent px-4 py-3 text-[13px] outline-none border-b border-line"
-          placeholder="Jump to teammate…"
+          placeholder="Jump to teammate or run an action…"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setCursor(0); }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setSwitcherOpen(false);
-            if (e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, hits.length - 1));
+            if (e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, total - 1));
             if (e.key === "ArrowUp") setCursor((c) => Math.max(c - 1, 0));
-            if (e.key === "Enter" && hits[cursor]) setActive(hits[cursor].id);
+            if (e.key === "Enter") {
+              if (cursor < hits.length && hits[cursor]) setActive(hits[cursor].id);
+              else if (actions[cursor - hits.length]) {
+                actions[cursor - hits.length].run();
+                setSwitcherOpen(false);
+              }
+            }
           }}
         />
         {hits.map((t, i) => (
@@ -60,7 +90,23 @@ export function QuickSwitcher() {
             <span className="text-dim text-[11px] truncate">{t.taskLabel}</span>
           </div>
         ))}
-        {hits.length === 0 ? (
+        {actions.length > 0 ? (
+          <div className="px-4 pt-2 pb-1 panel-label">actions</div>
+        ) : null}
+        {actions.map((a, i) => (
+          <div key={a.label}
+            className={`px-4 py-2 flex items-center gap-2.5 cursor-pointer text-[12px] ${
+              hits.length + i === cursor ? "bg-raised border-l-2 border-l-accent" : "border-l-2 border-l-transparent"
+            }`}
+            onMouseEnter={() => setCursor(hits.length + i)}
+            onClick={() => { a.run(); setSwitcherOpen(false); }}>
+            <span className="text-accent">›</span>
+            <span>{a.label}</span>
+            <span className="flex-1" />
+            <span className="text-faint text-[10px]">{a.hint}</span>
+          </div>
+        ))}
+        {total === 0 ? (
           <div className="px-4 py-3 text-faint text-[12px]">No matches.</div>
         ) : null}
       </div>
