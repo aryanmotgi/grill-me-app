@@ -1,10 +1,11 @@
 import { useApp } from "../store";
+import { Icon } from "./Icon";
 import type { CiStatus } from "../types";
 
 const CI_TAG: Record<CiStatus, { icon: string; cls: string }> = {
-  pass: { icon: "✓", cls: "ok" },
-  fail: { icon: "✗", cls: "danger" },
-  running: { icon: "◌", cls: "" },
+  pass: { icon: "check", cls: "ok" },
+  fail: { icon: "cross", cls: "danger" },
+  running: { icon: "clock", cls: "" },
 };
 
 function download(filename: string, text: string) {
@@ -99,7 +100,7 @@ export function TeamPanel() {
         <div className="panel-label mb-2">ci — github actions</div>
         {ciWorkflows.map((w) => (
           <div key={w.name} className="flex items-center gap-2 py-1 text-[11px]">
-            <span className={`tag ${CI_TAG[w.status].cls}`}>{CI_TAG[w.status].icon}</span>
+            <span className={CI_TAG[w.status].cls === "ok" ? "text-ok" : CI_TAG[w.status].cls === "danger" ? "text-danger" : "text-dim"}><Icon name={CI_TAG[w.status].icon} size={11} /></span>
             <span>{w.name}</span>
             <span className="flex-1" />
             <span className="font-mono text-faint text-[10px]">{w.detail}</span>
@@ -112,7 +113,7 @@ export function TeamPanel() {
         <div className="panel-label mb-2">sponsor checklist</div>
         {sponsorChecklist.map((s) => (
           <div key={s.sponsor + s.requirement} className="flex items-start gap-2 py-1 text-[11px]">
-            <span className={s.done ? "text-ok" : "text-faint"}>{s.done ? "▣" : "▢"}</span>
+            <span className={s.done ? "text-ok" : "text-faint"}><Icon name={s.done ? "check" : "plus"} size={10} /></span>
             <span className="text-dim leading-snug">
               <span className="text-accent">{s.sponsor}</span> — {s.requirement}
             </span>
@@ -122,8 +123,8 @@ export function TeamPanel() {
 
       {/* exports */}
       <div className="flex gap-2 demo-hide">
-        <button className="btn" onClick={snapshot}>⇩ snapshot</button>
-        <button className="btn" onClick={retro}>⇩ retro doc</button>
+        <button className="btn" onClick={snapshot}><Icon name="download" size={10} /> snapshot</button>
+        <button className="btn" onClick={retro}><Icon name="download" size={10} /> retro doc</button>
       </div>
     </div>
   );
@@ -139,7 +140,7 @@ export function PreviewPane() {
       </div>
       <div className="flex-1 hairline rounded-sm bg-raised flex items-center justify-center">
         <div className="text-center text-faint text-[11px] leading-relaxed">
-          <div className="text-[24px] mb-2">⌁</div>
+          
           live app preview mounts here<br />
           (Tauri webview — next phase)
         </div>

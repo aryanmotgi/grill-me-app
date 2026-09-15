@@ -1,8 +1,9 @@
 import { useApp } from "../store";
+import { Icon } from "./Icon";
 import type { Teammate } from "../types";
 
 const SETUP_LABEL: Record<Teammate["setup"], string> = {
-  worktree: "worktree ✓",
+  worktree: "worktree ok",
   env: "env linked",
   ready: "ready",
 };
@@ -27,10 +28,10 @@ function SessionRow({ mate }: { mate: Teammate }) {
         <span className={`status-dot ${mate.status}`} title={`${mate.status}${offline ? ` · no activity ${mate.lastActiveMin}m` : ""}`} />
         <span className="font-display font-semibold text-[13px]">{mate.name}</span>
         <span className="font-mono text-faint text-[10px] truncate" title={mate.branch}>
-          ⎇ {mate.branch}
+          <Icon name="branch" size={11} /> {mate.branch}
         </span>
         <span className="flex-1" />
-        {mate.dnd ? <span title="Do not disturb" className="text-faint text-[10px]">◌</span> : null}
+        {mate.dnd ? <span title="Do not disturb" className="text-faint"><Icon name="bellOff" size={11} /></span> : null}
       </div>
 
       {/* secondary line: task label + quiet metadata */}
@@ -52,7 +53,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
 
       {/* live presence */}
       <div className="mt-0.5 pl-4 font-mono text-[10px] text-faint truncate" title={mate.currentFile}>
-        ▸ {mate.currentFile}
+        <Icon name="file" size={10} /> {mate.currentFile}
       </div>
 
       {/* row actions — hover only, keeps rows quiet */}
@@ -72,7 +73,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
           dnd
         </button>
         <span className="text-faint text-[10px]" title={mate.permission === "edit" ? "You can jump into this session" : "View-only for you"}>
-          {mate.permission === "edit" ? "⇄ can jump in" : "view-only"}
+          {mate.permission === "edit" ? <><Icon name="swap" size={10} /> can jump in</> : <><Icon name="eye" size={10} /> view-only</>}
         </span>
       </div>
     </div>

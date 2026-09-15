@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "./Icon";
 import { fileConflicts, fileLocks, predictedConflicts, useApp } from "../store";
 import type { Task, TaskStatus } from "../types";
 
@@ -44,7 +45,7 @@ function TaskCard({ task, now }: { task: Task; now: number }) {
         <span className="flex-1" />
         {task.status === "in-progress" && task.startedAt ? (
           <span className="text-accent text-[10px] tabular-nums" title="Time on task">
-            ⏱ {elapsed(task.startedAt, now)}
+            <Icon name="clock" size={10} /> {elapsed(task.startedAt, now)}
           </span>
         ) : null}
       </div>
@@ -59,7 +60,7 @@ function TaskCard({ task, now }: { task: Task; now: number }) {
         </button>
         {blocked ? (
           <span className="tag warn" title={`Waiting on: ${blocker!.title}`}>
-            ⛔ blocked → {blocker!.title}
+            <Icon name="block" size={10} /> blocked · waiting on {blocker!.title}
           </span>
         ) : null}
       </div>
@@ -67,7 +68,7 @@ function TaskCard({ task, now }: { task: Task; now: number }) {
         <div className="mt-1 font-mono text-[10px] text-faint leading-relaxed">
           {task.files.map((f) => (
             <span key={f} className={conflictFiles.has(f) ? "text-danger" : ""}>
-              {conflictFiles.has(f) ? "⚠ " : ""}{f}{"  "}
+              {conflictFiles.has(f) ? <Icon name="warn" size={9} className="text-danger mr-0.5" /> : null}{f}{"  "}
             </span>
           ))}
         </div>
@@ -110,7 +111,7 @@ export function TaskBoard() {
           <div className="panel-label mb-1.5">predicted overlap</div>
           {predicted.map((p) => (
             <div key={p.a.id + p.b.id} className="text-[10px] text-warn leading-relaxed">
-              ⚠ “{p.a.title}” ({name(p.a.owner)}) ↔ “{p.b.title}” ({name(p.b.owner)}) — shared: {p.words.join(", ")}
+              <Icon name="warn" size={10} /> “{p.a.title}” ({name(p.a.owner)}) and “{p.b.title}” ({name(p.b.owner)}) — shared: {p.words.join(", ")}
             </div>
           ))}
         </div>
@@ -128,7 +129,7 @@ export function TaskBoard() {
                 highlightFiles.includes(l.file) ? "flash" : ""
               }`}
             >
-              🔒 {l.file} <span className="text-faint font-sans">— {name(l.owner)}</span>
+              <Icon name="lock" size={10} className="mr-1 text-faint" />{l.file} <span className="text-faint font-sans">— {name(l.owner)}</span>
             </div>
           ))
         )}

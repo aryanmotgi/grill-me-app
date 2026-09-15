@@ -1,4 +1,5 @@
 import { attentionCount, useApp } from "../store";
+import { Icon } from "./Icon";
 import { themes } from "../theme/themes";
 
 export function TopBar() {
@@ -28,7 +29,7 @@ export function TopBar() {
 
       {/* merge/integrator indicator */}
       <div className="tag ok demo-hide" title="Whose turn it is to merge">
-        merge turn → {mergerName}
+        <Icon name="merge" size={11} /> merge turn: {mergerName}
       </div>
 
       <div className="flex-1" />
@@ -39,7 +40,7 @@ export function TopBar() {
         title="Sessions needing attention"
         onClick={() => toast(attention ? `${attention} session(s) need attention — OS notification pinged (stubbed)` : "All quiet")}
       >
-        ◉ alerts
+        <Icon name="bell" size={11} /> alerts
         {attention > 0 && (
           <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full bg-warn text-accent-ink text-[9px] font-bold flex items-center justify-center">
             {attention}
@@ -48,7 +49,7 @@ export function TopBar() {
       </button>
 
       <button className="btn demo-hide" title="One-click commit + push (⌘S)" onClick={() => quickCommit(activeId)}>
-        ⇡ commit
+        <Icon name="push" size={11} /> commit
       </button>
       <button className="btn demo-hide" title="Quick switcher (⌘K)" onClick={() => setSwitcherOpen(true)}>
         ⌘K
