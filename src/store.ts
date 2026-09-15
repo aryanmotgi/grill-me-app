@@ -84,6 +84,10 @@ interface AppState {
   ciRuns: CiRun[];
   setCiRuns: (runs: CiRun[]) => void;
 
+  /** "home" = mission control overview; "session" = terminal workspace */
+  view: "home" | "session";
+  setView: (v: "home" | "session") => void;
+  featureIndexOpen: boolean;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
   activeProject: string | null;
@@ -138,7 +142,7 @@ export const useApp = create<AppState>((set, get) => ({
   themeName: "ember",
   toasts: [],
 
-  setActive: (id) => set({ activeId: id, switcherOpen: false }),
+  setActive: (id) => set({ activeId: id, switcherOpen: false, view: "session" }),
   setSplit: (id) => set({ splitId: id }),
   setRailTab: (railTab) => set({ railTab }),
   toggleFocus: () => set((s) => ({ focusMode: !s.focusMode, splitId: null })),
@@ -378,6 +382,9 @@ export const useApp = create<AppState>((set, get) => ({
   members: [],
   standupLines: [],
   ciRuns: [],
+  view: "home",
+  setView: (view) => set({ view }),
+  featureIndexOpen: false,
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   activeProject: null,
