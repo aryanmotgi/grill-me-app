@@ -290,6 +290,257 @@ fn start_watching(app: tauri::AppHandle) {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Embedded terminals — one real Claude Code process per session, pty-backed.
+// Output ring + stripped line tail live in Rust so webview reloads replay
+// scrollback. Status derives from live process state: child alive, output
+// flow, and BEL (Claude Code rings the terminal bell when it needs input).
+// ---------------------------------------------------------------------------
+
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::collections::{HashMap, VecDeque};
+use std::io::{Read, Write};
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
+
+struct PtySession {
+    writer: Box<dyn Write + Send>,
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    ring: VecDeque<u8>,
+    lines: VecDeque<String>,
+    partial: String,
+    esc: u8, // 0 none, 1 saw ESC, 2 in CSI, 3 in OSC
+    last_output: Instant,
+    bell: bool,
+    alive: bool,
+    recording: Option<std::fs::File>,
+    recording_path: Option<String>,
+}
+
+static PTYS: OnceLock<Mutex<HashMap<String, PtySession>>> = OnceLock::new();
+
+fn ptys() -> &'static Mutex<HashMap<String, PtySession>> {
+    PTYS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Stateful ANSI stripper feeding the plain-text line tail (search, status).
+fn append_stripped(s: &mut PtySession, chunk: &[u8]) {
+    for &b in chunk {
+        match s.esc {
+            1 => {
+                s.esc = match b {
+                    b'[' => 2,
+                    b']' => 3,
+                    _ => 0,
+                };
+            }
+            2 => {
+                if (0x40..=0x7e).contains(&b) {
+                    s.esc = 0;
+                }
+            }
+            3 => {
+                if b == 0x07 {
+                    s.esc = 0;
+                }
+            }
+            _ => match b {
+                0x1b => s.esc = 1,
+                b'\n' => {
+                    let line = s.partial.trim_end().to_string();
+                    if !line.trim().is_empty() {
+                        s.lines.push_back(line);
+                        while s.lines.len() > 300 {
+                            s.lines.pop_front();
+                        }
+                    }
+                    s.partial.clear();
+                }
+                b'\r' => s.partial.clear(),
+                0x00..=0x1f => {}
+                _ => {
+                    if s.partial.len() < 4000 {
+                        s.partial.push(b as char);
+                    }
+                }
+            },
+        }
+    }
+}
+
+#[tauri::command]
+fn pty_ensure(app: tauri::AppHandle, id: String, cwd: String) -> Result<(), String> {
+    use tauri::Emitter;
+    {
+        let mut map = ptys().lock().unwrap();
+        if let Some(s) = map.get_mut(&id) {
+            if s.alive {
+                return Ok(());
+            }
+            map.remove(&id);
+        }
+    }
+    let pair = native_pty_system()
+        .openpty(PtySize { rows: 32, cols: 110, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| e.to_string())?;
+    let mut cmd = CommandBuilder::new("/bin/zsh");
+    cmd.args(["-lc", "exec claude"]);
+    cmd.cwd(&cwd);
+    cmd.env("TERM", "xterm-256color");
+    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    drop(pair.slave);
+    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    ptys().lock().unwrap().insert(
+        id.clone(),
+        PtySession {
+            writer,
+            master: pair.master,
+            child,
+            ring: VecDeque::new(),
+            lines: VecDeque::new(),
+            partial: String::new(),
+            esc: 0,
+            last_output: Instant::now(),
+            bell: false,
+            alive: true,
+            recording: None,
+            recording_path: None,
+        },
+    );
+
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => {
+                    if let Some(s) = ptys().lock().unwrap().get_mut(&id) {
+                        s.alive = false;
+                    }
+                    let _ = app.emit("pty-exit", &id);
+                    break;
+                }
+                Ok(n) => {
+                    let chunk = &buf[..n];
+                    {
+                        let mut map = ptys().lock().unwrap();
+                        if let Some(s) = map.get_mut(&id) {
+                            s.ring.extend(chunk);
+                            while s.ring.len() > 400_000 {
+                                s.ring.pop_front();
+                            }
+                            if chunk.contains(&0x07) {
+                                s.bell = true;
+                            }
+                            s.last_output = Instant::now();
+                            append_stripped(s, chunk);
+                            if let Some(f) = s.recording.as_mut() {
+                                let _ = f.write_all(chunk);
+                            }
+                        }
+                    }
+                    use base64::Engine;
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
+                    let _ = app.emit(
+                        "pty-output",
+                        serde_json::json!({ "id": id, "data": b64 }),
+                    );
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn pty_write(id: String, data: String) -> Result<(), String> {
+    let mut map = ptys().lock().unwrap();
+    let s = map.get_mut(&id).ok_or("no session")?;
+    s.bell = false;
+    s.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn pty_resize(id: String, rows: u16, cols: u16) -> Result<(), String> {
+    let map = ptys().lock().unwrap();
+    let s = map.get(&id).ok_or("no session")?;
+    s.master
+        .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn pty_scrollback(id: String) -> String {
+    use base64::Engine;
+    let map = ptys().lock().unwrap();
+    match map.get(&id) {
+        Some(s) => {
+            let bytes: Vec<u8> = s.ring.iter().copied().collect();
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        }
+        None => String::new(),
+    }
+}
+
+#[derive(Serialize)]
+struct PtyStatus {
+    id: String,
+    alive: bool,
+    #[serde(rename = "quietMs")]
+    quiet_ms: u128,
+    bell: bool,
+    tail: Vec<String>,
+    recording: Option<String>,
+}
+
+#[tauri::command]
+fn pty_status() -> Vec<PtyStatus> {
+    let mut map = ptys().lock().unwrap();
+    map.iter_mut()
+        .map(|(id, s)| {
+            if s.alive {
+                if let Ok(Some(_)) = s.child.try_wait() {
+                    s.alive = false;
+                }
+            }
+            PtyStatus {
+                id: id.clone(),
+                alive: s.alive,
+                quiet_ms: s.last_output.elapsed().as_millis(),
+                bell: s.bell,
+                tail: s.lines.iter().rev().take(40).rev().cloned().collect(),
+                recording: s.recording_path.clone(),
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn pty_record(id: String, on: bool) -> Result<Option<String>, String> {
+    let mut map = ptys().lock().unwrap();
+    let s = map.get_mut(&id).ok_or("no session")?;
+    if on {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let dir = PathBuf::from(home).join(".grillme").join("recordings");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let path = dir.join(format!("{id}-{ts}.log"));
+        s.recording = Some(std::fs::File::create(&path).map_err(|e| e.to_string())?);
+        let p = path.to_string_lossy().into_owned();
+        s.recording_path = Some(p.clone());
+        Ok(Some(p))
+    } else {
+        s.recording = None;
+        s.recording_path = None;
+        Ok(None)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -298,7 +549,13 @@ pub fn run() {
             team_config,
             git_state,
             start_watching,
-            watch_state
+            watch_state,
+            pty_ensure,
+            pty_write,
+            pty_resize,
+            pty_scrollback,
+            pty_status,
+            pty_record
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -17,6 +17,7 @@ import {
 
 interface FeedStore {
   teammates: Teammate[];
+  members: TeamMemberConfig[];
   applyTeamConfig: (members: TeamMemberConfig[]) => void;
   patchTeammate: (id: string, patch: Partial<Teammate>) => void;
   setActivity: (events: import("../../types").ActivityEvent[]) => void;
@@ -85,4 +86,63 @@ export async function startWatchFeed(store: UseBoundStore<StoreApi<FeedStore>>) 
   };
   tick();
   setInterval(tick, WATCH_POLL_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Embedded terminal feed. pty_ensure spawns a real Claude Code process per
+// configured worktree; pty_status drives live status from process state:
+// exited -> idle, BEL pending -> needs-input, output flowing -> working.
+// The stripped tail feeds cross-session search.
+// ---------------------------------------------------------------------------
+
+const PTY_POLL_MS = 2000;
+
+interface PtyStatus {
+  id: string;
+  alive: boolean;
+  quietMs: number;
+  bell: boolean;
+  tail: string[];
+  recording: string | null;
+}
+
+export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+
+  const ensureAll = async () => {
+    for (const m of store.getState().members) {
+      await invoke("pty_ensure", { id: m.id, cwd: m.repoPath }).catch(() => {});
+    }
+  };
+  // config may not be loaded yet — retry until members appear
+  const waitCfg = setInterval(() => {
+    if (store.getState().members.length > 0) {
+      clearInterval(waitCfg);
+      ensureAll();
+    }
+  }, 500);
+
+  const tick = async () => {
+    try {
+      const statuses = await invoke<PtyStatus[]>("pty_status");
+      for (const st of statuses) {
+        const status = !st.alive
+          ? "idle"
+          : st.bell
+            ? "needs-input"
+            : st.quietMs < 4000
+              ? "working"
+              : "idle";
+        store.getState().patchTeammate(st.id, {
+          status,
+          recording: st.recording !== null,
+          terminal: st.tail.map((text) => ({ kind: "out" as const, text })),
+        });
+      }
+    } catch (e) {
+      console.error("[pty feed]", e);
+    }
+  };
+  setInterval(tick, PTY_POLL_MS);
 }
