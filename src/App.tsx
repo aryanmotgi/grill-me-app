@@ -8,6 +8,7 @@ import { RightRail } from "./components/RightRail";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { ConflictBanner, Toasts } from "./components/Chrome";
+import { SettingsModal } from "./components/Settings";
 
 export default function App() {
   const {
@@ -65,6 +66,7 @@ export default function App() {
         {focusMode ? null : <RightRail />}
       </div>
       <QuickSwitcher />
+      <SettingsModal />
       <Toasts />
     </div>
   );

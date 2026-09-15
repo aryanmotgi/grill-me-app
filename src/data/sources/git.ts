@@ -11,6 +11,7 @@ export interface TeamMemberConfig {
   id: string;
   name: string;
   repoPath: string;
+  permission?: string;
 }
 
 interface GitState {

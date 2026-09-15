@@ -6,7 +6,7 @@ export function TopBar() {
   const {
     teammates, mergeQueue, advanceMergeQueue, themeName, setTheme,
     demoMode, toggleDemo, focusMode, toggleFocus,
-    toast, quickCommit, activeId, setSwitcherOpen,
+    toast, quickCommit, activeId, setSwitcherOpen, setSettingsOpen,
   } = useApp();
 
   const attention = attentionCount(teammates);
@@ -63,6 +63,9 @@ export function TopBar() {
       </button>
       <button className={`btn ${demoMode ? "primary" : ""}`} onClick={toggleDemo} title="Clean view for demoing">
         demo
+      </button>
+      <button className="btn demo-hide" title="Settings" onClick={() => setSettingsOpen(true)}>
+        <Icon name="gear" size={11} />
       </button>
       <select
         className="btn demo-hide"

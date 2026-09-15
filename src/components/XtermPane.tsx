@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { isTauri } from "../data/sources/git";
+import { useApp } from "../store";
 
 function b64ToU8(b64: string) {
   const bin = atob(b64);
@@ -61,6 +62,13 @@ export function XtermPane({ id, cwd, themeName }: { id: string; cwd: string; the
         if (e.payload.id === id && !disposed) term.write(b64ToU8(e.payload.data));
       });
       term.onData((data) => {
+        const st = useApp.getState();
+        const mate = st.teammates.find((t) => t.id === id);
+        const isOwn = st.members[0]?.id === id;
+        if (!isOwn && mate?.permission !== "edit") {
+          st.toast(`${mate?.name ?? id} is view-only — change it in settings`, "warn");
+          return;
+        }
         invoke("pty_write", { id, data }).catch(() => {});
       });
       const doResize = () => {

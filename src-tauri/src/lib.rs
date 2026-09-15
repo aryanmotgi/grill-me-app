@@ -13,6 +13,9 @@ pub struct TeamMember {
     pub name: String,
     #[serde(rename = "repoPath")]
     pub repo_path: String,
+    /// "edit" = others may type into this session; "view" = watch only.
+    #[serde(default)]
+    pub permission: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -35,6 +38,7 @@ fn default_config() -> TeamConfig {
             id: "me".into(),
             name: "Me".into(),
             repo_path: cwd,
+            permission: Some("edit".into()),
         }],
     }
 }

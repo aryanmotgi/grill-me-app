@@ -74,6 +74,11 @@ interface AppState {
   standupLines: string[];
   ciRuns: CiRun[];
   setCiRuns: (runs: CiRun[]) => void;
+
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
+  appSettings: Record<string, unknown>;
+  setAppSetting: (key: string, value: unknown) => void;
   setShared: (p: {
     tasks?: Task[];
     messages?: Message[];
@@ -236,9 +241,14 @@ export const useApp = create<AppState>((set, get) => ({
   applyTeamConfig: (members) =>
     set((s) => ({
       members,
-      teammates: members.map((m) => {
+      teammates: members.map((m, i) => {
         const seed = s.teammates.find((t) => t.id === m.id);
-        return { ...(seed ?? emptyTeammate(m.id)), id: m.id, name: m.name };
+        return {
+          ...(seed ?? emptyTeammate(m.id)),
+          id: m.id,
+          name: m.name,
+          permission: (m.permission ?? (i === 0 ? "edit" : "view")) as Teammate["permission"],
+        };
       }),
       activeId: members.some((m) => m.id === s.activeId)
         ? s.activeId
@@ -276,6 +286,14 @@ export const useApp = create<AppState>((set, get) => ({
   members: [],
   standupLines: [],
   ciRuns: [],
+  settingsOpen: false,
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  appSettings: {},
+  setAppSetting: (key, value) => {
+    const appSettings = { ...get().appSettings, [key]: value };
+    set({ appSettings });
+    persistShared("settings.json", appSettings);
+  },
 
   highlightFiles: [],
   flashFiles: (files) => {
@@ -347,6 +365,17 @@ startWatchFeed(useApp);
 startPtyFeed(useApp);
 startSharedFeed(useApp);
 startUsageFeed(useApp);
+
+(async () => {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  const raw = await invoke<string>("shared_read", { name: "settings.json" }).catch(() => "");
+  if (raw?.trim()) {
+    const appSettings = JSON.parse(raw);
+    useApp.setState({ appSettings });
+    if (typeof appSettings.theme === "string") useApp.setState({ themeName: appSettings.theme });
+  }
+})();
 
 async function persistShared(name: string, data: unknown) {
   if (!isTauri()) return;
