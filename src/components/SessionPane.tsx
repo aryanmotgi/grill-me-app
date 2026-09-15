@@ -37,7 +37,7 @@ export function SessionPane({ mate }: { mate: Teammate }) {
       <div className="flex items-center gap-2 px-3 h-9 border-b border-line bg-panel flex-none">
         <span className={`status-dot ${mate.status}`} />
         <span className="font-display font-semibold text-[12px]">{mate.name}</span>
-        <span className="text-faint text-[11px]">⎇ {mate.branch}</span>
+        <span className="font-mono text-faint text-[10px]">⎇ {mate.branch}</span>
         <span className="tag">{mate.usage.model}</span>
         {mate.recording ? <span className="tag danger">● rec</span> : null}
         <span className="flex-1" />
@@ -99,8 +99,8 @@ export function SessionPane({ mate }: { mate: Teammate }) {
             <div className="text-faint text-[11px]">No uncommitted changes.</div>
           ) : (
             mate.changes.map((c) => (
-              <div key={c.file} className="flex items-center gap-2 py-1.5 border-b border-line text-[11px]">
-                <span className="text-ink truncate">{c.file}</span>
+              <div key={c.file} className="flex items-center gap-2 py-1.5 text-[11px]">
+                <span className="font-mono text-ink text-[10px] truncate">{c.file}</span>
                 <span className="text-faint truncate">{c.summary}</span>
                 <span className="flex-1" />
                 <button className="btn" onClick={() => revertChange(mate.id, c.file)}>revert</button>

@@ -4,20 +4,26 @@ import { fileConflicts, useApp } from "../store";
 export function ConflictBanner() {
   const tasks = useApp((s) => s.tasks);
   const teammates = useApp((s) => s.teammates);
+  const flashFiles = useApp((s) => s.flashFiles);
   const conflicts = fileConflicts(tasks);
   if (conflicts.length === 0) return null;
 
   const name = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
 
   return (
-    <div className="flex-none px-4 py-1.5 bg-warn/10 border-b border-warn/40 text-warn text-[11px] flex items-center gap-3">
+    <button
+      className="flex-none px-4 py-1.5 bg-warn/10 border-b border-warn/40 text-warn text-[11px] flex items-center gap-3 cursor-pointer text-left hover:bg-warn/15 transition-colors"
+      title="Jump to these files in the claimed list"
+      onClick={() => flashFiles(conflicts.map((c) => c.file))}
+    >
       <span className="font-display font-bold">⚠ FILE CONFLICT</span>
       {conflicts.map((c) => (
         <span key={c.file}>
-          {c.file} — claimed by {c.owners.map(name).join(" and ")}
+          <span className="font-mono">{c.file}</span> — claimed by {c.owners.map(name).join(" and ")}
         </span>
       ))}
-    </div>
+      <span className="ml-auto text-warn/70">show ↓</span>
+    </button>
   );
 }
 

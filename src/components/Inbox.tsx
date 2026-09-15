@@ -25,7 +25,7 @@ export function Inbox() {
           Notes wait here until the receiving session checks in — nothing interrupts active work.
         </div>
         {sorted.map((m) => (
-          <div key={m.id} className={`hairline rounded-sm p-2.5 mb-2 ${m.answered ? "opacity-50 bg-panel" : "bg-raised"}`}>
+          <div key={m.id} className={`rounded-sm p-2.5 mb-1 ${m.answered ? "opacity-45" : "bg-raised"}`}>
             <div className="flex items-center gap-2 text-[10px]">
               <span className="text-accent font-semibold">{name(m.from)}</span>
               <span className="text-faint">→ {name(m.to)}</span>

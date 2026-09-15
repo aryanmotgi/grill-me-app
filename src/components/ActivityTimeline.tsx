@@ -13,7 +13,7 @@ const ICON: Record<ActivityEvent["kind"], string> = {
 function StandupSummary() {
   const teammates = useApp((s) => s.teammates);
   return (
-    <div className="hairline rounded-sm bg-raised p-2.5 mb-3">
+    <div className="rounded-sm bg-raised p-2.5 mb-3">
       <div className="panel-label mb-1.5">⚡ standup — auto-stitched</div>
       {teammates.map((t) => (
         <div key={t.id} className="text-[11px] leading-relaxed">
@@ -35,7 +35,7 @@ export function ActivityTimeline() {
       <StandupSummary />
       <div className="panel-label mb-2">timeline</div>
       {activity.map((e) => (
-        <div key={e.id} className="flex gap-2 py-1.5 border-b border-line text-[11px]">
+        <div key={e.id} className="flex gap-2 py-1.5 text-[11px]">
           <span className={e.kind === "merge" ? "text-ok" : e.kind === "status" ? "text-warn" : "text-faint"}>
             {ICON[e.kind]}
           </span>
