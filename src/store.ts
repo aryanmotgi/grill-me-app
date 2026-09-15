@@ -318,6 +318,11 @@ export const useApp = create<AppState>((set, get) => ({
   applyTeamConfig: (members) =>
     set((s) => ({
       members,
+      // drop queue entries for renamed/removed members, append missing ones
+      mergeQueue: [
+        ...s.mergeQueue.filter((id) => members.some((m) => m.id === id)),
+        ...members.filter((m) => !s.mergeQueue.includes(m.id)).map((m) => m.id),
+      ],
       teammates: members.map((m, i) => {
         const seed = s.teammates.find((t) => t.id === m.id);
         return {

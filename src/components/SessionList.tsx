@@ -71,13 +71,13 @@ function SessionRow({ mate }: { mate: Teammate }) {
           {mate.taskLabel}
         </span>
         <span className="flex-1" />
-        {res ? (
+        {res && res.cpu >= 3 ? (
           <span className={`font-mono text-[9px] tabular-nums ${res.cpu > 80 ? "text-danger" : "text-faint"}`}
             title="Live CPU / memory for this session's process tree">
             {res.cpu.toFixed(0)}% · {res.memMb >= 1024 ? `${(res.memMb / 1024).toFixed(1)}G` : `${res.memMb.toFixed(0)}M`}
           </span>
         ) : null}
-        <span className="tag">{SETUP_LABEL[mate.setup]}</span>
+        {mate.setup !== "ready" ? <span className="tag">{SETUP_LABEL[mate.setup]}</span> : null}
         {offline ? (
           <span
             className={`text-[10px] ${mate.health === "disconnected" ? "text-danger" : "text-warn"}`}
@@ -90,10 +90,12 @@ function SessionRow({ mate }: { mate: Teammate }) {
 
       <div className="mt-0.5 pl-4 text-ok"><Sparkline id={mate.id} /></div>
 
-      {/* live presence */}
-      <div className="mt-0.5 pl-4 font-mono text-[10px] text-faint truncate" title={mate.currentFile}>
-        <Icon name="file" size={10} /> {mate.currentFile}
-      </div>
+      {/* live presence — only when we actually know the file */}
+      {mate.currentFile && mate.currentFile !== "—" ? (
+        <div className="mt-0.5 pl-4 font-mono text-[10px] text-faint truncate" title={`Currently touching ${mate.currentFile}`}>
+          <Icon name="file" size={10} /> {mate.currentFile}
+        </div>
+      ) : null}
 
       {/* row actions — hover only, keeps rows quiet */}
       <div className="mt-1.5 pl-4 gap-1.5 items-center hidden group-hover:flex demo-hide">

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -24,6 +24,9 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
   const ref = useRef<HTMLDivElement>(null);
   const latRef = useRef<HTMLSpanElement>(null);
   const ts = useApp((s) => s.termSettings);
+  /** starting → live on first output; dead on pty-exit */
+  const [phase, setPhase] = useState<"starting" | "live" | "dead">("starting");
+  const [respawnTick, setRespawnTick] = useState(0);
 
   useEffect(() => {
     if (!isTauri() || !ref.current) return;
@@ -99,8 +102,14 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       }
       // keystroke → echo round-trip latency, rolling average of last 20
       const lat = { sentAt: 0, samples: [] as number[] };
-      unlisten = await listen<string>(`pty-output/${id}`, (e) => {
+      const unlistenExit = await listen<string>("pty-exit", (e) => {
+        if (!disposed && e.payload === id) setPhase("dead");
+      });
+      const prevUnlisten = unlisten;
+      unlisten = () => { prevUnlisten?.(); unlistenExit(); };
+      const unlistenOut = await listen<string>(`pty-output/${id}`, (e) => {
         if (disposed) return;
+        setPhase((p) => (p === "starting" ? "live" : p));
         if (lat.sentAt) {
           const dt = performance.now() - lat.sentAt;
           lat.sentAt = 0;
@@ -113,6 +122,10 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
         }
         term.write(b64ToU8(e.payload));
       });
+      const prevU2 = unlisten;
+      unlisten = () => { prevU2?.(); unlistenOut(); };
+      const sb2 = await invoke<string>("pty_scrollback", { id });
+      if (sb2) setPhase("live");
       term.onData((data) => {
         const st = useApp.getState();
         const memberId = id.split(":")[id.includes(":") && st.activeProject && st.activeProject !== "default" ? 1 : 0] ?? id;
@@ -140,7 +153,7 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       ro?.disconnect();
       term.dispose();
     };
-  }, [id, cwd, themeName, shell, autorun, ts]);
+  }, [id, cwd, themeName, shell, autorun, ts, respawnTick]);
 
   if (!isTauri()) {
     return (
@@ -154,6 +167,25 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       <div ref={ref} className="h-full w-full bg-term-bg pl-2 pt-1 pb-3" />
       <span ref={latRef} title="Keystroke to echo round-trip, rolling average"
         className="absolute bottom-1 right-2 font-mono text-[8px] text-faint opacity-60 pointer-events-none" />
+      {phase === "starting" ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-term-bg/80 pointer-events-none">
+          <div className="text-center rise">
+            <div className="status-dot working mx-auto mb-2" style={{ width: 10, height: 10 }} />
+            <div className="text-dim text-[11px]">starting {shell ? "shell" : "claude"}…</div>
+          </div>
+        </div>
+      ) : null}
+      {phase === "dead" ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-term-bg/85">
+          <div className="text-center rise">
+            <div className="text-dim text-[12px] mb-1">session ended</div>
+            <div className="text-faint text-[10px] mb-3">scrollback preserved above</div>
+            <button className="btn primary" onClick={() => { setPhase("starting"); setRespawnTick((t) => t + 1); }}>
+              restart session
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
