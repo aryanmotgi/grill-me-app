@@ -592,7 +592,16 @@ fn pty_status() -> Vec<PtyStatus> {
                 quiet_ms: s.last_output.elapsed().as_millis(),
                 bell: s.bell,
                 osc_notify: s.osc_notify,
-                tail: s.lines.iter().rev().take(40).rev().cloned().collect(),
+                tail: {
+                    // TUIs repaint without newlines — read the live screen,
+                    // not the (often empty) newline-committed history
+                    let bytes: Vec<u8> = s.ring.iter().copied().collect();
+                    let start = bytes.len().saturating_sub(24_000);
+                    let mut lines = strip_ansi_stateless(&bytes[start..]);
+                    let skip = lines.len().saturating_sub(40);
+                    lines.drain(..skip);
+                    lines
+                },
                 recording: s.recording_path.clone(),
                 started_at: s.started_at,
             }
@@ -1560,8 +1569,15 @@ fn git_review(repo_path: String) -> Result<ReviewData, String> {
 /// buffer misses them — this reads what's actually on screen.
 fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
     let mut out: Vec<String> = vec![];
-    let mut cur = String::new();
+    let mut cur: Vec<u8> = vec![];
     let mut esc = 0u8;
+    let mut flush = |cur: &mut Vec<u8>, out: &mut Vec<String>| {
+        let line = String::from_utf8_lossy(cur).trim_end().to_string();
+        if !line.trim().is_empty() {
+            out.push(line);
+        }
+        cur.clear();
+    };
     for &b in bytes {
         match esc {
             1 => esc = match b { b'[' => 2, b']' => 3, _ => 0 },
@@ -1569,16 +1585,13 @@ fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
             3 => { if b == 0x07 { esc = 0; } }
             _ => match b {
                 0x1b => esc = 1,
-                b'\n' | b'\r' => {
-                    if !cur.trim().is_empty() { out.push(cur.trim_end().to_string()); }
-                    cur.clear();
-                }
+                b'\n' | b'\r' => flush(&mut cur, &mut out),
                 0x00..=0x1f => {}
-                _ => { if cur.len() < 4000 { cur.push(b as char); } }
+                _ => { if cur.len() < 8000 { cur.push(b); } }
             },
         }
     }
-    if !cur.trim().is_empty() { out.push(cur.trim_end().to_string()); }
+    flush(&mut cur, &mut out);
     out
 }
 

@@ -225,6 +225,12 @@ export function TaskBoard() {
 
   return (
     <div className="p-3 overflow-y-auto">
+      {tasks.length === 0 ? (
+        <div className="text-faint text-[11px] leading-relaxed py-4 text-center">
+          No tasks yet.<br />Add one below, or paste a checklist into fan-out to
+          spawn parallel sessions.
+        </div>
+      ) : null}
       {(() => {
         const blockedIds = new Set(
           tasks.filter((t) => {

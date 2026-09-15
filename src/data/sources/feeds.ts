@@ -160,12 +160,18 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   const { invoke } = await import("@tauri-apps/api/core");
 
   const ensureAll = async () => {
-    for (const m of store.getState().members) {
+    // lazy spawn: only YOUR session starts eagerly — teammates' claude
+    // processes spawn on first view of their pane (calmer start, less churn)
+    const members = store.getState().members;
+    const me = members[0];
+    if (me) {
       await invoke("pty_ensure", {
-        id: ptyIdFor(m.id), cwd: m.repoPath, shell: false,
-        remote: m.remote ?? null, tmux: m.tmuxSession ?? null,
+        id: ptyIdFor(me.id), cwd: me.repoPath, shell: false,
+        remote: me.remote ?? null, tmux: me.tmuxSession ?? null,
       }).catch(() => {});
-      // exact-status hooks: sessions report notification/stop/prompt events
+    }
+    for (const m of members) {
+      // hooks install is cheap and spawn-independent
       await invoke("install_hooks", { repoPath: m.repoPath, memberId: m.id }).catch(() => {});
     }
   };
