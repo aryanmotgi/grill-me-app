@@ -261,7 +261,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
 
         // auto-pause: idle claude TUIs burn 10-25% CPU each just repainting.
         // SIGSTOP after quiet threshold; typing/viewing resumes instantly.
-        const idleMin = Number(stg.appSettings.autoPauseIdleMin ?? 10);
+        const idleMin = Number(stg.appSettings.autoPauseIdleMin ?? 5);
         const isViewed = stg.activeId === memberId && stg.view === "session";
         if (
           stg.appSettings.autoPauseIdle !== false &&
