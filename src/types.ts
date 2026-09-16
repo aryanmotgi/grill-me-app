@@ -108,3 +108,44 @@ export interface Toast {
   text: string;
   kind: "info" | "warn";
 }
+
+// ---------------------------------------------------------------------------
+// Team mode — room protocol types (see team-mode contract). RoomState is the
+// host-owned single source of truth, polled by startRoomFeed.
+// ---------------------------------------------------------------------------
+
+export type RoomPhase = "lobby" | "brainstorm" | "plan" | "tasks" | "assign" | "done";
+
+export interface RoomMember {
+  id: string;
+  name: string;
+  isHost: boolean;
+  /** Epoch ms of the member's last heartbeat — status is derived client-side. */
+  lastSeen: number;
+}
+
+export interface RoomChatMsg {
+  from: string;
+  name: string;
+  role: "user" | "assistant";
+  text: string;
+  ts: number;
+}
+
+export interface RoomTask {
+  id: string;
+  title: string;
+  detail: string;
+  assignee: string | null;
+}
+
+export interface RoomState {
+  code: string;
+  phase: RoomPhase;
+  members: RoomMember[];
+  chat: RoomChatMsg[];
+  /** Markdown project plan. */
+  plan: string;
+  tasks: RoomTask[];
+  startedAt: number;
+}
