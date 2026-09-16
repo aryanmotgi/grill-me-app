@@ -94,11 +94,14 @@ pub struct GitState {
     pub commits: Vec<GitCommit>,
 }
 
+/// Never let git (or credential helpers) block on an interactive prompt —
+/// a hung subprocess would stall the 10s git poller thread indefinitely.
+fn no_prompt(cmd: &mut Command) -> &mut Command {
+    cmd.env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never")
+}
+
 fn git(repo: &str, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(args)
+    let out = no_prompt(Command::new("git").arg("-C").arg(repo).args(args))
         .output()
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
@@ -210,7 +213,7 @@ fn watch_state() -> WatchState {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let mut map = activity().lock().unwrap();
+    let mut map = lock_or_recover(activity());
     map.retain(|_, ts| now.saturating_sub(*ts) < LOCK_TTL_S);
 
     let mut last_seen: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
@@ -288,11 +291,11 @@ fn start_watching(app: tauri::AppHandle) {
                         .map(|d| d.as_secs())
                         .unwrap_or(0);
                     {
-                        let mut reg = activity().lock().unwrap();
+                        let mut reg = lock_or_recover(activity());
                         reg.insert((id.clone(), rel.clone()), ts);
                     }
                     {
-                        let mut ser = series().lock().unwrap();
+                        let mut ser = lock_or_recover(series());
                         let q = ser.entry(id.clone()).or_default();
                         q.push_back(ts);
                         while q.len() > 600 {
@@ -320,8 +323,15 @@ fn start_watching(app: tauri::AppHandle) {
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
+
+/// Lock a global mutex, tolerating poisoning. A panic on one thread must not
+/// permanently brick every terminal — the guarded data is still consistent
+/// enough for our use (plain maps/strings, no invariants held across panics).
+fn lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 struct PtySession {
     writer: Box<dyn Write + Send>,
@@ -463,7 +473,7 @@ fn pty_ensure_inner(
 ) -> Result<(), String> {
     use tauri::Emitter;
     {
-        let mut map = ptys().lock().unwrap();
+        let mut map = lock_or_recover(ptys());
         if let Some(s) = map.get_mut(&id) {
             if s.alive {
                 return Ok(());
@@ -516,7 +526,7 @@ fn pty_ensure_inner(
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-    ptys().lock().unwrap().insert(
+    lock_or_recover(ptys()).insert(
         id.clone(),
         PtySession {
             writer,
@@ -546,7 +556,7 @@ fn pty_ensure_inner(
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
-                    if let Some(s) = ptys().lock().unwrap().get_mut(&id) {
+                    if let Some(s) = lock_or_recover(ptys()).get_mut(&id) {
                         s.alive = false;
                     }
                     let _ = app.emit("pty-exit", &id);
@@ -555,7 +565,7 @@ fn pty_ensure_inner(
                 Ok(n) => {
                     let chunk = &buf[..n];
                     {
-                        let mut map = ptys().lock().unwrap();
+                        let mut map = lock_or_recover(ptys());
                         if let Some(s) = map.get_mut(&id) {
                             s.ring.extend(chunk);
                             while s.ring.len() > 400_000 {
@@ -584,7 +594,7 @@ fn pty_ensure_inner(
 
 #[tauri::command]
 fn pty_write(id: String, data: String) -> Result<(), String> {
-    let mut map = ptys().lock().unwrap();
+    let mut map = lock_or_recover(ptys());
     let s = map.get_mut(&id).ok_or("no session")?;
     if s.paused {
         if let Some(pid) = s.child.process_id() {
@@ -600,7 +610,7 @@ fn pty_write(id: String, data: String) -> Result<(), String> {
 
 #[tauri::command]
 fn pty_resize(id: String, rows: u16, cols: u16) -> Result<(), String> {
-    let map = ptys().lock().unwrap();
+    let map = lock_or_recover(ptys());
     let s = map.get(&id).ok_or("no session")?;
     s.master
         .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
@@ -610,7 +620,7 @@ fn pty_resize(id: String, rows: u16, cols: u16) -> Result<(), String> {
 #[tauri::command]
 fn pty_scrollback(id: String) -> String {
     use base64::Engine;
-    let map = ptys().lock().unwrap();
+    let map = lock_or_recover(ptys());
     match map.get(&id) {
         Some(s) => {
             let bytes: Vec<u8> = s.ring.iter().copied().collect();
@@ -638,7 +648,7 @@ struct PtyStatus {
 
 #[tauri::command]
 fn pty_status() -> Vec<PtyStatus> {
-    let mut map = ptys().lock().unwrap();
+    let mut map = lock_or_recover(ptys());
     map.iter_mut()
         .map(|(id, s)| {
             if s.alive {
@@ -672,7 +682,7 @@ fn pty_status() -> Vec<PtyStatus> {
 
 #[tauri::command]
 fn pty_record(id: String, on: bool) -> Result<Option<String>, String> {
-    let mut map = ptys().lock().unwrap();
+    let mut map = lock_or_recover(ptys());
     let s = map.get_mut(&id).ok_or("no session")?;
     if on {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
@@ -750,12 +760,12 @@ fn set_active_project(id: String) -> Result<(), String> {
     }
     let dir = grillme_root().join("projects").join(&id);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    *ACTIVE_PROJECT.lock().unwrap() = id;
+    *lock_or_recover(&ACTIVE_PROJECT) = id;
     Ok(())
 }
 
 fn grillme_dir() -> PathBuf {
-    let active = ACTIVE_PROJECT.lock().unwrap().clone();
+    let active = lock_or_recover(&ACTIVE_PROJECT).clone();
     if active.is_empty() || active == "default" || !valid_project_id(&active) {
         return grillme_root();
     }
@@ -945,7 +955,7 @@ fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
     };
     let key = format!("{}|{}", path.to_string_lossy(), since.unwrap_or(0));
     let cache = USAGE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut entry = cache.lock().unwrap().get(&key).cloned().unwrap_or_default();
+    let mut entry = lock_or_recover(cache).get(&key).cloned().unwrap_or_default();
     let Ok(mut f) = std::fs::File::open(&path) else {
         return UsageStats::default();
     };
@@ -988,7 +998,7 @@ fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
             }
         }
     }
-    cache.lock().unwrap().insert(key, entry.clone());
+    lock_or_recover(cache).insert(key, entry.clone());
     let s2 = entry.stats;
     UsageStats {
         ok: true,
@@ -1002,10 +1012,12 @@ fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
 
 #[tauri::command]
 fn ci_state(repo_path: String) -> Result<String, String> {
-    let out = Command::new("gh")
-        .args(["run", "list", "--limit", "5", "--json", "name,displayTitle,status,conclusion,headBranch"])
-        .current_dir(&repo_path)
-        .output()
+    let out = no_prompt(
+        Command::new("gh")
+            .args(["run", "list", "--limit", "5", "--json", "name,displayTitle,status,conclusion,headBranch"])
+            .current_dir(&repo_path),
+    )
+    .output()
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
@@ -1043,7 +1055,7 @@ fn activity_series(id: String) -> Vec<u32> {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let mut buckets = vec![0u32; 30];
-    if let Some(q) = series().lock().unwrap().get(&id) {
+    if let Some(q) = lock_or_recover(series()).get(&id) {
         for &ts in q {
             let age_min = now.saturating_sub(ts) / 60;
             if age_min < 30 {
@@ -1134,10 +1146,12 @@ fn git_diff_file(repo_path: String, file: String) -> Result<String, String> {
 /// One-shot claude -p over the working diff — returns a drafted PR body.
 #[tauri::command]
 fn pr_draft(repo_path: String) -> Result<String, String> {
-    let out = Command::new("/bin/zsh")
-        .args(["-lc", "git diff main 2>/dev/null | head -c 60000 | claude -p 'Write a concise PR title and body (markdown) for this diff. No preamble.'"])
-        .current_dir(&repo_path)
-        .output()
+    let out = no_prompt(
+        Command::new("/bin/zsh")
+            .args(["-lc", "git diff main 2>/dev/null | head -c 60000 | claude -p 'Write a concise PR title and body (markdown) for this diff. No preamble.'"])
+            .current_dir(&repo_path),
+    )
+    .output()
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
@@ -1203,7 +1217,7 @@ fn project_card_stats(id: String, path: String) -> ProjectCardStats {
         }
     }
     let prefix = format!("{id}:");
-    for (pid, sess) in ptys().lock().unwrap().iter() {
+    for (pid, sess) in lock_or_recover(ptys()).iter() {
         let matches = if id == "default" {
             !pid.contains(':') || pid.starts_with("default:")
         } else {
@@ -1245,8 +1259,7 @@ fn discover_repos(known: Vec<String>) -> Vec<String> {
 
 #[tauri::command]
 fn git_clone(url: String, dest: String) -> Result<(), String> {
-    let out = Command::new("git")
-        .args(["clone", "--depth", "50", &url, &dest])
+    let out = no_prompt(Command::new("git").args(["clone", "--depth", "50", &url, &dest]))
         .output()
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
@@ -1369,7 +1382,7 @@ fn audit_tail(member: Option<String>) -> Vec<String> {
 // full in-memory state; SIGCONT resumes exactly where it left off).
 #[tauri::command]
 fn pty_pause(id: String, pause: bool) -> Result<(), String> {
-    let mut map = ptys().lock().unwrap();
+    let mut map = lock_or_recover(ptys());
     let sess = map.get_mut(&id).ok_or("no session")?;
     sess.paused = pause;
     let pid = sess.child.process_id().ok_or("no pid")?;
@@ -1647,7 +1660,7 @@ fn start_api_server(app: tauri::AppHandle) {
 
 #[tauri::command]
 fn pty_kill(id: String) -> Result<(), String> {
-    let mut map = ptys().lock().unwrap();
+    let mut map = lock_or_recover(ptys());
     if let Some(mut sess) = map.remove(&id) {
         let _ = sess.child.kill();
     }
@@ -1665,9 +1678,7 @@ struct SessionResources {
 /// CPU% + RSS summed over each session's process tree.
 #[tauri::command]
 fn pty_resources() -> Vec<SessionResources> {
-    let roots: Vec<(String, u32)> = ptys()
-        .lock()
-        .unwrap()
+    let roots: Vec<(String, u32)> = lock_or_recover(ptys())
         .iter()
         .filter(|(_, s)| s.alive)
         .filter_map(|(id, s)| s.child.process_id().map(|p| (id.clone(), p)))
@@ -1770,7 +1781,7 @@ fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
 
 #[tauri::command]
 fn pty_screen(id: String, lines: Option<usize>) -> Result<Vec<String>, String> {
-    let map = ptys().lock().unwrap();
+    let map = lock_or_recover(ptys());
     let sess = map.get(&id).ok_or("no such session")?;
     let bytes: Vec<u8> = sess.ring.iter().copied().collect();
     let start = bytes.len().saturating_sub(48_000);
@@ -1802,20 +1813,14 @@ fn git_state_cached(repo_path: String) -> String {
             for p in paths {
                 let state = git_state(p.clone());
                 if let Ok(json) = serde_json::to_string(&state) {
-                    GIT_CACHE
-                        .get_or_init(|| Mutex::new(HashMap::new()))
-                        .lock()
-                        .unwrap()
+                    lock_or_recover(GIT_CACHE.get_or_init(|| Mutex::new(HashMap::new())))
                         .insert(p, json);
                 }
             }
             std::thread::sleep(std::time::Duration::from_secs(10));
         });
     }
-    GIT_CACHE
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap()
+    lock_or_recover(GIT_CACHE.get_or_init(|| Mutex::new(HashMap::new())))
         .get(&repo_path)
         .cloned()
         .unwrap_or_default()
