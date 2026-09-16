@@ -1,16 +1,19 @@
+import { useModalA11y } from "../hooks/useModalA11y";
 import { useApp } from "../store";
 import { FEATURE_GROUPS } from "../data/features";
 
 /** Living in-app docs: every capability, where it lives, one click to open. */
 export function FeatureIndex() {
   const st = useApp();
+  const modalA11y = useModalA11y("Everything Grill Me can do", st.featureIndexOpen);
   if (!st.featureIndexOpen) return null;
   const close = () => useApp.setState({ featureIndexOpen: false });
   const go = (fn: () => void) => { fn(); close(); };
 
   return (
     <div className="fixed inset-0 z-40 bg-black/55 flex items-start justify-center pt-[5vh]" onClick={close}>
-      <div className="w-[760px] max-h-[86vh] overflow-y-auto bg-overlay hairline rounded-md shadow-2xl rise p-6"
+      <div {...modalA11y}
+        className="w-[760px] max-h-[86vh] overflow-y-auto bg-overlay hairline rounded-md shadow-2xl rise p-6 outline-none"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-baseline gap-3 mb-4">
           <span className="font-display font-bold text-[15px]">EVERYTHING GRILL ME CAN DO</span>

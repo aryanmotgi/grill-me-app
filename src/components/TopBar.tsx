@@ -95,11 +95,11 @@ export function TopBar() {
 
       {/* one calm status cluster: who's working, who needs you */}
       <div className="flex items-center gap-2.5 text-[11px] text-dim">
-        <span className="flex items-center gap-1.5"><span className="status-dot working" />{working} working</span>
+        <span className="flex items-center gap-1.5"><span className="status-dot working" aria-hidden />{working} working</span>
         {attention > 0 ? (
           <button className="flex items-center gap-1.5 text-warn cursor-pointer hover:brightness-110"
             title="Sessions needing attention — click to see" onClick={() => useApp.getState().setView("home")}>
-            <span className="status-dot needs-input" />{attention} need you
+            <span className="status-dot needs-input" aria-hidden />{attention} need you
           </button>
         ) : null}
         {waiting.length > 0 ? (
