@@ -213,7 +213,8 @@ export function ProjectPicker() {
             <span className="text-faint text-[10px]">accent</span>
             {ACCENTS.map((c) => (
               <button key={c} className="w-4 h-4 rounded-full cursor-pointer"
-                style={{ background: c, outline: color === c ? `2px solid ${c}` : "none", outlineOffset: 2 }}
+                aria-label={`Accent color ${c}`} title={`Accent ${c}`}
+                style={{ background: c, boxShadow: color === c ? `0 0 0 2px var(--bg), 0 0 0 4px ${c}` : "none" }}
                 onClick={() => setColor(c)} />
             ))}
             <span className="flex-1" />

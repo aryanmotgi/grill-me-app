@@ -160,7 +160,10 @@ body,
   outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: 1px;
 }
-/* keyboard focus ring for non-button interactive elements (e.g. session rows) */
+/* keyboard focus ring for every interactive element — bare <button>s
+   (dashboard rows, top-bar pill, picker cards) must not fall back to the
+   browser-default blue ring */
+button:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -2px;

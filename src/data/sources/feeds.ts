@@ -416,6 +416,13 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         sponsor: st.sponsorChecklist,
       });
     }
+    // the existence probes above populated rawCache, which would make the
+    // first real tick see "__unchanged__" and leave the fake seed data on
+    // screen until the next disk write (and skip seenMsgs hydration, causing
+    // a notification burst later). Forget those reads so tick 1 parses fresh.
+    delete rawCache["tasks.json"];
+    delete rawCache["messages.json"];
+    delete rawCache["team.json"];
     seeded = true;
   };
 
