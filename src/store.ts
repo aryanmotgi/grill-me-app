@@ -19,6 +19,7 @@ import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsage
 import type { TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
 import { fmtClock } from "./lib/format";
+import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type PtyStatus } from "./lib/ptyReady";
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
@@ -264,10 +265,19 @@ export const useApp = create<AppState>((set, get) => ({
             await invoke("team_config_write", { cfg: { teammates: nextMembers } });
             get().applyTeamConfig(nextMembers);
             await invoke("pty_ensure", { id: ptyIdFor(sid), cwd: path, shell: false, remote: null, tmux: null });
-            setTimeout(() => invoke("pty_write", {
-              id: ptyIdFor(sid),
-              data: `Work on this task: ${dep.title}. When done, tell the user and stop.\n`,
-            }).catch(() => {}), 6000);
+            // brief goes in once the session is at an idle claude prompt
+            // (poll every 1s, up to 30s) — not on a blind timer
+            deliverBriefWhenReady(
+              ptyIdFor(sid),
+              `Work on this task: ${dep.title}. When done, tell the user and stop.\n`,
+            ).then((delivered) => {
+              if (!delivered) {
+                get().toast(
+                  `Brief NOT delivered to ${sid} — session never became ready. Paste "${dep.title}" into its pane manually.`,
+                  "warn",
+                );
+              }
+            });
             get().toast(`Dependency cleared — spawned session for “${dep.title}”`);
           } catch (e) {
             get().toast(`Auto-spawn failed: ${e}`, "warn");
@@ -421,20 +431,18 @@ export const useApp = create<AppState>((set, get) => ({
       const { invoke } = await import("@tauri-apps/api/core");
       // readiness guard: one screen read before write — only inject /ship
       // when the session is alive and sitting at an idle claude prompt.
-      const statuses = await invoke<{ id: string; alive: boolean; tail: string[] }[]>("pty_status");
+      const statuses = await invoke<PtyStatus[]>("pty_status");
       const mine = statuses.find((s) => s.id === ptyIdFor(id));
       if (!mine || !mine.alive) {
         get().toast(`Can't ship — ${name}'s session isn't running. Restart it first.`, "warn");
         return;
       }
-      const tail = mine.tail.slice(-15).join("\n");
-      if (/esc to interrupt/i.test(tail)) {
+      const tail = tailText(mine);
+      if (isMidGeneration(tail)) {
         get().toast(`Can't ship — ${name}'s claude is mid-generation. Wait for it to finish, then approve again.`, "warn");
         return;
       }
-      const atPrompt =
-        tail.includes("❯") || /│\s*>/.test(tail) || /\? for shortcuts/i.test(tail) || /^>\s/m.test(tail);
-      if (!atPrompt) {
+      if (!hasIdlePrompt(tail)) {
         get().toast(`Can't ship — no claude prompt visible in ${name}'s session. Open the pane and check it's idle.`, "warn");
         return;
       }
