@@ -44,10 +44,20 @@ const GIT_POLL_MS = 5000;
 export function startGitFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   if (!isTauri()) return;
 
-  let members: TeamMemberConfig[] = [];
+  let cfgLoaded = false;
+  let busy = false;
 
   const tick = async () => {
+    if (busy) return; // previous tick still awaiting — don't pile up
+    busy = true;
     try {
+      if (!cfgLoaded) {
+        const cfg = await loadTeamConfig();
+        store.getState().applyTeamConfig(cfg.teammates);
+        cfgLoaded = true;
+      }
+      // re-read members every tick — sessions added after startup get git state
+      const members = store.getState().members;
       const states = await Promise.all(
         members.map(async (member) => ({
           member,
@@ -71,17 +81,15 @@ export function startGitFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       store.getState().setActivity(toActivity(states));
     } catch (e) {
       console.error("[git feed]", e);
+    } finally {
+      busy = false;
     }
   };
 
-  loadTeamConfig()
-    .then((cfg) => {
-      members = cfg.teammates;
-      store.getState().applyTeamConfig(members);
-      tick();
-      setInterval(tick, GIT_POLL_MS);
-    })
-    .catch((e) => console.error("[git feed] config load failed", e));
+  // interval installs unconditionally: a failed config load retries next tick
+  // instead of killing the feed for the rest of the session
+  tick();
+  setInterval(tick, GIT_POLL_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -101,9 +109,11 @@ export async function startWatchFeed(store: UseBoundStore<StoreApi<FeedStore>>) 
   if (!isTauri()) return;
   const { invoke } = await import("@tauri-apps/api/core");
 
-  await invoke("start_watching");
-  // soft heads-ups: session B changed a file session A recently read
-  const notified = new Set<string>();
+  // soft heads-ups: session B changed a file session A recently read.
+  // Keyed owner:file with a notify timestamp so week-long sessions don't
+  // accumulate entries forever — a repeat heads-up after an hour is fine.
+  const NOTIFIED_TTL_MS = 60 * 60_000;
+  const notified = new Map<string, number>();
   const softCheck = async (state: WatchState) => {
     const me = store.getState().members[0]?.id;
     if (!me) return;
@@ -126,7 +136,7 @@ export async function startWatchFeed(store: UseBoundStore<StoreApi<FeedStore>>) 
         } catch { return false; }
       });
       if (readIt) {
-        notified.add(key);
+        notified.set(key, Date.now());
         store.getState().toast(
           `Heads-up: ${lock.owner} just changed ${lock.file} — you read it recently`,
           "warn",
@@ -135,13 +145,28 @@ export async function startWatchFeed(store: UseBoundStore<StoreApi<FeedStore>>) 
     }
   };
 
+  let watching = false;
+  let busy = false;
   const tick = async () => {
+    if (busy) return; // previous tick still awaiting — don't pile up
+    busy = true;
     try {
+      if (!watching) {
+        // a startup failure retries next tick instead of killing the feed
+        await invoke("start_watching");
+        watching = true;
+      }
       const state = await invoke<WatchState>("watch_state");
       store.getState().applyWatchState(state);
-      softCheck(state);
+      await softCheck(state);
+      const now = Date.now();
+      for (const [key, ts] of notified) {
+        if (now - ts > NOTIFIED_TTL_MS) notified.delete(key);
+      }
     } catch (e) {
       console.error("[watch feed]", e);
+    } finally {
+      busy = false;
     }
   };
   tick();
@@ -202,7 +227,10 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   const wasAlive: Record<string, boolean> = {};
   const autoPaused = new Set<string>();
 
+  let busy = false;
   const tick = async () => {
+    if (busy) return; // previous tick still awaiting — don't pile up
+    busy = true;
     try {
       const statuses = await invoke<PtyStatus[]>("pty_status");
       // exact status via Claude Code hooks when available
@@ -298,6 +326,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       }
     } catch (e) {
       console.error("[pty feed]", e);
+    } finally {
+      busy = false;
     }
   };
   setInterval(tick, PTY_POLL_MS);
@@ -335,31 +365,45 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
     const raw = await invoke<string>("shared_read", { name });
     if (!raw.trim()) return null;
     if (rawCache[name] === raw) return "__unchanged__" as const;
+    // parse BEFORE caching — a torn/partial write must not wedge the file
+    // as "unchanged" forever; next tick re-reads the completed write
+    const parsed = JSON.parse(raw);
     rawCache[name] = raw;
-    return JSON.parse(raw);
+    return parsed;
   };
   const write = (name: string, data: unknown) =>
     invoke("shared_write", { name, content: JSON.stringify(data, null, 2) });
 
-  // wait for team config, then seed missing files
-  while (store.getState().members.length === 0) {
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  const st = store.getState();
-  if ((await read("tasks.json")) === null) await write("tasks.json", st.tasks);
-  if ((await read("messages.json")) === null) await write("messages.json", []);
-  if ((await read("team.json")) === null) {
-    await write("team.json", {
-      mergeQueue: st.members.map((m) => m.id),
-      sponsor: st.sponsorChecklist,
-    });
-  }
+  // seed missing files once team config is loaded — retried from the tick so
+  // one startup error (or slow config) never kills the feed
+  let seeded = false;
+  const seed = async () => {
+    const st = store.getState();
+    if (st.members.length === 0) return; // config not loaded yet
+    if ((await read("tasks.json")) === null) await write("tasks.json", st.tasks);
+    if ((await read("messages.json")) === null) await write("messages.json", []);
+    if ((await read("team.json")) === null) {
+      await write("team.json", {
+        mergeQueue: st.members.map((m) => m.id),
+        sponsor: st.sponsorChecklist,
+      });
+    }
+    seeded = true;
+  };
 
   const seenMsgs = new Set<string>();
+  const SEEN_MSGS_MAX = 5000;
   let first = true;
-  // FYI digest: batch quiet messages; interval user-adjustable (default 15m).
-  // Self-rescheduling so setting changes apply without a restart.
+  // FYI digest: batch quiet messages; interval user-adjustable (default 15m,
+  // clamped to >=1m). One cancellable handle, rescheduled after each fire, so
+  // setting changes apply without a restart and timers never stack.
   const fyiQueue: import("../../types").Message[] = [];
+  let digestTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleDigest = () => {
+    if (digestTimer !== null) clearTimeout(digestTimer);
+    const min = Math.max(1, Number(store.getState().appSettings.fyiDigestMin) || 15);
+    digestTimer = setTimeout(digestTick, min * 60 * 1000);
+  };
   const digestTick = () => {
     if (fyiQueue.length > 0) {
       ping(
@@ -369,14 +413,20 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
       );
       fyiQueue.length = 0;
     }
-    const min = Number(store.getState().appSettings.fyiDigestMin) || 15;
-    setTimeout(digestTick, min * 60 * 1000);
+    scheduleDigest();
   };
-  setTimeout(digestTick, (Number(store.getState().appSettings.fyiDigestMin) || 15) * 60 * 1000);
+  scheduleDigest();
   const prevStatus: Record<string, string> = {};
 
+  let busy = false;
   const tick = async () => {
+    if (busy) return; // previous tick still awaiting — don't pile up
+    busy = true;
     try {
+      if (!seeded) {
+        await seed();
+        if (!seeded) return; // members not loaded yet — retry next tick
+      }
       const me = store.getState().members[0]?.id;
       const [tasks, messages, team, standupLines] = await Promise.all([
         read("tasks.json"),
@@ -410,6 +460,20 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
           }
         }
       }
+      // bound seenMsgs for week-long sessions: drop ids no longer in the file
+      // (pruned/rotated messages), then hard-cap oldest-first as a backstop
+      if (messages !== "__unchanged__" && seenMsgs.size > msgList.length) {
+        const live = new Set(msgList.map((m) => m.id));
+        for (const id of seenMsgs) {
+          if (!live.has(id)) seenMsgs.delete(id);
+        }
+      }
+      if (seenMsgs.size > SEEN_MSGS_MAX) {
+        for (const id of seenMsgs) {
+          if (seenMsgs.size <= SEEN_MSGS_MAX) break;
+          seenMsgs.delete(id);
+        }
+      }
 
       for (const t of store.getState().teammates) {
         const prev = prevStatus[t.id];
@@ -421,6 +485,8 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
       first = false;
     } catch (e) {
       console.error("[shared feed]", e);
+    } finally {
+      busy = false;
     }
   };
   tick();
@@ -465,48 +531,55 @@ export async function startUsageFeed(
   while (store.getState().members.length === 0) {
     await new Promise((r) => setTimeout(r, 400));
   }
+  let busy = false;
   const tick = async () => {
-    // per-session resource monitor
+    if (busy) return; // previous tick still awaiting — don't pile up
+    busy = true;
     try {
-      const res = await invoke<SessionRes[]>("pty_resources");
-      (store.getState() as unknown as { setResources: (r: SessionRes[]) => void }).setResources(res);
-    } catch { /* ps unavailable */ }
-    // session start times scope token attribution
-    const ptys = await invoke<PtyStatus[]>("pty_status").catch(() => [] as PtyStatus[]);
-    for (const m of store.getState().members) {
+      // per-session resource monitor
       try {
-        const mine = ptys.find((p) => p.id === ptyIdFor(m.id));
-        const u = await invoke<UsageStats>("usage_stats", {
-          repoPath: m.repoPath,
-          since: mine?.startedAt ?? null,
-        });
-        if (u.ok) {
-          const mate = store.getState().teammates.find((t) => t.id === m.id);
-          store.getState().patchTeammate(m.id, {
-            usage: {
-              ...(mate?.usage ?? {
-                sessionPct: 0, weeklyPct: 0, sessionResetsIn: "—",
-                weeklyResetsAt: "—", permissionMode: "—", model: "—",
-              }),
-              model: u.model || mate?.usage.model || "—",
-              tokens: {
-                input: u.inputTokens,
-                output: u.outputTokens,
-                cacheRead: u.cacheReadTokens,
-                turns: u.turns,
-              },
-            },
+        const res = await invoke<SessionRes[]>("pty_resources");
+        (store.getState() as unknown as { setResources: (r: SessionRes[]) => void }).setResources(res);
+      } catch { /* ps unavailable */ }
+      // session start times scope token attribution
+      const ptys = await invoke<PtyStatus[]>("pty_status").catch(() => [] as PtyStatus[]);
+      for (const m of store.getState().members) {
+        try {
+          const mine = ptys.find((p) => p.id === ptyIdFor(m.id));
+          const u = await invoke<UsageStats>("usage_stats", {
+            repoPath: m.repoPath,
+            since: mine?.startedAt ?? null,
           });
-        }
-      } catch { /* member without transcript */ }
-    }
-    try {
-      const first = store.getState().members[0];
-      if (first) {
-        const raw = await invoke<string>("ci_state", { repoPath: first.repoPath });
-        store.getState().setCiRuns(JSON.parse(raw));
+          if (u.ok) {
+            const mate = store.getState().teammates.find((t) => t.id === m.id);
+            store.getState().patchTeammate(m.id, {
+              usage: {
+                ...(mate?.usage ?? {
+                  sessionPct: 0, weeklyPct: 0, sessionResetsIn: "—",
+                  weeklyResetsAt: "—", permissionMode: "—", model: "—",
+                }),
+                model: u.model || mate?.usage.model || "—",
+                tokens: {
+                  input: u.inputTokens,
+                  output: u.outputTokens,
+                  cacheRead: u.cacheReadTokens,
+                  turns: u.turns,
+                },
+              },
+            });
+          }
+        } catch { /* member without transcript */ }
       }
-    } catch { /* gh missing or no remote — panel shows empty state */ }
+      try {
+        const first = store.getState().members[0];
+        if (first) {
+          const raw = await invoke<string>("ci_state", { repoPath: first.repoPath });
+          store.getState().setCiRuns(JSON.parse(raw));
+        }
+      } catch { /* gh missing or no remote — panel shows empty state */ }
+    } finally {
+      busy = false;
+    }
   };
   tick();
   setInterval(tick, USAGE_POLL_MS);
