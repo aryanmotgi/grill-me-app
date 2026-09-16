@@ -10,9 +10,10 @@ const STEPS: [string, string][] = [
 ];
 
 export function Onboarding() {
-  const { appSettings, setAppSetting } = useApp();
+  const { appSettings, setAppSetting, activeProject, pickerOpen } = useApp();
   const [step, setStep] = useState(0);
-  if (appSettings.onboarded) return null;
+  // Wait until a project is active — never fight the ProjectPicker for the screen.
+  if (appSettings.onboarded || !activeProject || pickerOpen) return null;
   const done = () => setAppSetting("onboarded", true);
   const [title, body] = STEPS[step];
   return (
