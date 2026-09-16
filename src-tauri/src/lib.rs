@@ -675,9 +675,7 @@ fn pty_ensure_inner(
                                 return;
                             }
                             s.ring.extend(chunk);
-                            while s.ring.len() > 400_000 {
-                                s.ring.pop_front();
-                            }
+                            truncate_ring_front(&mut s.ring, 400_000);
                             s.last_output = Instant::now();
                             // bell/notify detection lives in the stateful
                             // stripper: a BEL that terminates an OSC title
@@ -773,7 +771,7 @@ fn pty_status() -> Vec<PtyStatus> {
                     // TUIs repaint without newlines — read the live screen,
                     // not the (often empty) newline-committed history
                     let bytes: Vec<u8> = s.ring.iter().copied().collect();
-                    let start = bytes.len().saturating_sub(24_000);
+                    let start = tail_slice_start(&bytes, bytes.len().saturating_sub(24_000));
                     let mut lines = strip_ansi_stateless(&bytes[start..]);
                     let skip = lines.len().saturating_sub(40);
                     lines.drain(..skip);
@@ -2018,6 +2016,39 @@ fn git_review(repo_path: String) -> Result<ReviewData, String> {
 }
 
 
+/// Drop bytes from the ring front until it holds at most `max` bytes,
+/// then keep dropping while the front byte is a UTF-8 continuation byte
+/// (0b10xxxxxx) so truncation never leaves a partial character at the front.
+fn truncate_ring_front(ring: &mut VecDeque<u8>, max: usize) {
+    if ring.len() <= max {
+        return;
+    }
+    while ring.len() > max {
+        ring.pop_front();
+    }
+    while ring.front().is_some_and(|&b| b & 0xC0 == 0x80) {
+        ring.pop_front();
+    }
+}
+
+/// Clamp a tail-slice start offset so the slice begins cleanly: skip forward
+/// past UTF-8 continuation bytes (never start mid-character), then — since a
+/// nonzero start lands mid-stream — drop the partial first line by advancing
+/// past the first `\n`, if one exists in the remaining slice. A start of 0 is
+/// a full read and is returned untouched.
+fn tail_slice_start(bytes: &[u8], mut start: usize) -> usize {
+    if start == 0 {
+        return 0;
+    }
+    while start < bytes.len() && bytes[start] & 0xC0 == 0x80 {
+        start += 1;
+    }
+    match bytes[start..].iter().position(|&b| b == b'\n') {
+        Some(nl) => start + nl + 1,
+        None => start,
+    }
+}
+
 /// Approximate current screen text: strip ANSI from the raw ring tail.
 /// TUIs repaint with cursor moves (no newlines), so the line-history
 /// buffer misses them — this reads what's actually on screen.
@@ -2056,7 +2087,7 @@ fn pty_screen(id: String, lines: Option<usize>) -> Result<Vec<String>, String> {
     let map = lock_or_recover(ptys());
     let sess = map.get(&id).ok_or("no such session")?;
     let bytes: Vec<u8> = sess.ring.iter().copied().collect();
-    let start = bytes.len().saturating_sub(48_000);
+    let start = tail_slice_start(&bytes, bytes.len().saturating_sub(48_000));
     let mut all = strip_ansi_stateless(&bytes[start..]);
     let n = lines.unwrap_or(40);
     let skip = all.len().saturating_sub(n);
@@ -2452,6 +2483,46 @@ mod pure_fn_tests {
             strip_ansi_stateless(b"\x1b]0;window title\x1b\\visible"),
             vec!["visible".to_string()]
         );
+    }
+
+    // -- UTF-8 ring safety ---------------------------------------------------
+
+    #[test]
+    fn truncate_ring_never_splits_utf8_char() {
+        // fill with 3-byte chars (✓) so the byte cap lands mid-character
+        let mut ring: VecDeque<u8> = "\u{2713}".repeat(100).bytes().collect(); // 300 bytes
+        truncate_ring_front(&mut ring, 200); // 200 % 3 != 0 → cap lands mid-char
+        assert!(ring.len() <= 200);
+        let bytes: Vec<u8> = ring.iter().copied().collect();
+        // the surviving tail must be valid UTF-8 — no dangling partial char
+        let s = std::str::from_utf8(&bytes).expect("ring front split a UTF-8 char");
+        assert!(s.chars().all(|c| c == '\u{2713}'));
+        // under the cap: nothing dropped
+        let mut small: VecDeque<u8> = "caf\u{e9}".bytes().collect();
+        truncate_ring_front(&mut small, 400_000);
+        assert_eq!(small.len(), 5);
+    }
+
+    #[test]
+    fn tail_slice_start_lands_on_char_boundary_and_full_line() {
+        let bytes = "caf\u{e9}\nsecond\nthird".as_bytes();
+        // offset 4 is the continuation byte of é: must skip past it, then
+        // drop the partial first line up to and including the '\n'
+        let start = tail_slice_start(bytes, 4);
+        assert_eq!(&bytes[start..], "second\nthird".as_bytes());
+        assert!(std::str::from_utf8(&bytes[start..]).is_ok());
+        // start 0 is a full read: untouched, no line dropped
+        assert_eq!(tail_slice_start(bytes, 0), 0);
+    }
+
+    #[test]
+    fn tail_slice_start_without_newline_keeps_char_boundary() {
+        // one long line with a 3-byte char: no '\n' to resync on — keep the
+        // char-boundary-adjusted start rather than dropping everything
+        let bytes = "ab\u{2713}cdef".as_bytes(); // ✓ occupies bytes 2..5
+        let start = tail_slice_start(bytes, 3); // mid-✓
+        assert_eq!(start, 5);
+        assert_eq!(&bytes[start..], b"cdef");
     }
 
     // -- LineStripper (stateful pty line history + bell/notify signals) ------
