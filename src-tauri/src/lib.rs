@@ -880,11 +880,59 @@ fn standup_append(id: String, note: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Append-only logs are written by external hook processes that may be
+/// mid-append when we read. Every line a writer completes ends in '\n', so a
+/// file not ending in '\n' has a torn final line — return only the prefix up
+/// to (and including) the last newline.
+fn complete_lines(s: &str) -> &str {
+    match s.rfind('\n') {
+        Some(i) => &s[..=i],
+        None => "",
+    }
+}
+
+/// Rotation thresholds for append-only logs (events.jsonl, audit.jsonl):
+/// they grow unbounded and are re-read every 2s. Above MAX bytes, keep the
+/// last ~KEEP bytes, trimmed forward to a line boundary.
+const LOG_ROTATE_MAX: u64 = 2_000_000;
+const LOG_ROTATE_KEEP: usize = 1_000_000;
+
+/// Byte offset to keep from when trimming an oversized log: the start of the
+/// first complete line inside the trailing `keep` bytes. If the trailing
+/// window contains no newline (one giant line), everything is dropped.
+fn rotate_keep_from(data: &[u8], keep: usize) -> usize {
+    if data.len() <= keep {
+        return 0;
+    }
+    let start = data.len() - keep;
+    match data[start..].iter().position(|&b| b == b'\n') {
+        Some(i) => start + i + 1,
+        None => data.len(),
+    }
+}
+
+/// Truncate an oversized append-only log from the front, atomically
+/// (temp file + rename) so concurrent readers never see a partial file.
+/// A hook writer appending exactly during the rename can lose its line to
+/// the replaced inode — acceptable for activity/audit tails.
+fn rotate_log_if_large(path: &std::path::Path) {
+    let Ok(meta) = std::fs::metadata(path) else { return };
+    if meta.len() <= LOG_ROTATE_MAX {
+        return;
+    }
+    let Ok(data) = std::fs::read(path) else { return };
+    let from = rotate_keep_from(&data, LOG_ROTATE_KEEP);
+    let tmp = path.with_extension("tmp-rotate");
+    if std::fs::write(&tmp, &data[from..]).is_ok() {
+        let _ = std::fs::rename(&tmp, path);
+    }
+}
+
 #[tauri::command]
 fn standup_tail() -> Vec<String> {
     std::fs::read_to_string(grillme_dir().join("standup.log"))
         .map(|s| {
-            let lines: Vec<String> = s.lines().map(str::to_string).collect();
+            let lines: Vec<String> = complete_lines(&s).lines().map(str::to_string).collect();
             let skip = lines.len().saturating_sub(20);
             lines.into_iter().skip(skip).collect()
         })
@@ -1025,10 +1073,31 @@ fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
         entry = UsageCacheEntry::default(); // rotated/truncated
     }
     // parse only bytes appended since last call — transcripts grow to tens of MB
+    const USAGE_READ_WINDOW: u64 = 8_000_000;
     let _ = f.seek(std::io::SeekFrom::Start(entry.offset));
     let mut raw = String::new();
-    let _ = f.take(8_000_000).read_to_string(&mut raw);
+    let _ = (&mut f).take(USAGE_READ_WINDOW).read_to_string(&mut raw);
     let consumed = raw.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    if consumed == 0 && raw.len() as u64 >= USAGE_READ_WINDOW {
+        // A single line larger than the read window: it can never be parsed,
+        // and without advancing the offset would stall here forever. Skip
+        // past the window to the next newline (dropping the oversized line)
+        // so subsequent calls make progress.
+        entry.offset += raw.len() as u64;
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            match f.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if let Some(pos) = buf[..n].iter().position(|&b| b == b'\n') {
+                        entry.offset += (pos + 1) as u64;
+                        break;
+                    }
+                    entry.offset += n as u64;
+                }
+            }
+        }
+    }
     let complete = &raw[..consumed];
     entry.offset += consumed as u64;
     {
@@ -1205,9 +1274,11 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
 
 #[tauri::command]
 fn events_tail() -> Vec<String> {
-    std::fs::read_to_string(grillme_dir().join("events.jsonl"))
+    let path = grillme_dir().join("events.jsonl");
+    rotate_log_if_large(&path);
+    std::fs::read_to_string(&path)
         .map(|s| {
-            let lines: Vec<String> = s.lines().map(str::to_string).collect();
+            let lines: Vec<String> = complete_lines(&s).lines().map(str::to_string).collect();
             let skip = lines.len().saturating_sub(100);
             lines.into_iter().skip(skip).collect()
         })
@@ -1498,9 +1569,11 @@ fn blocklist_write(content: String) -> Result<(), String> {
 
 #[tauri::command]
 fn audit_tail(member: Option<String>) -> Vec<String> {
-    std::fs::read_to_string(grillme_dir().join("audit.jsonl"))
+    let path = grillme_dir().join("audit.jsonl");
+    rotate_log_if_large(&path);
+    std::fs::read_to_string(&path)
         .map(|s| {
-            let lines: Vec<String> = s
+            let lines: Vec<String> = complete_lines(&s)
                 .lines()
                 .filter(|l| match &member {
                     Some(m) => l.contains(&format!("\"id\": \"{m}\"")) || l.contains(&format!("\"id\":\"{m}\"")),
@@ -1796,9 +1869,14 @@ fn start_api_server(app: tauri::AppHandle) {
 
 #[tauri::command]
 fn pty_kill(id: String) -> Result<(), String> {
-    let mut map = lock_or_recover(ptys());
-    if let Some(mut sess) = map.remove(&id) {
+    // Remove first, then kill+wait outside the lock so a slow reap can never
+    // stall other sessions' pty calls.
+    let sess = lock_or_recover(ptys()).remove(&id);
+    if let Some(mut sess) = sess {
         let _ = sess.child.kill();
+        // Reap the killed child — without wait() it lingers as a zombie
+        // until the app exits. It was just SIGKILLed, so this returns fast.
+        let _ = sess.child.wait();
     }
     Ok(())
 }
@@ -2299,5 +2377,42 @@ mod pure_fn_tests {
     #[test]
     fn project_slug_replaces_separators() {
         assert_eq!(project_slug("/Users/me/grill.me"), "-Users-me-grill-me");
+    }
+
+    // -- complete_lines (torn-tail guard) ------------------------------------
+
+    #[test]
+    fn complete_lines_keeps_terminated_content() {
+        assert_eq!(complete_lines("a\nb\n"), "a\nb\n");
+    }
+
+    #[test]
+    fn complete_lines_drops_torn_final_line() {
+        assert_eq!(complete_lines("a\nb\npart"), "a\nb\n");
+        assert_eq!(complete_lines("no newline yet"), "");
+        assert_eq!(complete_lines(""), "");
+    }
+
+    // -- rotate_keep_from (log rotation trim point) --------------------------
+
+    #[test]
+    fn rotate_keep_from_small_file_keeps_everything() {
+        assert_eq!(rotate_keep_from(b"a\nb\n", 100), 0);
+    }
+
+    #[test]
+    fn rotate_keep_from_trims_to_line_boundary() {
+        // keep window of 6 over "aa\nbb\ncc\n" (9 bytes) starts at byte 3;
+        // trim runs to just past the first '\n' inside the window (index 5),
+        // so the kept tail is "cc\n" — always whole lines, never a torn head.
+        let data = b"aa\nbb\ncc\n";
+        let from = rotate_keep_from(data, 6);
+        assert_eq!(&data[from..], b"cc\n");
+    }
+
+    #[test]
+    fn rotate_keep_from_giant_single_line_drops_all() {
+        let data = b"one enormous line without any newline at all";
+        assert_eq!(rotate_keep_from(data, 8), data.len());
     }
 }
