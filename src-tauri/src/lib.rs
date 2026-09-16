@@ -697,8 +697,60 @@ fn pty_ensure_inner(
     Ok(())
 }
 
+/// Resolve which team member (if any) a pty id belongs to, returning its
+/// index in the teammates list. Pty ids are "<member>" or "<project>:<member>"
+/// (mirroring ptyIdFor in src/store.ts). The project prefix is stripped by
+/// splitting on the FIRST ':' exactly — never by substring matching — so
+/// "project:Bob" can never resolve to a member "ob".
+fn member_for_pty<'a>(
+    pty_id: &str,
+    teammates: &'a [TeamMember],
+) -> Option<(usize, &'a TeamMember)> {
+    let bare = pty_id.split_once(':').map(|(_, rest)| rest);
+    teammates
+        .iter()
+        .enumerate()
+        .find(|(_, m)| pty_id == m.id || bare == Some(m.id.as_str()))
+}
+
+/// Backend enforcement of view-only teammates: may keystrokes be written
+/// into `pty_id`? Pure over its inputs so it's unit-testable.
+///   - The local operator (first teammate in config) is always allowed —
+///     it's their own machine.
+///   - Any other teammate's session requires permission == "edit"; "view",
+///     unset, or unrecognized values deny.
+///   - Ids that resolve to no teammate are ALLOWED by design: those are
+///     local tool panes driven by the operator — shell tabs ("<id>:shell",
+///     whose ":shell" suffix makes them not match any member) and the
+///     "merge-pilot" pane — not teammate sessions, so view-only does not
+///     apply to them.
+fn can_write_session_with(pty_id: &str, teammates: &[TeamMember]) -> Result<(), String> {
+    match member_for_pty(pty_id, teammates) {
+        None => Ok(()),      // unknown id: local tool pane (shell/merge-pilot)
+        Some((0, _)) => Ok(()), // local operator: always their own session
+        Some((_, m)) => {
+            if m.permission.as_deref() == Some("edit") {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{} is view-only — input blocked (set permission to \"edit\" in team settings)",
+                    m.name
+                ))
+            }
+        }
+    }
+}
+
+fn can_write_session(pty_id: &str) -> Result<(), String> {
+    can_write_session_with(pty_id, &team_config().teammates)
+}
+
 #[tauri::command]
 fn pty_write(id: String, data: String) -> Result<(), String> {
+    // View-only is enforced HERE, not just in the UI: every input path
+    // (Tauri invoke and the HTTP /send route used by `grillme send/type`)
+    // funnels through this command.
+    can_write_session(&id)?;
     let mut map = lock_or_recover(ptys());
     let s = map.get_mut(&id).ok_or("no session")?;
     if s.paused {
@@ -2271,7 +2323,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_strong_token, overlap_pairs, sh_quote, validate_member_id};
+    use super::{
+        can_write_session_with, is_strong_token, member_for_pty, overlap_pairs, sh_quote,
+        validate_member_id, TeamMember,
+    };
 
     fn m(name: &str, branch: &str, files: &[&str]) -> (String, String, Vec<String>) {
         (name.into(), branch.into(), files.iter().map(|s| s.to_string()).collect())
@@ -2329,6 +2384,73 @@ mod tests {
         assert_eq!(sh_quote("/plain/path"), "'/plain/path'");
         assert_eq!(sh_quote("/has space/x"), "'/has space/x'");
         assert_eq!(sh_quote("a'b"), "'a'\\''b'");
+    }
+
+    fn tm(id: &str, permission: Option<&str>) -> TeamMember {
+        TeamMember {
+            id: id.into(),
+            name: id.into(),
+            repo_path: "/tmp".into(),
+            permission: permission.map(|p| p.into()),
+            remote: None,
+            tmux_session: None,
+        }
+    }
+
+    /// operator first, then an edit member, a view member, and one with no
+    /// permission set — the shape backend enforcement has to reason about.
+    fn team() -> Vec<TeamMember> {
+        vec![
+            tm("me", Some("view")), // operator: permission must NOT matter
+            tm("ed", Some("edit")),
+            tm("vi", Some("view")),
+            tm("ob", None),
+        ]
+    }
+
+    #[test]
+    fn pty_member_resolution_is_exact_prefix_not_substring() {
+        let t = team();
+        // "project:Bob" must NOT resolve to member "ob" (old endsWith bug)
+        assert!(member_for_pty("project:Bob", &t).is_none());
+        // exact bare id and exact "<project>:<member>" both resolve
+        assert_eq!(member_for_pty("ob", &t).map(|(i, _)| i), Some(3));
+        assert_eq!(member_for_pty("project:ob", &t).map(|(i, _)| i), Some(3));
+        // only the FIRST ':' splits — a ":shell" suffix breaks the match
+        assert!(member_for_pty("project:ob:shell", &t).is_none());
+        assert!(member_for_pty("ob:shell", &t).is_none());
+    }
+
+    #[test]
+    fn view_member_denied_write() {
+        let t = team();
+        assert!(can_write_session_with("vi", &t).is_err());
+        assert!(can_write_session_with("project:vi", &t).is_err());
+        // unset permission is view-only too, matching the UI gate
+        assert!(can_write_session_with("ob", &t).is_err());
+    }
+
+    #[test]
+    fn edit_member_allowed_write() {
+        let t = team();
+        assert!(can_write_session_with("ed", &t).is_ok());
+        assert!(can_write_session_with("project:ed", &t).is_ok());
+    }
+
+    #[test]
+    fn operator_always_allowed_even_if_marked_view() {
+        let t = team();
+        assert!(can_write_session_with("me", &t).is_ok());
+        assert!(can_write_session_with("project:me", &t).is_ok());
+    }
+
+    #[test]
+    fn unknown_ids_allowed_local_tool_panes() {
+        let t = team();
+        // shell tabs and merge-pilot aren't teammate sessions: allowed
+        assert!(can_write_session_with("merge-pilot", &t).is_ok());
+        assert!(can_write_session_with("vi:shell", &t).is_ok());
+        assert!(can_write_session_with("project:vi:shell", &t).is_ok());
     }
 
     #[test]

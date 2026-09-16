@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { isTauri } from "../data/sources/git";
-import { useApp } from "../store";
+import { memberIdFromPtyId, useApp } from "../store";
 import { TERM_PALETTES, hexWithOpacity } from "../theme/termPalettes";
 
 function b64ToU8(b64: string) {
@@ -75,9 +75,10 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       // preflight: a missing claude CLI would spawn, die instantly, and loop
       // through self-healing restarts. Remote/ssh panes don't need a local
       // CLI, and plain shell panes only need zsh.
-      const member = useApp.getState().members.find(
-        (m) => id === m.id || id.endsWith(`:${m.id}`),
-      );
+      // exact prefix parsing (inverse of ptyIdFor) — substring matching here
+      // would let "project:Bob" resolve to a member "ob"
+      const paneMemberId = memberIdFromPtyId(id);
+      const member = useApp.getState().members.find((m) => m.id === paneMemberId);
       const isRemote = Boolean(member?.remote);
       if (!shell && !isRemote) {
         try {
@@ -152,9 +153,11 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       if (sb2) setPhase("live");
       term.onData((data) => {
         const st = useApp.getState();
-        const memberId = id.split(":")[id.includes(":") && st.activeProject && st.activeProject !== "default" ? 1 : 0] ?? id;
-        const mate = st.teammates.find((t) => t.id === memberId || id.startsWith(t.id));
-        const isOwn = st.members[0] && (id === st.members[0].id || id.includes(`${st.members[0].id}`));
+        // exact parsing, mirroring the backend gate in pty_write — the
+        // backend is the enforcement point; this just gives a friendly toast
+        const memberId = memberIdFromPtyId(id);
+        const mate = st.teammates.find((t) => t.id === memberId);
+        const isOwn = st.members[0]?.id === memberId;
         if (!isOwn && mate && mate.permission !== "edit") {
           st.toast(`${mate.name} is view-only — change it in settings`, "warn");
           return;

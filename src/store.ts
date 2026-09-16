@@ -664,6 +664,18 @@ export function ptyIdFor(memberId: string): string {
   return proj && proj !== "default" ? `${proj}:${memberId}` : memberId;
 }
 
+/**
+ * Inverse of ptyIdFor: pty ids are "<member>" or "<project>:<member>", plus
+ * a ":shell" suffix for shell tabs. Parse exactly — strip the suffix, then
+ * split on the FIRST ':' — never substring-match, so "project:Bob" can never
+ * resolve to a member "ob". Mirrors member_for_pty in src-tauri/src/lib.rs.
+ */
+export function memberIdFromPtyId(ptyId: string): string {
+  const base = ptyId.endsWith(":shell") ? ptyId.slice(0, -":shell".length) : ptyId;
+  const i = base.indexOf(":");
+  return i === -1 ? base : base.slice(i + 1);
+}
+
 async function persistShared(name: string, data: unknown) {
   if (!isTauri()) return;
   const { invoke } = await import("@tauri-apps/api/core");
