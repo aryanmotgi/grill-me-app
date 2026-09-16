@@ -353,7 +353,19 @@ struct PtySession {
     started_at: u64,
     /// SIGSTOPped (manual or auto-idle) — resumes on view/type
     paused: bool,
+    /// Spawn generation, from PTY_GENERATION. Guards against a session-identity
+    /// race: when a dead session is respawned under the same id, the OLD reader
+    /// thread may still be draining the dead pty. Without this tag, its exit
+    /// path would mark the NEW session dead (and emit a spurious pty-exit), and
+    /// its data path would corrupt the new session's ring buffer, line tail,
+    /// and output channel. Every reader-thread action first checks that the
+    /// current entry's generation still matches the one captured at spawn; on
+    /// mismatch the stale thread exits silently without touching state.
+    generation: u64,
 }
+
+/// Monotonic counter stamping each spawn — see PtySession::generation.
+static PTY_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 static PTYS: OnceLock<Mutex<HashMap<String, PtySession>>> = OnceLock::new();
 
@@ -526,6 +538,7 @@ fn pty_ensure_inner(
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let generation = PTY_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     lock_or_recover(ptys()).insert(
         id.clone(),
         PtySession {
@@ -548,6 +561,7 @@ fn pty_ensure_inner(
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
             paused: false,
+            generation,
         },
     );
 
@@ -557,6 +571,12 @@ fn pty_ensure_inner(
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
                     if let Some(s) = lock_or_recover(ptys()).get_mut(&id) {
+                        if s.generation != generation {
+                            // stale reader from a previous spawn of this id:
+                            // a new session owns the entry now — don't mark it
+                            // dead or emit its exit event.
+                            return;
+                        }
                         s.alive = false;
                     }
                     let _ = app.emit("pty-exit", &id);
@@ -567,6 +587,11 @@ fn pty_ensure_inner(
                     {
                         let mut map = lock_or_recover(ptys());
                         if let Some(s) = map.get_mut(&id) {
+                            if s.generation != generation {
+                                // stale reader: don't corrupt the new
+                                // session's buffers or output channel.
+                                return;
+                            }
                             s.ring.extend(chunk);
                             while s.ring.len() > 400_000 {
                                 s.ring.pop_front();
