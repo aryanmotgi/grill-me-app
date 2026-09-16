@@ -79,11 +79,20 @@ export default function App() {
         e.preventDefault();
         setRailTab((["tasks", "inbox", "activity", "team", "preview"] as const)[Number(e.key) - 1]);
       }
-      if (e.key === "Escape") setSwitcherOpen(false);
+      if (e.key === "Escape") {
+        // close exactly one overlay, topmost first
+        const s = useApp.getState();
+        if (s.switcherOpen) setSwitcherOpen(false);
+        else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
+        else if (s.settingsOpen) s.setSettingsOpen(false);
+        else if (s.reviewFor) s.setReviewFor(null);
+        else if (s.mergePilotOpen) setMergePilotOpen(false);
+        else if (s.pickerOpen && s.activeProject) setPickerOpen(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen, setView]);
+  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen, setView, setMergePilotOpen]);
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
