@@ -470,6 +470,33 @@ impl LineStripper {
     }
 }
 
+/// Resolved path of the claude CLI, cached after the first successful lookup.
+/// Only success is cached: if the CLI is missing, every preflight re-checks so
+/// installing it (plus an app restart-free retry) can recover without state.
+static CLAUDE_PATH: OnceLock<Option<String>> = OnceLock::new();
+
+/// Check that the `claude` CLI is reachable from a login shell (the same
+/// environment pty_ensure spawns it in). Returns its resolved path, or an
+/// actionable error the frontend can surface instead of letting the pane
+/// enter a spawn/die/respawn loop.
+#[tauri::command]
+fn preflight_claude() -> Result<String, String> {
+    if let Some(Some(path)) = CLAUDE_PATH.get() {
+        return Ok(path.clone());
+    }
+    let out = Command::new("/bin/zsh")
+        .args(["-lc", "command -v claude"])
+        .output()
+        .map_err(|e| format!("preflight failed to run zsh: {e}"))?;
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if out.status.success() && !path.is_empty() {
+        let _ = CLAUDE_PATH.set(Some(path.clone()));
+        Ok(path)
+    } else {
+        Err("claude CLI not found on PATH".to_string())
+    }
+}
+
 #[tauri::command]
 fn pty_ensure(
     app: tauri::AppHandle,
@@ -2070,6 +2097,7 @@ pub fn run() {
             git_state_cached,
             start_watching,
             watch_state,
+            preflight_claude,
             pty_ensure,
             pty_write,
             pty_resize,

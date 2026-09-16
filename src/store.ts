@@ -122,6 +122,11 @@ interface AppState {
   /** Files to flash in the claimed list after a conflict-banner click. */
   highlightFiles: string[];
   flashFiles: (files: string[]) => void;
+
+  /** true when preflight found no claude CLI on PATH — panes show an install
+   *  hint and self-healing restarts are suppressed until it clears. */
+  claudeMissing: boolean;
+  setClaudeMissing: (missing: boolean) => void;
 }
 
 let toastSeq = 0;
@@ -486,6 +491,9 @@ export const useApp = create<AppState>((set, get) => ({
     set({ highlightFiles: files, railTab: "tasks" });
     setTimeout(() => set({ highlightFiles: [] }), 2600);
   },
+
+  claudeMissing: false,
+  setClaudeMissing: (missing) => set({ claudeMissing: missing }),
 
   applyWatchState: (ws) =>
     set((s) => {

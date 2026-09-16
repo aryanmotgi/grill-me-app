@@ -33,6 +33,8 @@ interface FeedStore {
     sponsorChecklist?: { sponsor: string; requirement: string; done: boolean }[];
     standupLines?: string[];
   }) => void;
+  claudeMissing: boolean;
+  setClaudeMissing: (missing: boolean) => void;
   applyTeamConfig: (members: TeamMemberConfig[]) => void;
   patchTeammate: (id: string, patch: Partial<Teammate>) => void;
   setActivity: (events: import("../../types").ActivityEvent[]) => void;
@@ -199,11 +201,21 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   const { invoke } = await import("@tauri-apps/api/core");
 
   const ensureAll = async () => {
+    // preflight once before any claude spawn: a missing CLI would otherwise
+    // die instantly and put self-healing into a spawn/die/respawn loop
+    let claudeOk = true;
+    try {
+      await invoke("preflight_claude");
+    } catch {
+      claudeOk = false;
+    }
+    store.getState().setClaudeMissing(!claudeOk);
     // lazy spawn: only YOUR session starts eagerly — teammates' claude
     // processes spawn on first view of their pane (calmer start, less churn)
     const members = store.getState().members;
     const me = members[0];
-    if (me) {
+    // remote/tmux sessions attach over ssh — they don't need a local claude
+    if (me && (claudeOk || me.remote)) {
       await invoke("pty_ensure", {
         id: ptyIdFor(me.id), cwd: me.repoPath, shell: false,
         remote: me.remote ?? null, tmux: me.tmuxSession ?? null,
@@ -267,8 +279,11 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         const tailText = st.tail.slice(-8).join(" ").toLowerCase();
         const rateLimited = /rate.?limit|usage limit reached|429|overloaded/.test(tailText);
 
-        // crashed: was alive, now dead -> bounded auto-restart
-        if (selfHealOn && wasAlive[st.id] && !st.alive && member) {
+        // crashed: was alive, now dead -> bounded auto-restart. Suppressed
+        // while the claude CLI is missing (local spawns can only die again;
+        // remote sessions still restart since they don't need a local CLI).
+        const healable = !stg.claudeMissing || !!member?.remote;
+        if (selfHealOn && healable && wasAlive[st.id] && !st.alive && member) {
           const now = Date.now();
           restarts[st.id] = (restarts[st.id] ?? []).filter((t) => now - t < 10 * 60_000);
           if (restarts[st.id].length < 3) {
