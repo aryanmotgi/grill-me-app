@@ -2066,3 +2066,107 @@ mod safety_tests {
         assert!(hook_denies("{\"not\": \"a list\"}", "ls -la"));
     }
 }
+
+#[cfg(test)]
+mod pure_fn_tests {
+    use super::*;
+
+    // -- strip_ansi_stateless ------------------------------------------------
+
+    #[test]
+    fn strip_ansi_plain_text_passes_through() {
+        assert_eq!(
+            strip_ansi_stateless(b"hello world\nsecond line"),
+            vec!["hello world".to_string(), "second line".to_string()]
+        );
+    }
+
+    #[test]
+    fn strip_ansi_removes_csi_sequences() {
+        // color on/off around "red", cursor-move sequence mid-line
+        assert_eq!(
+            strip_ansi_stateless(b"\x1b[31mred\x1b[0m and \x1b[2;5Hplain"),
+            vec!["red and plain".to_string()]
+        );
+    }
+
+    #[test]
+    fn strip_ansi_removes_osc_sequences() {
+        // OSC 0 (set title) terminated by BEL must vanish entirely
+        assert_eq!(
+            strip_ansi_stateless(b"\x1b]0;window title\x07visible"),
+            vec!["visible".to_string()]
+        );
+    }
+
+    #[test]
+    fn strip_ansi_preserves_multibyte_utf8() {
+        // multi-byte chars (é = 2 bytes, ✓ = 3 bytes) survive byte-wise processing
+        assert_eq!(
+            strip_ansi_stateless("caf\u{e9} \u{2713}\n".as_bytes()),
+            vec!["caf\u{e9} \u{2713}".to_string()]
+        );
+    }
+
+    #[test]
+    fn strip_ansi_carriage_return_starts_new_line() {
+        // TUIs repaint with \r — both segments should be kept as lines
+        assert_eq!(
+            strip_ansi_stateless(b"first\rsecond"),
+            vec!["first".to_string(), "second".to_string()]
+        );
+    }
+
+    // -- valid_project_id ----------------------------------------------------
+
+    #[test]
+    fn project_id_accepts_safe_names() {
+        assert!(valid_project_id("default"));
+        assert!(valid_project_id("a-b_c.1"));
+    }
+
+    #[test]
+    fn project_id_rejects_traversal_and_slashes() {
+        assert!(!valid_project_id(""));
+        assert!(!valid_project_id("."));
+        assert!(!valid_project_id(".."));
+        assert!(!valid_project_id("../etc"));
+        assert!(!valid_project_id("a/b"));
+    }
+
+    // -- ssh host / tmux session validators ----------------------------------
+
+    #[test]
+    fn ssh_host_accepts_normal_targets() {
+        assert!(validate_ssh_host("vm").is_ok());
+        assert!(validate_ssh_host("user@host.tld").is_ok());
+    }
+
+    #[test]
+    fn ssh_host_rejects_injection_attempts() {
+        assert!(validate_ssh_host("x; rm -rf /").is_err()); // shell metacharacters
+        assert!(validate_ssh_host("-oProxyCommand=evil").is_err()); // option smuggling
+        assert!(validate_ssh_host("").is_err());
+    }
+
+    #[test]
+    fn tmux_session_accepts_normal_names() {
+        assert!(validate_tmux_session("main").is_ok());
+        assert!(validate_tmux_session("grill_me.1-dev").is_ok());
+    }
+
+    #[test]
+    fn tmux_session_rejects_unsafe_names() {
+        assert!(validate_tmux_session("x; rm").is_err());
+        assert!(validate_tmux_session("-t0").is_err());
+        assert!(validate_tmux_session("has space").is_err());
+        assert!(validate_tmux_session("").is_err());
+    }
+
+    // -- project_slug (transcript dir helper) --------------------------------
+
+    #[test]
+    fn project_slug_replaces_separators() {
+        assert_eq!(project_slug("/Users/me/grill.me"), "-Users-me-grill-me");
+    }
+}
