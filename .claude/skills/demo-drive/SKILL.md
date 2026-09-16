@@ -1,256 +1,149 @@
 ---
 name: demo-drive
-description: Drives the Grill Me live demo — pre-flight checks via the grillme CLI (sessions alive, API responding, sounds on), seeding demo tasks/messages through ~/.grillme JSON files, resetting state between rehearsals, and firing the fan-out and inbox beats on cue. Use when the user says "demo prep", "rehearsal", "pre-flight", "reset the demo", "fire the fan-out", or is about to present Grill Me.
+description: Stage-manages the Grill Me live demo — pre-flight checks via the grillme CLI, seeding demo tasks/messages through ~/.grillme JSON files, resetting state between rehearsals, and firing the fan-out / inbox / needs-input / conflict / safety beats on cue. Use when the user says "demo prep", "rehearsal", "pre-flight", "reset the demo", "seed demo data", "fire the fan-out", or is about to present Grill Me live.
 ---
 
 # Demo Drive: Grill Me
 
-You are the stage manager. The app is the show. Everything here uses the real
-transport: the `grillme` CLI, the localhost API on `127.0.0.1:4517`, and the
-shared JSON files under `~/.grillme` that the app polls every 2 seconds.
+You are the stage manager. Everything uses the real transport: the `grillme`
+CLI, the localhost API, and JSON files under `~/.grillme` the app polls.
 
-## Ground truth (paths, IDs, formats)
+## Ground truth
 
-- **CLI:** `~/.grillme/bin/grillme` (installed/refreshed by the app on every
-  launch). Not on PATH by default — use the full path or
-  `export PATH="$HOME/.grillme/bin:$PATH"` first.
-- **API:** `http://127.0.0.1:4517`, bearer token in `~/.grillme/api-token`.
-  The server runs *inside* the app — no app, no API.
-- **Session IDs** = teammate IDs from `~/.grillme/config.json`. For the
-  default project they are bare (`Aryan`, `Shreyash`, `Nandan`, `Rithik`);
-  for any other active project they are prefixed `<projectId>:<memberId>`.
-- **Shared state** (default project) lives at `~/.grillme/` root:
-  `tasks.json`, `messages.json`, `team.json`, `events.jsonl`, `audit.jsonl`,
-  `standup.log`. Other projects: `~/.grillme/projects/<id>/`.
-  `settings.json` and `config.json` are always global at the root.
-- The app polls tasks/messages/team every **2 s**, git every **5 s** (cached
-  10 s in Rust), pty status every **2 s** — seeded files appear on screen
-  within ~2 s, no restart needed.
-
-### CLI reference (real behavior, from the script itself)
+- **CLI:** `~/.grillme/bin/grillme` (reinstalled by the app on launch). Not on
+  PATH — run `export PATH="$HOME/.grillme/bin:$PATH"` first.
+- **API:** `http://127.0.0.1:4517`, bearer token at `~/.grillme/api-token`
+  (32 CSPRNG bytes hex, mode 0600). Server runs inside the app — no app, no API.
+- **Session ids** = teammate ids: bare for the default project (`Aryan`,
+  `Shreyash`, `Nandan`, `Rithik`), prefixed `<projectId>:<memberId>` for any
+  other active project (`ptyIdFor` in `src/store.ts`).
+- **Always global** at `~/.grillme/`: `settings.json`, `projects.json`,
+  `blocklist.json`, `api-token`, `bin/`.
+- **Per-project** (root for the default project, else `~/.grillme/projects/<id>/`):
+  `config.json`, `tasks.json`, `messages.json`, `team.json`, `events.jsonl`,
+  `audit.jsonl`, `standup.log`.
+- Polling: tasks/messages/team **2 s**, git 5 s (10 s Rust cache), pty 2 s —
+  seeded files appear on screen within ~2 s, no restart needed.
 
 ```sh
-grillme sessions              # JSON: [{id, alive, quietMs, bell, oscNotify, tail[], recording, startedAt, paused}]
-grillme send <id> <text...>   # send text + Enter (newline appended — submits the prompt)
-grillme type <id> <text...>   # type text WITHOUT Enter (stage it, hit send later)
-grillme read <id> [lines]     # last N (default 40) ANSI-stripped screen lines
-grillme new <id> <branch>     # git worktree add -b <branch> ../worktrees-<id> main,
-                              #   registers <id> in config.json, spawns a live claude session
+grillme sessions             # JSON: [{id, alive, quietMs, bell, oscNotify, tail[], recording, startedAt, paused}]
+grillme send <id> <text...>  # send text + Enter (newline appended — submits the prompt)
+grillme type <id> <text...>  # type WITHOUT Enter (stage it, send later)
+grillme read <id> [lines]    # last N (default 40) ANSI-stripped screen lines
+grillme new <id> <branch>    # git worktree add -b <branch> ../worktrees-<id> main,
+                             #   registers <id> in config.json, spawns a live claude session
 ```
 
-Dramatic-pause trick: `grillme type Aryan "fix the flaky test"` puts the text
-in the prompt on screen; `grillme send Aryan ""` later sends just the Enter.
+Dramatic pause: `type` stages the prompt; `send <id> ""` later fires the Enter.
 
----
-
-## Pre-flight (run T-10 minutes, in order)
+## Pre-flight (T-10 minutes, in order)
 
 ```sh
 export PATH="$HOME/.grillme/bin:$PATH"
-
-# 1. App + API up, token valid (silent success = fail; expect a JSON array)
-grillme sessions
-# equivalent raw check:
-curl -sf -H "Authorization: Bearer $(cat ~/.grillme/api-token)" http://127.0.0.1:4517/sessions
-
-# 2. Every demo session alive
-grillme sessions | python3 -c 'import json,sys; [print(s["id"], "alive" if s["alive"] else "DEAD", "paused" if s["paused"] else "") for s in json.load(sys.stdin)]'
-
-# 3. Screens sane (no error walls, no rate-limit banners)
+grillme sessions    # silent success = FAIL; expect a JSON array (proves app + API + token)
 for id in Aryan Shreyash Nandan Rithik; do echo "== $id =="; grillme read "$id" 8; done
 ```
 
 Then verify by hand:
 
-- **Sessions spawn lazily** — teammate panes only start `claude` on first
-  view. Click through every pane once so nothing cold-boots on stage.
-- **Paused sessions**: auto-pause SIGSTOPs quiet sessions after ~5 idle
-  minutes. Viewing or typing resumes instantly, but pre-warm anyway: view
-  each pane right before you start.
-- **Sounds on** — check `~/.grillme/settings.json` (global): `muteAll` must
-  be absent/false; `notifyMessages` / `notifyNeedsInput` not false; the
-  `sounds` map (keys `message`, `mention`, `needs-input`, `conflict`) has no
-  `false` entries. The app holds settings in memory — change them in the
-  Settings UI, or edit the file **before** launching the app. Also confirm
-  macOS Focus/DND is OFF and volume is up.
-- **Sound + notification live test** — fire a real blocking message (below,
-  "Inbox beat") and confirm you hear the tone and see the OS banner.
-- **Hooks installed** — each worktree's `.claude/settings.json` mentions
-  `grillme-hook`. The app reinstalls on launch; if missing, restart the app.
-- **Demo view gotcha**: TopBar → "Demo view" hides everything tagged
-  `.demo-hide` — **including the fan-out button and the ⌘S ship button**.
-  Either fire fan-out *before* toggling demo view, or drive it from the CLI
-  (works regardless).
-
----
+- **Lazy spawn** — teammate panes only start `claude` on first view. Click
+  through every pane once so nothing cold-boots on stage.
+- **Auto-pause** SIGSTOPs sessions quiet ~5 min; viewing resumes instantly,
+  but pre-warm every pane right before you start.
+- **Sounds** — in global `~/.grillme/settings.json`: `muteAll` absent/false,
+  `notifyMessages`/`notifyNeedsInput` not false, `sounds` map (`message`,
+  `mention`, `needs-input`, `conflict`) has no `false`. Settings are held in
+  memory — change via the Settings UI, or edit the file before launching.
+  macOS Focus/DND OFF, volume up; live-test with a blocking message (below).
+- **Hooks** — each worktree's `.claude/settings.json` mentions `grillme-hook`;
+  the app reinstalls on launch — restart the app if missing.
+- **Demo view gotcha** — TopBar "Demo view" hides `.demo-hide` chrome,
+  including the fan-out button and the ⌘S ship *button* (the ⌘S keystroke
+  still works). Fire fan-out before toggling, or drive it from the CLI.
 
 ## Seeding demo state
 
-Keep golden copies in `~/.grillme/demo-seeds/` (`tasks.json`,
-`messages.json`, `team.json`) and copy them in. The app dedups messages by
-`id` per app-run, so **every rehearsal needs fresh message ids** — generate
-them with a timestamp.
-
-Real schemas (copy these shapes exactly):
+Keep golden copies in `~/.grillme/demo-seeds/` (`tasks.json`, `messages.json`,
+`team.json`). The app dedups messages by `id` per app-run — every rehearsal
+needs fresh message ids (timestamp them). Real schemas:
 
 ```jsonc
 // tasks.json — array of Task
-{
-  "id": "t1",
-  "title": "Embedded pty terminals",
-  "desc": "Real Claude Code process per pane",
-  "owner": "Aryan",                 // teammate id
-  "status": "in-progress",          // not-started | in-progress | done
+{ "id": "t1", "title": "Embedded pty terminals", "owner": "Aryan",
+  "status": "in-progress",         // not-started | in-progress | done
   "files": ["src-tauri/src/lib.rs"],
-  "blockedBy": "t3",                // optional: task id — renders the dependency chain
-  "startedAt": 1789487192889        // optional: epoch MILLISECONDS — drives the live timer
-}
+  "blockedBy": "t3",               // optional task id — renders the dependency chain
+  "startedAt": 1789487192889 }     // optional epoch MILLISECONDS — drives the live timer
 
 // messages.json — array of Message
-{
-  "id": "b-1789497259",             // MUST be unique per app-run (dedup key)
-  "from": "Nandan",                 // != viewer ("Aryan") or no notification fires
-  "to": "Aryan",                    // or "all"
+{ "id": "b-1789497259",            // MUST be unique per app-run (dedup key)
+  "from": "Nandan",                // != viewer ("Aryan") or no notification fires
+  "to": "Aryan",                   // or "all"
   "text": "Blocked: inbox types collide with my branch, need your call",
-  "answered": false,                // false => counts in the attention badge
-  "ts": "11:06",                    // display string, not epoch
-  "kind": "blocking",               // question | fyi | blocking | proposal
-  "context": { "task": "inbox", "file": "src/components/Inbox.tsx", "branch": "feature/inbox" },
-  "threadId": "q-..."               // optional: id of root message (replies)
-}
+  "answered": false,               // false => counts in the attention badge
+  "ts": "11:06",                   // display string, not epoch
+  "kind": "blocking",              // question | fyi | blocking | proposal
+  "context": { "task": "inbox", "file": "src/components/Inbox.tsx", "branch": "feature/inbox" } }
 
 // team.json
 { "mergeQueue": ["Aryan", "Shreyash", "Nandan", "Rithik"],
   "sponsor": [ { "sponsor": "Anthropic", "requirement": "...", "done": true } ] }
 ```
 
-Notification rules the seeds must respect (from `feeds.ts`): `kind: "fyi"`
-goes to the silent digest (default 15 min) — never use fyi for a live beat;
-`kind: "blocking"` interrupts with the mention tone and a `BLOCKING from …`
-banner; text containing `@Aryan` upgrades any kind to a mention.
-
----
+Notification rules (`feeds.ts`): `kind:"fyi"` goes to the silent digest
+(default 15 min) — never use fyi for a live beat. `"blocking"` interrupts with
+the mention tone and a `BLOCKING from …` banner. `@Aryan` in the text upgrades
+any kind to a mention.
 
 ## Firing beats on cue
 
-### Fan-out (the wow moment)
+**Fan-out (the wow moment).** UI: SessionList → `fan out` → paste checklist →
+`analyze & spawn` (hidden in demo view). A line sharing 2+ meaningful words
+with an earlier line becomes its dependent and waits on the board. Rehearsed
+checklist: `add login page` / `add signup page` / `style login page` (line 3
+waits on line 1). CLI (works in demo view): `grillme new agent-a fan/agent-a`,
+`sleep 6`, `grillme send agent-a "Work on this task: add a login page. When
+done, tell the user and stop."`, `grillme read agent-a 15`. `new` fails if the
+branch or worktree path already exists — reset (below) between rehearsals.
 
-**Option A — UI (preferred visual):** SessionList → `fan out` → paste the
-checklist → `analyze & spawn`. Remember it's hidden in demo view. Lines
-sharing 2+ meaningful words with an earlier line become dependents that wait
-on the board. Rehearsed checklist:
+**Inbox beat** (blocking message + tone within 2 s): insert a fresh-id message
+into `~/.grillme/messages.json` using the schema above (`kind: "blocking"`,
+`from` ≠ `Aryan`, atomic write: tmp file + rename).
 
-```
-- add login page
-- add signup page
-- style login page
-```
-
-(line 3 shares "login page" with line 1 → spawns only when task 1 is marked done)
-
-**Option B — CLI (works in demo view, scriptable):**
-
-```sh
-grillme new agent-a fan/agent-a          # worktree + branch + live session
-sleep 6                                  # let claude boot before the briefing
-grillme send agent-a "Work on this task: add a login page. When done, tell the user and stop."
-grillme read agent-a 15                  # prove it's really working
-```
-
-`new` creates `<repo-parent>/worktrees-agent-a` branched off `main` — it
-**fails if the branch or path already exists**, so the reset step below is
-mandatory between rehearsals.
-
-### Inbox beat (blocking message + tone, lands within 2 s)
-
-```sh
-python3 - <<'EOF'
-import json, time, os
-p = os.path.expanduser("~/.grillme/messages.json")
-msgs = json.load(open(p)) if os.path.exists(p) and open(p).read().strip() else []
-msgs.insert(0, {
-  "id": f"b-{int(time.time())}", "from": "Nandan", "to": "Aryan",
-  "text": "Blocked: need your call on the store types before I merge",
-  "answered": False, "ts": time.strftime("%H:%M"), "kind": "blocking",
-  "context": {"task": "inbox", "file": "src/store.ts", "branch": "feature/inbox"}})
-tmp = p + ".tmp-write"; json.dump(msgs, open(tmp, "w"), indent=2); os.replace(tmp, p)
-EOF
-```
-
-### Needs-input beat (amber pulse + needs-input tone)
-
-Hook events in `events.jsonl` override heuristics for 30 minutes — inject one:
+**Needs-input beat** (amber pulse + tone; hook events override heuristics for
+30 min; session must be alive):
 
 ```sh
 echo "{\"ts\":$(date +%s),\"id\":\"Shreyash\",\"event\":\"notification\"}" >> ~/.grillme/events.jsonl
-# clear it after the beat:
-echo "{\"ts\":$(date +%s),\"id\":\"Shreyash\",\"event\":\"stop\"}" >> ~/.grillme/events.jsonl
+echo "{\"ts\":$(date +%s),\"id\":\"Shreyash\",\"event\":\"stop\"}" >> ~/.grillme/events.jsonl   # clear after the beat
 ```
 
-(The session must be alive for the status to show; the tone fires on the
-idle→needs-input transition.)
+**Conflict/lock beat** (30-min lock + presence, immediate):
+`touch /Users/aryanmotgi/worktrees/grill-me-mei/src/store.ts`
 
-### Conflict/lock beat
-
-Touch a real file in a teammate's worktree — the notify watcher registers a
-30-minute lock and the UI shows presence immediately:
-
-```sh
-touch /Users/aryanmotgi/worktrees/grill-me-mei/src/store.ts
-```
-
-### Safety beat (blocklist deny, on screen)
-
-```sh
-grillme send Aryan "run: git push --force origin main"
-# PreToolUse hook exits 2 -> Claude visibly refuses and asks for confirmation
-```
-
----
+**Safety beat**: `grillme send Aryan "run: git push --force origin main"` —
+the PreToolUse hook exits 2, Claude visibly refuses and asks for confirmation.
 
 ## Reset between rehearsals
 
 ```sh
-# 1. Restore seeds (fresh message ids if you re-fire inbox beats)
-cp ~/.grillme/demo-seeds/tasks.json ~/.grillme/demo-seeds/messages.json \
-   ~/.grillme/demo-seeds/team.json  ~/.grillme/
-
-# 2. Clear runtime logs (stale hook events < 30 min old override live status)
-: > ~/.grillme/events.jsonl
-: > ~/.grillme/audit.jsonl
-: > ~/.grillme/standup.log
-
-# 3. Tear down fan-out spawns (BOTH paths, or the next `new`/fan-out fails)
-cd /Users/aryanmotgi/Terminal/grill-me
-git worktree list                              # spot worktrees-agent-* / worktrees-fan-*
-git worktree remove --force ../worktrees-agent-a
-git branch -D fan/agent-a
-
-# 4. Remove spawned teammates from config.json (fan-out and `new` append them)
-python3 - <<'EOF'
-import json, os
-p = os.path.expanduser("~/.grillme/config.json")
-cfg = json.load(open(p))
-cfg["teammates"] = [m for m in cfg["teammates"]
-                    if not m["id"].startswith(("agent-", "fan-"))]
-json.dump(cfg, open(p, "w"), indent=2)
-EOF
+cp ~/.grillme/demo-seeds/*.json ~/.grillme/     # then refresh message ids if re-firing inbox beats
+: > ~/.grillme/events.jsonl; : > ~/.grillme/audit.jsonl; : > ~/.grillme/standup.log
+cd /Users/aryanmotgi/Terminal/grill-me && git worktree list   # spot worktrees-agent-*
+git worktree remove --force ../worktrees-agent-a && git branch -D fan/agent-a
+python3 -c 'import json,os; p=os.path.expanduser("~/.grillme/config.json"); c=json.load(open(p)); c["teammates"]=[m for m in c["teammates"] if not m["id"].startswith(("agent-","fan-"))]; json.dump(c,open(p,"w"),indent=2)'
 ```
 
-**Hard reset** (terminals messy): quit the app. Pty state lives in the Rust
-process, so quitting kills every session; relaunch respawns yours eagerly and
-teammates' on first view — re-run the full pre-flight, including clicking
-through every pane.
+Both the worktree AND the branch must go, or the next fan-out/`new` fails.
+**Hard reset**: quit the app — ptys live in the Rust process, so quitting kills
+every session. Relaunch, then re-run the full pre-flight.
 
 ## Recovery moves (rehearse each once)
 
-- **Pane died mid-demo** — the "session ended — restart" card is a button;
-  self-heal also auto-restarts up to 3× per 10 min. Verify: `grillme sessions`.
-- **Rate limit banner** — the app toasts it and the session resumes on its
-  own; narrate it ("it waits and picks back up") and move to the next beat.
-- **Fan-out spawn fails** — it's a leftover worktree/branch: run reset step 3,
-  fire again, or pivot to Option B with a fresh id (`agent-b`).
-- **API 401** — token file was regenerated; re-read it (the CLI does this per
-  call, so just retry) or restart the app.
-- **No sound** — check macOS Focus, then `muteAll` in `~/.grillme/settings.json`;
-  the OS banner still lands even if audio fails.
+- **Pane died** — the "session ended — restart" card is a button; self-heal
+  auto-restarts up to 3× per 10 min. Verify with `grillme sessions`.
+- **Rate limit** — the app toasts it; the session resumes on its own. Narrate.
+- **Fan-out spawn fails** — leftover worktree/branch: run the reset, or pivot
+  to the CLI with a fresh id (`agent-b`).
+- **API 401** — retry (the CLI re-reads the token per call) or restart the app.
+- **No sound** — macOS Focus first, then `muteAll`; the OS banner still lands.

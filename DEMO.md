@@ -111,6 +111,47 @@ Stop talking at 3:00. Hard stop mid-sentence if needed — judges score discipli
 
 ---
 
+## 60-second fallback path
+
+Use this when the slot gets cut, you start late, or the full run breaks mid-demo.
+Two beats only — **visibility** and **safety** — they carry the product. Cue both
+triggers *before* you start talking; in sixty seconds there is no time to wait for
+anything organic.
+
+### 0:00 – 0:10 — Open on the dashboard
+
+> "Four real Claude Code sessions — real ptys — one window. Status comes from
+> parsing the terminal protocol and Claude Code's own hooks, not polling."
+
+### 0:10 – 0:35 — Needs-input
+
+Fire the trigger immediately: seeded prompt if it's already pending, otherwise
+`printf '\e]9;x\a'` in Maya's pane — don't wait for a natural one. Amber dot, tone,
+click the badge, type the answer, dot green.
+
+> "An agent asked a question; the app heard it in the byte stream. Anyone on the
+> team can unblock anyone. Nobody sits blocked for twenty minutes."
+
+### 0:35 – 0:55 — Blocklist
+
+Ask the sacrifice session to force-push main. Show the **BLOCKED** line.
+
+> "Everyone skips permissions. Grill Me's PreToolUse hook exit-2 denies destructive
+> commands anyway — even under `--dangerously-skip-permissions` — and audits every
+> tool call from every agent."
+
+### 0:55 – 1:00 — Close
+
+> "Fan-out, pre-merge review, merge queue, conflict radar — all live in this build.
+> Grill Me: the team layer for Claude Code."
+
+**Rules for the short path:** skip fan-out and review entirely — spawning and diff
+loading eat too much of a minute. Never switch views more than three times. If even
+the needs-input trigger misfires, go straight to the blocklist beat and give it the
+full thirty seconds — it is the single most memorable moment.
+
+---
+
 ## Pre-demo setup checklist (start 20 minutes before slot)
 
 **Sessions (T-20):**
@@ -135,7 +176,11 @@ Stop talking at 3:00. Hard stop mid-sentence if needed — judges score discipli
       Tones are WebAudio-generated — no assets, works offline.
 - [ ] macOS Do Not Disturb ON (system, not app — no iMessage over the demo).
 - [ ] Close everything else. Dock hidden. Display sleep off. Power connected.
-- [ ] Quick-switcher check: ⌘K works; ⌘. focus mode off; dense mode set to taste.
+- [ ] Quick-switcher check: ⌘K opens the palette (it carries the full feature catalog —
+      any feature is reachable by name if you need to jump somewhere unplanned);
+      ⌘. focus mode off; dense mode set to taste.
+- [ ] Esc reflex: Esc closes any overlay, topmost first. If a modal is up that you don't
+      want, mash Esc and keep talking — never mouse-hunt for a close button on stage.
 - [ ] Timer visible to driver.
 
 **If wifi dies (decide at T-5, not live):**
@@ -161,6 +206,7 @@ all work offline. Only the Claude API (agents responding) and CI status need net
 | Claude API slow/rate-limited | "Rate limits are real — notice the app *detected* that and flagged the session." | The rate-limit detection IS a feature; sell it |
 | Review diff empty | "Clean tree — Sam already shipped. Here's the audit trail proving it." | Show audit tail / activity timeline |
 | App hard-crashes | "Native apps, live demos. While it relaunches — 30 seconds of how it works." | Relaunch (state persists in ~/.grillme); narrate architecture |
+| Running out of time | Switch to the 60-second fallback path from wherever you are | Jump to the blocklist beat; close from there |
 | Total loss | "Murphy wins the demo, not the product — here's this exact flow recorded an hour ago." | Play `demo.mp4`, keep narrating live |
 
 Golden rule: never apologize twice, never debug on stage, never stop talking.

@@ -79,14 +79,18 @@ else's terminal.
 - **Agents can drive the hub** — a token-protected localhost HTTP API
   (`127.0.0.1:4517`) plus a `grillme` CLI: list sessions, read any screen,
   send prompts, spawn new worktree sessions. One agent can orchestrate the
-  other three.
+  other three. The token is 32 CSPRNG bytes stored `0600`, matched with an
+  exact `Bearer`-scheme parse.
+- **Everything discoverable** — the full feature catalog feeds the ⌘K command
+  palette and deep-links into the right Settings tab; Esc unwinds overlays
+  topmost-first.
 - **Real usage + CI** — token tallies parsed incrementally from Claude Code's
   own transcripts (never faked), per-session CPU/RAM, GitHub Actions status.
 
 ### How we built it
 
 - **Tauri 2** native shell: React 19 frontend in the OS webview, all real work
-  in a single-file Rust backend (`src-tauri/src/lib.rs`, ~1,800 lines, 40+
+  in a single-file Rust backend (`src-tauri/src/lib.rs`, ~1,900 lines, 41
   `#[tauri::command]`s).
 - **Rust pty layer**: `portable-pty` spawns `zsh -lc 'exec claude
   --dangerously-skip-permissions'` per worktree (or `ssh -t` / `tmux new -A`
@@ -109,6 +113,15 @@ else's terminal.
   layered over the phase-1 fake-data slices, so components never knew when the
   data got real. Every color flows from one `Theme` object → CSS variables →
   Tailwind tokens (see `DESIGN.md`).
+- **A final-night hardening pass** on our own attack surface: the localhost API
+  token moved to the OS CSPRNG (32 bytes, hex) written `0600` with exact
+  `Bearer`-scheme matching instead of substring checks; remote ssh/tmux
+  sessions now spawn via argv with hosts and session names validated against a
+  strict charset and a `--` separator — no shell interpolation, no
+  `-oProxyCommand=` smuggling from a config file; and project ids are
+  validated as safe path components (no `.`/`..`, filename charset only) at
+  every entry point including the HTTP API, so nothing traverses out of
+  `~/.grillme`.
 
 ### Challenges we ran into (real war stories)
 
@@ -147,14 +160,25 @@ just repainting, so the app SIGSTOPs quiet sessions (full state preserved)
 and SIGCONTs them the instant you view or type. Four sessions on one laptop
 went from jet engine to silent.
 
+**5. Auditing our own attack surface.** A tool that types into other people's
+terminals is a juicy target, so we red-teamed it: the original API token used
+a time-seeded generator and a sloppy header check, the ssh spawn path
+interpolated config values into a shell string, and project ids became path
+components unvalidated. All three are fixed (CSPRNG + `0600` + exact Bearer
+parse; argv-only spawn with validated hosts; traversal-proof ids) — each one
+a small PR the same night we found it.
+
 ### Accomplishments we're proud of
 
 - Real terminals, real git, real hooks — the demo has no smoke: every status
   dot traces back to a process signal.
 - The safety blocklist denies destructive commands even in
   skip-permissions mode, with an audit trail per teammate.
+- We hardened the app against the same class of agent accidents it exists to
+  prevent: CSPRNG-tokened API, injection-proof remote spawning,
+  traversal-proof project storage.
 - The app dogfoods itself: we coordinated building Grill Me *in* Grill Me —
-  its own merge queue, tasks, and inbox (21 PRs, feature branch each).
+  its own merge queue, tasks, and inbox (29 PRs, feature branch each).
 - An agent-orchestration API in ~180 lines of dependency-free Rust HTTP.
 
 ### What we learned
@@ -164,6 +188,8 @@ went from jet engine to silent.
 - Files are a great transport for co-located teams — atomic rename + 2 s
   polling gets you multiplayer without a server.
 - In a Tauri app, put durable state in Rust. The webview is disposable.
+- Treat your own coordination layer as hostile input: config files, project
+  ids, and HTTP headers all needed the same validation discipline as user data.
 
 ### What's next
 

@@ -1,6 +1,6 @@
 ---
 name: pitch
-description: Generates and refines the Grill Me pitch — one-liners, 3-minute demo scripts, and hook→problem→demo→ask narratives grounded in the app's real features. Use when the user asks for a pitch, elevator pitch, demo script, presentation, submission blurb, or to rehearse or tighten what they will say to judges.
+description: Generates and refines the Grill Me pitch — one-liners, 3-minute timed demo scripts, submission blurbs, and hook→problem→demo→ask narratives grounded in the app's real features. Use when the user says "pitch", "elevator pitch", "demo script", "one-liner", "submission blurb", "tighten what I'll say", or wants to rehearse the presentation for judges.
 ---
 
 # Pitch Authoring: Grill Me
@@ -36,17 +36,19 @@ Write scripts exactly like this — timed, with stage directions in brackets,
 spoken lines in quotes, max ~420 spoken words total:
 
 ```
-0:00  [App open in demo mode, HomeDashboard visible]
+0:00  [App open in demo view, HomeDashboard visible]
       "This is Grill Me — mission control for teams of Claude Code agents."
 0:15  "Four people, four AI sessions, and nobody knows who's editing what.
        We lost our first hackathon to a merge conflict. Never again."
-0:40  BEAT 1 — FanOut. [Paste 5-item checklist, hit spawn]
+0:40  BEAT 1 — FanOut. [Paste checklist, hit spawn — note: the fan-out
+       button is hidden in demo view; fire it before toggling, or via CLI]
       "Paste a plan. Independent tasks each get a worktree and a live
        Claude session; dependent ones wait their turn." → takeaway line.
 1:20  BEAT 2 — Conflict radar. [Two sessions touch the same file]
       "The file watcher sees both claims and flags the collision before
        git ever could." [Click banner → jump to file]
-1:50  BEAT 3 — Review & ship. [⌘S → diff → commit → PR draft]
+1:50  BEAT 3 — Review & ship. [⌘S → diff → commit → PR draft. The ⌘S
+       keystroke works even in demo view; only the button is hidden.]
       "Human reviews, one keystroke ships."
 2:20  BEAT 4 (optional) — auto-stitched standup / `grillme` CLI.
 2:30  ASK. "It's a real Tauri app — real terminals, real git. We want X."
@@ -60,7 +62,7 @@ spoken lines in quotes, max ~420 spoken words total:
 4. Adversarial pass: for each claim ask "could a judge call this fake?"
    If yes, add the on-screen proof or soften the claim.
 5. After any demo-path code change, re-verify the affected beat and update
-   the script the same commit.
+   the script in the same commit.
 
 ## Voice rules
 

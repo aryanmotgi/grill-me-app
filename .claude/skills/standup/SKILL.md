@@ -1,6 +1,6 @@
 ---
 name: standup
-description: Generates the daily standup summary for the Grill Me team from real coordination data — ~/.grillme tasks.json, messages.json, events.jsonl, audit.jsonl plus each member's git log — and posts it to the shared standup feed in standup_append format. Use when the user says "standup", "daily standup", "post the standup", "what did everyone do today", or asks for a per-teammate done/blockers/next summary.
+description: Generates the daily standup for the Grill Me team from real coordination data — the active project's tasks.json, messages.json, events.jsonl, audit.jsonl under ~/.grillme plus each member's git log — and posts it to the shared standup.log in standup_append format. Use when the user says "standup", "daily standup", "post the standup", "what did everyone do today", or asks for a per-teammate done/blockers/next summary.
 ---
 
 # Daily Standup from Grill Me Data
@@ -14,8 +14,9 @@ real data. Never invent activity. If a member has no signal in any source, write
 Grill Me stores the default project at `~/.grillme/` and other projects at
 `~/.grillme/projects/<id>/`. Determine `DATA_DIR`:
 
-1. Read `~/.grillme/projects.json`. If it lists projects, ask the user which one
-   (or pick the only non-default entry) and use `~/.grillme/projects/<id>/`.
+1. Read `~/.grillme/projects.json` (array of `{id, name, path}`). If it lists
+   more than the default project, ask the user which one (or pick the only
+   non-default entry) and use `~/.grillme/projects/<id>/`.
 2. Otherwise use `~/.grillme/`.
 
 Team roster comes from `DATA_DIR/config.json` (or `~/.grillme/config.json` if absent):
@@ -81,7 +82,8 @@ printf '%s\t%s\t%s\n' "$(date +%s)" "<memberId>" "$NOTE" >> DATA_DIR/standup.log
 ```
 
 Rules:
-- One line per member, under ~200 chars — the UI shows only the last 20 lines.
+- One line per member, under ~200 chars — the app tails only the last 20 lines
+  (and the Activity timeline renders the most recent 8).
 - The note MUST NOT contain raw tabs or newlines (they break the field split).
 - Do not truncate or rewrite existing lines; the file is append-only.
 - After posting, tell the user how many lines were appended and to which file.

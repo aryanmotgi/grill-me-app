@@ -6,6 +6,19 @@
 developers see, unblock, guard, and ship every agent on the team — real terminals,
 not dashboards.
 
+## 30-second elevator pitch
+
+> Four developers each running Claude Code is the default team shape now — and
+> it's chaos. Agents sit blocked while their human gets coffee, one session
+> quietly burns the team's token budget, and everyone skips permissions until an
+> agent force-pushes over main. Grill Me puts the whole team's **real** Claude
+> Code terminals in one native window: anyone can unblock anyone the moment an
+> agent asks a question, a hook-enforced blocklist stops destructive commands
+> *even with permissions skipped*, a file watcher flags conflicts before the
+> merge conflict exists, and every diff gets a human review before it ships.
+> Solo tools multiply one person. Grill Me is the team layer — and we built it
+> using itself.
+
 ## The problem
 
 Four developers, each running Claude Code, is the default hackathon and startup
@@ -53,14 +66,19 @@ coordination hub:
 - **Team telemetry.** Per-teammate token usage parsed from real Claude transcript
   files, activity sparklines, auto-stitched standup notes, exportable project state.
 
-## Why not cmux or Conductor?
+## Why not cmux, Conductor, or claude-squad?
 
-| | cmux / Conductor | **Grill Me** |
+The current wave — cmux (a Ghostty-based macOS terminal with vertical tabs and
+per-agent notifications), Conductor (a Mac GUI wrapping local git worktrees),
+claude-squad (tmux-detached sessions, one worktree per agent) — is excellent at
+one thing: **one developer fanning out agents on their own machine**.
+
+| | cmux / Conductor / claude-squad | **Grill Me** |
 |---|---|---|
-| Unit of design | One developer fanning out agents | **A team of humans, each with agents** |
+| Unit of design | One developer, many agents | **A team of humans, each with agents** |
 | Visibility | Your own sessions | Everyone's sessions, one window |
-| Terminals | Varies (some wrap logs/APIs) | **Real ptys** — full TUI, scrollback, replay, recording, pause/resume |
-| Safety | Trust the agent | **Hook-enforced blocklist** that overrides skipped permissions + shared audit trail |
+| Terminals | Real terminals or worktree GUIs, local to you | **Real ptys** — full TUI, scrollback replay, recording, pause/resume, remote ssh/tmux attach |
+| Safety | Trust the agent, or approve every call | **Hook-enforced blocklist** that overrides skipped permissions + shared audit trail |
 | Shipping | You merge your own work | **Human pre-merge review + merge queue** across the team |
 | Coordination | None — you are alone | File locks, conflict banners, inbox threads, broadcast, standup |
 
@@ -86,16 +104,24 @@ shared guardrails, shared visibility. That is a different product, not a feature
   `grillme` CLI (`sessions` / `send` / `read` / `new`) let any agent spawn,
   prompt, and read other sessions — the fan-out engine is built on it, on git
   worktrees created per task.
-- **~1,800 lines of dependency-light Rust** — pty management, git plumbing, file
+- **Hardened against itself.** We red-teamed our own attack surface the night
+  before submitting: the API token is 32 bytes from the OS CSPRNG, stored `0600`,
+  matched with an exact `Bearer`-scheme parse; remote sessions spawn via argv —
+  never an interpolated shell string — with ssh hosts and tmux session names
+  validated against a strict charset (a config value can't smuggle
+  `-oProxyCommand=...`); project ids are validated as safe path components, so
+  nothing traverses out of `~/.grillme`.
+- **~1,900 lines of dependency-light Rust** — pty management, git plumbing, file
   watching with TTL'd locks, transcript token accounting with a hand-written
-  ISO8601 parser, and the HTTP server, in one auditable file.
+  ISO8601 parser, and the HTTP server, in one auditable file (41 `#[tauri::command]`s).
 - **A disciplined design system** ("Refined Ember"): one theme object drives every
   color via CSS variables; swap the object and the entire app — terminals
-  included — reskins.
+  included — reskins. And every feature in the catalog feeds the ⌘K palette, so
+  the whole product is reachable by name.
 
 ## The ask
 
-We built Grill Me in the open across 21 PRs and we use it to build itself.
+We built Grill Me in the open across 29 PRs and we use it to build itself.
 
 - **Judges:** score us on the live demo — four real agents, a real blocked
   command, a real diff shipped to main, in three minutes.
