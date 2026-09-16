@@ -661,6 +661,17 @@ fn pty_record(id: String, on: bool) -> Result<Option<String>, String> {
 
 static ACTIVE_PROJECT: Mutex<String> = Mutex::new(String::new());
 
+/// Project ids become path components under ~/.grillme/projects; only allow
+/// safe filename characters and reject "." / ".." to block path traversal.
+fn valid_project_id(id: &str) -> bool {
+    !id.is_empty()
+        && id != "."
+        && id != ".."
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+}
+
 fn grillme_root() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let dir = PathBuf::from(home).join(".grillme");
@@ -685,6 +696,9 @@ fn projects_write(content: String) -> Result<(), String> {
 
 #[tauri::command]
 fn set_active_project(id: String) -> Result<(), String> {
+    if !valid_project_id(&id) {
+        return Err("invalid project id".into());
+    }
     let dir = grillme_root().join("projects").join(&id);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     *ACTIVE_PROJECT.lock().unwrap() = id;
@@ -693,7 +707,7 @@ fn set_active_project(id: String) -> Result<(), String> {
 
 fn grillme_dir() -> PathBuf {
     let active = ACTIVE_PROJECT.lock().unwrap().clone();
-    if active.is_empty() || active == "default" {
+    if active.is_empty() || active == "default" || !valid_project_id(&active) {
         return grillme_root();
     }
     let dir = grillme_root().join("projects").join(active);
@@ -1100,6 +1114,9 @@ struct ProjectCardStats {
 #[tauri::command]
 fn project_card_stats(id: String, path: String) -> ProjectCardStats {
     let mut st = ProjectCardStats::default();
+    if !valid_project_id(&id) {
+        return st;
+    }
     let dir = if id == "default" {
         grillme_root()
     } else {
@@ -1531,6 +1548,10 @@ fn start_api_server(app: tauri::AppHandle) {
                     let branch = v["branch"].as_str().unwrap_or("").to_string();
                     if id.is_empty() || branch.is_empty() {
                         respond(&mut stream, 400, "{\"error\":\"need id and branch\"}");
+                        continue;
+                    }
+                    if !valid_project_id(&id) {
+                        respond(&mut stream, 400, "{\"error\":\"invalid id\"}");
                         continue;
                     }
                     let mut cfg = team_config();
