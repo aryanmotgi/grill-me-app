@@ -1,12 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { useApp } from "../store";
+import { FEATURE_GROUPS } from "../data/features";
 
 interface Action {
   label: string;
   hint: string;
   run: () => void;
 }
+
+/** Catalog entries already covered by a core action above (dedupe by label). */
+const COVERED = new Set([
+  "review & ship",     // ship active session
+  "projects",          // switch project
+  "inbox + threads",   // go to inbox
+  "standup log",       // go to activity
+  "merge rotation",    // merge pilot
+  "command palette",   // this palette
+]);
+
+const CATALOG_ACTIONS: Action[] = FEATURE_GROUPS
+  .flatMap(([, feats]) => feats)
+  .filter((f) => f.go && !COVERED.has(f.name.toLowerCase()))
+  .map((f) => ({ label: f.name.toLowerCase(), hint: f.what.toLowerCase(), run: f.go! }));
 
 export function QuickSwitcher() {
   const {
@@ -32,6 +48,7 @@ export function QuickSwitcher() {
     { label: "merge pilot", hint: "run the merge in a terminal", run: () => setMergePilotOpen(true) },
     { label: "go to inbox", hint: "right rail", run: () => setRailTab("inbox") },
     { label: "go to activity", hint: "right rail", run: () => setRailTab("activity") },
+    ...CATALOG_ACTIONS,
   ].filter((a) => a.label.includes(query.toLowerCase()) || a.hint.includes(query.toLowerCase()));
 
   const total = hits.length + actions.length;
@@ -103,7 +120,7 @@ export function QuickSwitcher() {
             <span className="text-accent">›</span>
             <span>{a.label}</span>
             <span className="flex-1" />
-            <span className="text-faint text-[10px]">{a.hint}</span>
+            <span className="text-faint text-[10px] truncate">{a.hint}</span>
           </div>
         ))}
         {total === 0 ? (
