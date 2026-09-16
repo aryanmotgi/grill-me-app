@@ -89,7 +89,9 @@ interface AppState {
   setView: (v: "home" | "session") => void;
   featureIndexOpen: boolean;
   settingsOpen: boolean;
-  setSettingsOpen: (open: boolean) => void;
+  /** Tab to deep-link Settings to on open; null = keep default. */
+  settingsTab: string | null;
+  setSettingsOpen: (open: boolean, tab?: string) => void;
   activeProject: string | null;
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
@@ -391,7 +393,8 @@ export const useApp = create<AppState>((set, get) => ({
   setView: (view) => set({ view }),
   featureIndexOpen: false,
   settingsOpen: false,
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  settingsTab: null,
+  setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
   activeProject: null,
   pickerOpen: false,
   setPickerOpen: (pickerOpen) => set({ pickerOpen }),

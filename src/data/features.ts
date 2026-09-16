@@ -18,7 +18,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Pause / resume", what: "Freeze your session's process, keep all context", where: "hover your session row" },
     { name: "Record session", what: "Save raw terminal output to a replay file", where: "session pane → rec" },
     { name: "Split view", what: "Two sessions side by side, drag the divider", where: "hover a session row → split" },
-    { name: "Session healing", what: "Crashed sessions auto-restart; stuck ones get flagged", where: "automatic · settings → notifications" },
+    { name: "Session healing", what: "Crashed sessions auto-restart; stuck ones get flagged", where: "automatic · settings → notifications", go: () => useApp.getState().setSettingsOpen(true, "notifications") },
   ]],
   ["Coordination", [
     { name: "Task board", what: "Shared tasks grouped by urgency, with blocking chains", where: "right rail → tasks", go: () => { const st = useApp.getState(); st.setRailTab("tasks"); st.setView("session"); } },
@@ -37,7 +37,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Revert a file", what: "Per-file git checkout from the changes tab", where: "changes tab → revert" },
   ]],
   ["Safety & insight", [
-    { name: "Safety blocklist", what: "Destructive commands always require explicit confirmation", where: "settings → safety", go: () => useApp.getState().setSettingsOpen(true) },
+    { name: "Safety blocklist", what: "Destructive commands always require explicit confirmation", where: "settings → safety", go: () => useApp.getState().setSettingsOpen(true, "safety") },
     { name: "Audit log", what: "Every command a session ran, timestamped", where: "session pane → audit", go: () => useApp.getState().setView("session") },
     { name: "Usage per session", what: "Real token counts since each session started", where: "right rail → more → team", go: () => { const st = useApp.getState(); st.setRailTab("team"); st.setView("session"); } },
     { name: "CPU / memory", what: "Live per-session resource use", where: "session rows when busy · home" },
@@ -47,7 +47,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Command palette", what: "Jump to any session or run any action by name", where: "⌘K", go: () => useApp.getState().setSwitcherOpen(true) },
     { name: "Projects", what: "Fully separate workspaces; stats on the launch screen", where: "⌘P · brand click", go: () => useApp.getState().setPickerOpen(true) },
     { name: "grillme CLI", what: "Script sessions from any terminal: send, read, spawn (~/.grillme/bin/grillme)", where: "terminal: grillme sessions" },
-    { name: "Terminal themes", what: "Fonts, palettes (Dracula, Nord…), cursor, per-color overrides", where: "settings → terminal" },
+    { name: "Terminal themes", what: "Fonts, palettes (Dracula, Nord…), cursor, per-color overrides", where: "settings → terminal", go: () => useApp.getState().setSettingsOpen(true, "terminal") },
     { name: "Browser windows", what: "GitHub / claude.ai in native windows", where: "top bar → ⋯" },
     { name: "Dev preview", what: "Live view of the app THIS project is building", where: "right rail → more", go: () => { const st = useApp.getState(); st.setRailTab("preview"); st.setView("session"); } },
   ]],

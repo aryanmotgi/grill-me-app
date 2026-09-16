@@ -97,7 +97,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 export function SettingsModal() {
   const {
-    settingsOpen, setSettingsOpen, members, applyTeamConfig, teammates,
+    settingsOpen, settingsTab, setSettingsOpen, members, applyTeamConfig, teammates,
     themeName, setTheme, appSettings, setAppSetting, toast,
     termSettings, setTermSetting, dense, toggleDense, setShared,
   } = useApp();
@@ -107,6 +107,13 @@ export function SettingsModal() {
   useEffect(() => {
     if (settingsOpen) setDraft(members.map((m) => ({ ...m })));
   }, [settingsOpen, members]);
+
+  // Deep link: openers can request a specific tab via setSettingsOpen(true, tab).
+  useEffect(() => {
+    if (settingsOpen && settingsTab && TABS.some((t) => t.id === settingsTab)) {
+      setTab(settingsTab as Tab);
+    }
+  }, [settingsOpen, settingsTab]);
 
   if (!settingsOpen) return null;
 
