@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { ptyIdFor, useApp } from "../store";
+import { surfaceVisible } from "../lib/soloVisibility";
 import { isTauri } from "../data/sources/git";
 import { fmtTokens } from "../lib/format";
 
@@ -19,8 +20,9 @@ export function HomeDashboard() {
   const {
     teammates, messages, tasks, mergeQueue, members, activity, standupLines,
     setActive, setRailTab, setView, shipSession, setMergePilotOpen, resources,
-    respondProposal, toast, conflicts,
+    respondProposal, toast, conflicts, appMode,
   } = useApp();
+  const showPulse = surfaceVisible(appMode, "team-pulse");
   const [audit, setAudit] = useState<{ blocked: number; total: number }>({ blocked: 0, total: 0 });
 
   useEffect(() => {
@@ -110,7 +112,8 @@ export function HomeDashboard() {
           </div>
         </section>
 
-        {/* TEAM PULSE */}
+        {/* TEAM PULSE — team surfaces only; solo keeps needs-you + today */}
+        {showPulse ? (
         <section>
           <div className="panel-label mb-2">team right now</div>
           <div className="flex flex-col gap-1">
@@ -152,9 +155,10 @@ export function HomeDashboard() {
             </div>
           ) : null}
         </section>
+        ) : null}
 
         {/* TODAY */}
-        <section>
+        <section className={showPulse ? "" : "col-span-2"}>
           <div className="panel-label mb-2">today</div>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="bg-panel rounded-md px-3 py-2.5">
@@ -191,9 +195,11 @@ export function HomeDashboard() {
             <button className="btn" onClick={() => { setRailTab("tasks"); setView("session"); }}>
               <Icon name="branch" size={11} /> task board
             </button>
-            <button className="btn" onClick={() => { setRailTab("inbox"); setView("session"); }}>
-              <Icon name="mail" size={11} /> inbox
-            </button>
+            {surfaceVisible(appMode, "rail-inbox-tab") ? (
+              <button className="btn" onClick={() => { setRailTab("inbox"); setView("session"); }}>
+                <Icon name="mail" size={11} /> inbox
+              </button>
+            ) : null}
             <button className="btn" onClick={() => useApp.getState().setPickerOpen(true)}>
               switch project
             </button>
