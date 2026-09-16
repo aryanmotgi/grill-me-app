@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { ptyIdFor, useApp } from "../store";
 import { isTauri } from "../data/sources/git";
+import { fmtTokens } from "../lib/format";
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
-
-const fmtTokens = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : `${n}`;
 
 function activitySentence(t: ReturnType<typeof useApp.getState>["teammates"][number]) {
   if (t.health === "disconnected") return "worktree not connected";

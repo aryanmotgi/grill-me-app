@@ -9,6 +9,7 @@ async function shipRaw(memberId: string, data: string) {
 import type { Teammate } from "../types";
 import { XtermPane } from "./XtermPane";
 import { useApp as useVitals } from "../store";
+import { fmtFullTime, fmtMem, fmtTokens } from "../lib/format";
 
 function VitalsStrip({ mateId }: { mateId: string }) {
   const res = useVitals((s) => s.resources[s.activeProject && s.activeProject !== "default" ? `${s.activeProject}:${mateId}` : mateId]);
@@ -19,8 +20,8 @@ function VitalsStrip({ mateId }: { mateId: string }) {
       <span>{mate?.branch !== "—" ? mate?.branch : "no branch"}</span>
       <span className="ml-auto" />
       {res ? <span title="CPU across this session's processes">{res.cpu.toFixed(0)}% cpu</span> : null}
-      {res ? <span title="Memory">{res.memMb >= 1024 ? `${(res.memMb / 1024).toFixed(1)}G` : `${res.memMb.toFixed(0)}M`}</span> : null}
-      {tok ? <span title="Tokens this session">{(tok.output / 1000).toFixed(0)}k out · {(tok.input / 1000).toFixed(0)}k in</span> : null}
+      {res ? <span title="Memory">{fmtMem(res.memMb)}</span> : null}
+      {tok ? <span title="Tokens this session">{fmtTokens(tok.output)} out · {fmtTokens(tok.input)} in</span> : null}
       <span title="Session status">{mate?.status}</span>
     </div>
   );
@@ -108,7 +109,7 @@ function AuditView({ memberId }: { memberId: string }) {
       ) : (
         lines.slice().reverse().map((l, i) => (
           <div key={i} className="flex gap-2 py-1 text-[10px] font-mono">
-            <span className="text-faint tabular-nums flex-none">
+            <span className="text-faint tabular-nums flex-none" title={fmtFullTime(l.ts * 1000)}>
               {new Date(l.ts * 1000).toTimeString().slice(0, 8)}
             </span>
             <span className="text-accent flex-none w-14">{l.tool}</span>

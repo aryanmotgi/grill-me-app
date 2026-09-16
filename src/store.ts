@@ -18,6 +18,7 @@ import type {
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, type CiRun, type WatchState } from "./data/sources/feeds";
 import type { TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
+import { fmtClock } from "./lib/format";
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
@@ -206,13 +207,15 @@ export const useApp = create<AppState>((set, get) => ({
   sendMessage: (to, text, kind = "question", threadId) => {
     const meId = get().members[0]?.id ?? "me";
     const me = get().teammates.find((t) => t.id === meId);
+    const now = Date.now();
     const msg: Message = {
-      id: `m${Date.now()}`,
+      id: `m${now}`,
       from: meId,
       to,
       text,
       answered: false,
-      ts: new Date().toTimeString().slice(0, 5),
+      ts: fmtClock(now),
+      epochMs: now,
       kind,
       threadId,
       // auto-context: receiver sees what the sender was doing, no need to ask

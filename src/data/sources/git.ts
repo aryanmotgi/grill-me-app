@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ActivityEvent, FileChange, Teammate } from "../../types";
+import { fmtClock } from "../../lib/format";
 
 // ---------------------------------------------------------------------------
 // Slice 1 real feed: git. Polls each configured worktree via the Rust
@@ -73,9 +74,6 @@ export function toTeammatePatch(state: GitState): Partial<Teammate> {
   };
 }
 
-const fmtTime = (ts: number) =>
-  new Date(ts * 1000).toTimeString().slice(0, 5);
-
 export function toActivity(
   states: { member: TeamMemberConfig; state: GitState }[],
 ): ActivityEvent[] {
@@ -87,12 +85,11 @@ export function toActivity(
         kind: (c.message.toLowerCase().startsWith("merge") ? "merge" : "commit") as ActivityEvent["kind"],
         actor: member.id,
         text: c.message,
-        ts: fmtTime(c.timestamp),
-        _sort: c.timestamp,
+        ts: fmtClock(c.timestamp * 1000),
+        epochMs: c.timestamp * 1000,
       })),
     )
-    .sort((a, b) => b._sort - a._sort)
+    .sort((a, b) => b.epochMs - a.epochMs)
     .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)))
-    .slice(0, 40)
-    .map(({ _sort, ...e }) => e);
+    .slice(0, 40);
 }

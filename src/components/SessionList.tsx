@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
 import type { Teammate } from "../types";
+import { fmtMem } from "../lib/format";
 
 const SETUP_LABEL: Record<Teammate["setup"], string> = {
   worktree: "worktree ok",
@@ -91,7 +92,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
         {res && res.cpu >= 3 ? (
           <span className={`font-mono text-[9px] tabular-nums ${res.cpu > 80 ? "text-danger" : "text-faint"}`}
             title="Live CPU / memory for this session's process tree">
-            {res.cpu.toFixed(0)}% · {res.memMb >= 1024 ? `${(res.memMb / 1024).toFixed(1)}G` : `${res.memMb.toFixed(0)}M`}
+            {res.cpu.toFixed(0)}% · {fmtMem(res.memMb)}
           </span>
         ) : null}
         {mate.paused ? <span className="tag" title="Auto-paused while idle — opens instantly when you view or type">paused · zzz</span> : null}
