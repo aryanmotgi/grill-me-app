@@ -160,6 +160,11 @@ body,
   outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: 1px;
 }
+/* keyboard focus ring for non-button interactive elements (e.g. session rows) */
+[role="button"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: -2px;
+}
 select.btn, .btn[type] {
   border-color: var(--line);
   background: var(--raised);

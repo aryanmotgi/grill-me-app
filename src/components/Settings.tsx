@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
+import { useModalA11y } from "../hooks/useModalA11y";
 import { useApp } from "../store";
 import { themes } from "../theme/themes";
 import { TERM_FONTS, TERM_PALETTES } from "../theme/termPalettes";
@@ -103,6 +104,7 @@ export function SettingsModal() {
   } = useApp();
   const [tab, setTab] = useState<Tab>("team");
   const [draft, setDraft] = useState<TeamMemberConfig[]>([]);
+  const modalA11y = useModalA11y("Settings", settingsOpen);
 
   useEffect(() => {
     if (settingsOpen) setDraft(members.map((m) => ({ ...m })));
@@ -166,7 +168,8 @@ export function SettingsModal() {
   return (
     <div className="fixed inset-0 z-40 bg-black/50 flex items-start justify-center pt-[6vh]" onClick={() => setSettingsOpen(false)}>
       <div
-        className="w-[720px] max-h-[84vh] bg-overlay hairline rounded-md shadow-2xl rise flex overflow-hidden"
+        {...modalA11y}
+        className="w-[720px] max-h-[84vh] bg-overlay hairline rounded-md shadow-2xl rise flex overflow-hidden outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* tab rail */}
@@ -200,6 +203,7 @@ export function SettingsModal() {
                 return (
                   <div key={i} className="flex gap-1.5 mb-1.5 items-center">
                     <span title={missing ? "Worktree path not found on this machine" : "Worktree found"}
+                      role="img" aria-label={missing ? "worktree missing" : "worktree found"}
                       className={`status-dot flex-none ${missing ? "" : "working"}`}
                       style={missing ? { background: "var(--danger)" } : undefined} />
                     <input className="w-24 bg-raised hairline rounded-sm px-2 py-1 text-[11px] outline-none focus:border-accent"

@@ -10,6 +10,12 @@ const SETUP_LABEL: Record<Teammate["setup"], string> = {
   ready: "ready",
 };
 
+const STATUS_LABEL: Record<Teammate["status"], string> = {
+  working: "working",
+  "needs-input": "needs input",
+  idle: "idle",
+};
+
 function Sparkline({ id }: { id: string }) {
   const [buckets, setBuckets] = useState<number[]>([]);
   useEffect(() => {
@@ -52,11 +58,22 @@ function SessionRow({ mate }: { mate: Teammate }) {
           ? "bg-raised border-l-2 border-l-accent"
           : "hover:bg-raised/60 border-l-2 border-l-transparent"
       }`}
+      role="button"
+      tabIndex={0}
       onClick={() => setActive(mate.id)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setActive(mate.id);
+        }
+      }}
     >
       {/* primary line: dot (the one status signal) + name + branch */}
       <div className="flex items-center gap-2">
-        <span className={`status-dot ${mate.status}`} title={`${mate.status}${offline ? ` · no activity ${mate.lastActiveMin}m` : ""}`} />
+        <span className={`status-dot ${mate.status}`} role="img"
+          aria-label={STATUS_LABEL[mate.status]}
+          title={`${mate.status}${offline ? ` · no activity ${mate.lastActiveMin}m` : ""}`} />
         <span className="font-display font-semibold text-[13px]">{mate.name}</span>
         <span className="font-mono text-faint text-[10px] truncate" title={mate.branch}>
           <Icon name="branch" size={11} /> {mate.branch}
@@ -99,7 +116,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
       ) : null}
 
       {/* row actions — active row always, others on hover; keeps the list quiet */}
-      <div className={`mt-1.5 pl-4 gap-1.5 items-center demo-hide ${isActive ? "flex" : "hidden group-hover:flex"}`}>
+      <div className={`mt-1.5 pl-4 gap-1.5 items-center demo-hide ${isActive ? "flex" : "hidden group-hover:flex group-focus-within:flex"}`}>
         <button
           className={`btn ${inSplit ? "active" : ""}`}
           onClick={(e) => { e.stopPropagation(); setSplit(inSplit ? null : mate.id); }}
