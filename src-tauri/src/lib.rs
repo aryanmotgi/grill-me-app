@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod room;
+
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.
 // Created with a default on first launch so there's always something to edit.
@@ -2658,7 +2660,13 @@ pub fn run() {
             worktree_add,
             git_diff_file,
             pr_draft,
-            git_conflict_radar
+            git_conflict_radar,
+            room::room_host_start,
+            room::room_host_stop,
+            room::room_client,
+            room::room_brainstorm_reply,
+            room::room_make_plan,
+            room::room_make_tasks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
