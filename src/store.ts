@@ -513,7 +513,7 @@ function emptyTeammate(id: string): Teammate {
       weeklyResetsAt: "—",
       permissionMode: "—",
     },
-    terminal: [{ kind: "out", text: "— session feed not wired yet (slice 3) —" }],
+    terminal: [{ kind: "out", text: "— no output yet — this session's live terminal appears here once it starts —" }],
     changes: [],
     standupNote: "—",
   };
