@@ -416,10 +416,32 @@ export const useApp = create<AppState>((set, get) => ({
   /** Called from the review modal on approve. */
   shipApproved: async (id) => {
     if (!isTauri()) return;
+    const name = get().teammates.find((t) => t.id === id)?.name ?? id;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
+      // readiness guard: one screen read before write — only inject /ship
+      // when the session is alive and sitting at an idle claude prompt.
+      const statuses = await invoke<{ id: string; alive: boolean; tail: string[] }[]>("pty_status");
+      const mine = statuses.find((s) => s.id === ptyIdFor(id));
+      if (!mine || !mine.alive) {
+        get().toast(`Can't ship — ${name}'s session isn't running. Restart it first.`, "warn");
+        return;
+      }
+      const tail = mine.tail.slice(-15).join("\n");
+      if (/esc to interrupt/i.test(tail)) {
+        get().toast(`Can't ship — ${name}'s claude is mid-generation. Wait for it to finish, then approve again.`, "warn");
+        return;
+      }
+      const atPrompt =
+        tail.includes("❯") || /│\s*>/.test(tail) || /\? for shortcuts/i.test(tail) || /^>\s/m.test(tail);
+      if (!atPrompt) {
+        get().toast(`Can't ship — no claude prompt visible in ${name}'s session. Open the pane and check it's idle.`, "warn");
+        return;
+      }
       await invoke("pty_write", { id: ptyIdFor(id), data: "/ship\n" });
-      get().toast(`Approved — /ship running in ${get().teammates.find((t) => t.id === id)?.name ?? id}'s session`);
+      get().toast(`Approved — /ship running in ${name}'s session`);
+      // shipping completes this member's merge turn — rotate the queue
+      if (get().mergeQueue[0] === id) get().advanceMergeQueue();
     } catch (e) {
       get().toast(`Ship failed: ${e}`, "warn");
     }
@@ -675,8 +697,12 @@ export function nextUnblockedTask(tasks: Task[], justDoneId: string): Task | und
 }
 
 /** Sessions needing attention: needs-input, stale, or disconnected. */
-export function attentionCount(teammates: Teammate[]): number {
+export function attentionSessions(teammates: Teammate[]): Teammate[] {
   return teammates.filter(
     (t) => t.status === "needs-input" || t.health !== "ok",
-  ).length;
+  );
+}
+
+export function attentionCount(teammates: Teammate[]): number {
+  return attentionSessions(teammates).length;
 }

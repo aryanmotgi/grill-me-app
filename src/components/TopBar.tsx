@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
-import { attentionCount, useApp } from "../store";
+import { attentionSessions, useApp } from "../store";
 import { themes } from "../theme/themes";
 import { isTauri } from "../data/sources/git";
 
@@ -79,7 +79,7 @@ export function TopBar() {
     activeProject, setRailTab, messages,
   } = useApp();
 
-  const attention = attentionCount(teammates);
+  const attention = attentionSessions(teammates);
   const working = teammates.filter((t) => t.status === "working").length;
   const waiting = messages.filter((m) => !m.answered && (m.kind === "blocking" || m.kind === "question"));
   const blocking = waiting.filter((m) => m.kind === "blocking").length;
@@ -103,10 +103,17 @@ export function TopBar() {
       {/* one calm status cluster: who's working, who needs you */}
       <div className="flex items-center gap-2.5 text-[11px] text-dim">
         <span className="flex items-center gap-1.5"><span className="status-dot working" aria-hidden />{working} working</span>
-        {attention > 0 ? (
+        {attention.length > 0 ? (
           <button className="flex items-center gap-1.5 text-warn cursor-pointer hover:brightness-110"
-            title="Sessions needing attention — click to see" onClick={() => useApp.getState().setView("home")}>
-            <span className="status-dot needs-input" aria-hidden />{attention} need you
+            title={attention.length === 1
+              ? `${attention[0].name} needs you — click to jump into their session`
+              : "Sessions needing attention — click to see"}
+            onClick={() => {
+              const st = useApp.getState();
+              if (attention.length === 1) st.setActive(attention[0].id);
+              else st.setView("home");
+            }}>
+            <span className="status-dot needs-input" aria-hidden />{attention.length} need you
           </button>
         ) : null}
         {waiting.length > 0 ? (
