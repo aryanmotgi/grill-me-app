@@ -145,16 +145,21 @@ export async function startWatchFeed(store: UseBoundStore<StoreApi<FeedStore>>) 
     }
   };
 
-  let watching = false;
+  // start_watching is idempotent and diffs against already-watched repos in
+  // Rust — re-invoke whenever the member count changes so teammates added
+  // after startup (Spawner, HTTP /new, fan-out) get presence/lock tracking.
+  // Count guard keeps it off the every-3s hot path; a failed invoke leaves
+  // the count stale so the next tick retries instead of killing the feed.
+  let watchedCount = -1;
   let busy = false;
   const tick = async () => {
     if (busy) return; // previous tick still awaiting — don't pile up
     busy = true;
     try {
-      if (!watching) {
-        // a startup failure retries next tick instead of killing the feed
+      const memberCount = store.getState().members.length;
+      if (memberCount !== watchedCount) {
         await invoke("start_watching");
-        watching = true;
+        watchedCount = memberCount;
       }
       const state = await invoke<WatchState>("watch_state");
       store.getState().applyWatchState(state);

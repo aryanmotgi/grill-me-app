@@ -248,34 +248,53 @@ fn is_ignored(rel: &str) -> bool {
         || name.ends_with(".crswap")
 }
 
-static WATCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Watched (teammate id, repo path) pairs. Keyed per-member so start_watching
+/// is idempotent AND re-callable: a repeat call diffs the current team config
+/// against this set and only spawns watchers for members added since the last
+/// call (Spawner, HTTP /new, fan-out). Watchers are never torn down — threads
+/// block on their notify channel for the app's lifetime, and a stale watcher
+/// on a still-existing path is harmless (events for removed members are
+/// filtered by TTL in watch_state and by the frontend's member list).
+static WATCHED: std::sync::OnceLock<Mutex<std::collections::HashSet<(String, String)>>> =
+    std::sync::OnceLock::new();
+
+fn watched() -> &'static Mutex<std::collections::HashSet<(String, String)>> {
+    WATCHED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+}
 
 #[tauri::command]
 fn start_watching(app: tauri::AppHandle) {
     use notify::{RecursiveMode, Watcher};
     use tauri::Emitter;
 
-    if WATCHING.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        eprintln!("[watch] start_watching called again — already running");
-        return; // already running — frontend hot reloads must not stack watchers
-    }
-    eprintln!("[watch] starting watchers");
-
     for member in team_config().teammates {
         let root = PathBuf::from(&member.repo_path);
         if !root.exists() {
-            continue;
+            continue; // not inserted — picked up on a later call once it exists
         }
+        let key = (member.id.clone(), member.repo_path.clone());
+        {
+            let mut set = lock_or_recover(watched());
+            if !set.insert(key.clone()) {
+                continue; // already watching — hot reloads must not stack watchers
+            }
+        }
+        eprintln!("[watch] watching {} at {}", member.id, member.repo_path);
         let app = app.clone();
         let id = member.id.clone();
         std::thread::spawn(move || {
+            // on setup failure, un-register so a later call can retry
+            let fail = |e: &dyn std::fmt::Display| {
+                eprintln!("[watch:{}] {e}", key.0);
+                lock_or_recover(watched()).remove(&key);
+            };
             let (tx, rx) = std::sync::mpsc::channel();
             let mut watcher = match notify::recommended_watcher(tx) {
                 Ok(w) => w,
-                Err(e) => return eprintln!("[watch:{id}] {e}"),
+                Err(e) => return fail(&e),
             };
             if let Err(e) = watcher.watch(&root, RecursiveMode::Recursive) {
-                return eprintln!("[watch:{id}] {e}");
+                return fail(&e);
             }
             for event in rx.into_iter().flatten() {
                 for path in event.paths {
