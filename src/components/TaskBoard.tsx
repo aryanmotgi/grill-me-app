@@ -270,8 +270,8 @@ export function TaskBoard() {
         <div className="mt-4 demo-hide">
           <div className="panel-label mb-1.5">predicted overlap</div>
           {predicted.map((p) => (
-            <div key={p.a.id + p.b.id} className="text-[10px] text-warn leading-relaxed">
-              <Icon name="warn" size={10} /> “{p.a.title}” ({name(p.a.owner)}) and “{p.b.title}” ({name(p.b.owner)}) — shared: {p.words.join(", ")}
+            <div key={p.a.id + p.b.id} className="text-[10px] text-dim leading-relaxed">
+              <span className="text-warn"><Icon name="warn" size={10} /></span> “{p.a.title}” ({name(p.a.owner)}) and “{p.b.title}” ({name(p.b.owner)}) — shared: {p.words.join(", ")}
             </div>
           ))}
         </div>

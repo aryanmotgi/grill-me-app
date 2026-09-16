@@ -95,7 +95,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
             {res.cpu.toFixed(0)}% · {fmtMem(res.memMb)}
           </span>
         ) : null}
-        {mate.paused ? <span className="tag" title="Auto-paused while idle — opens instantly when you view or type">paused · zzz</span> : null}
+        {mate.paused ? <span className="tag" title="Auto-paused while idle — opens instantly when you view or type">paused</span> : null}
         {mate.setup !== "ready" ? <span className="tag">{SETUP_LABEL[mate.setup]}</span> : null}
         {offline ? (
           <span

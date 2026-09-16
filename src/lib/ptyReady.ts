@@ -7,18 +7,26 @@
  * store.setTaskStatus).
  */
 
-export type PtyStatus = { id: string; alive: boolean; tail: string[] };
+export type PtyStatus = { id: string; alive: boolean; quietMs: number; tail: string[] };
 
 const TAIL_LINES = 15;
+
+/**
+ * Spinner frames repaint via \r, so the stripped tail keeps stale
+ * "esc to interrupt" lines after generation ends. Only trust the marker
+ * while output is actually still flowing (quiet for less than this).
+ */
+const GENERATING_QUIET_MS = 4000;
 
 /** Last few screen lines joined for pattern matching. */
 export function tailText(status: Pick<PtyStatus, "tail"> | undefined): string {
   return (status?.tail ?? []).slice(-TAIL_LINES).join("\n");
 }
 
-/** claude is actively generating ("esc to interrupt" on screen). */
-export function isMidGeneration(tail: string): boolean {
-  return /esc to interrupt/i.test(tail);
+/** claude is actively generating ("esc to interrupt" on screen AND output recent). */
+export function isMidGeneration(tail: string, quietMs?: number): boolean {
+  if (!/esc to interrupt/i.test(tail)) return false;
+  return quietMs === undefined || quietMs < GENERATING_QUIET_MS;
 }
 
 /** An idle claude (or shell) prompt is visible. */
@@ -35,7 +43,7 @@ export function hasIdlePrompt(tail: string): boolean {
 export function isReady(status: PtyStatus | undefined): boolean {
   if (!status?.alive) return false;
   const tail = tailText(status);
-  return !isMidGeneration(tail) && hasIdlePrompt(tail);
+  return !isMidGeneration(tail, status.quietMs) && hasIdlePrompt(tail);
 }
 
 /**

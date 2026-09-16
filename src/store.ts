@@ -455,7 +455,7 @@ export const useApp = create<AppState>((set, get) => ({
         return;
       }
       const tail = tailText(mine);
-      if (isMidGeneration(tail)) {
+      if (isMidGeneration(tail, mine.quietMs)) {
         get().toast(`Can't ship — ${name}'s claude is mid-generation. Wait for it to finish, then approve again.`, "warn");
         return;
       }

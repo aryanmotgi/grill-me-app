@@ -56,7 +56,7 @@ function OverflowMenu() {
               {dense ? "Comfortable density" : "Compact density"}
             </button>
             <button className={item} onClick={() => { toggleDemo(); setOpen(false); }}>
-              {demoMode ? "Exit demo view" : "Demo view (clean, for showing off)"}
+              {demoMode ? "Exit demo view" : "Demo view (hides controls, shows work)"}
             </button>
             <div className="panel-label px-3 pt-2 pb-0.5">theme</div>
             {Object.keys(themes).map((n) => (
