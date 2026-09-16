@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../store";
 import type { Message, MessageKind } from "../types";
+import { fmtFullTime, fmtRelTime } from "../lib/format";
 
 const KIND_STYLE: Record<MessageKind, { label: string; cls: string; card: string }> = {
   blocking: { label: "BLOCKING", cls: "tag danger", card: "border-l-2 border-l-danger bg-raised" },
@@ -23,7 +24,9 @@ function MessageCard({ m, isRoot }: { m: Message; isRoot: boolean }) {
         <span className="text-accent font-semibold">{name(m.from)}</span>
         <span className="text-faint">→ {name(m.to)}</span>
         <span className="flex-1" />
-        <span className="text-faint tabular-nums">{m.ts}</span>
+        <span className="text-faint tabular-nums" title={m.epochMs ? fmtFullTime(m.epochMs) : undefined}>
+          {m.epochMs ? fmtRelTime(m.epochMs) : m.ts}
+        </span>
       </div>
       <div className="mt-1 text-[11px] leading-relaxed">
         {m.text.split(/(@[a-z0-9-]+)/gi).map((part, i) =>

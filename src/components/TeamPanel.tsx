@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { useApp } from "../store";
 import { isTauri } from "../data/sources/git";
+import { fmtTokens } from "../lib/format";
 
 function download(filename: string, text: string) {
   const a = document.createElement("a");
@@ -10,9 +11,6 @@ function download(filename: string, text: string) {
   a.click();
   URL.revokeObjectURL(a.href);
 }
-
-const fmtTokens = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 
 const prettyModel = (id: string) =>
   id.replace("claude-", "").replace(/-\d{8}$/, "").replace(/-/g, " ");

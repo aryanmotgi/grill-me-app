@@ -69,6 +69,8 @@ export interface Message {
   text: string;
   answered: boolean;
   ts: string;
+  /** Epoch ms when sent — legacy messages carry only the "HH:MM" ts string. */
+  epochMs?: number;
   /** Urgency/type. Legacy messages without one render as plain notes. */
   kind?: MessageKind;
   /** Auto-attached sender context at send time. */
@@ -85,6 +87,8 @@ export interface ActivityEvent {
   actor: string;
   text: string;
   ts: string;
+  /** Epoch ms of the event — legacy events carry only the "HH:MM" ts string. */
+  epochMs?: number;
 }
 
 export interface CiWorkflow {

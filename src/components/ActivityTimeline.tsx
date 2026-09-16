@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
 import type { ActivityEvent } from "../types";
+import { fmtFullTime, fmtRelTime } from "../lib/format";
 
 const ICON: Record<ActivityEvent["kind"], string> = {
   commit: "commit",
@@ -26,10 +27,10 @@ function StandupSummary() {
       ) : (
         standupLines.slice(-8).map((line, i) => {
           const [ts, id, ...rest] = line.split("\t");
-          const when = new Date(Number(ts) * 1000).toTimeString().slice(0, 5);
+          const epochMs = Number(ts) * 1000;
           return (
             <div key={i} className="text-[11px] leading-relaxed">
-              <span className="text-faint tabular-nums">{when}</span>{" "}
+              <span className="text-faint tabular-nums" title={fmtFullTime(epochMs)}>{fmtRelTime(epochMs)}</span>{" "}
               <span className="text-accent font-semibold">{name(id)}:</span>{" "}
               <span className="text-dim">{rest.join(" ")}</span>
             </div>
@@ -66,7 +67,9 @@ export function ActivityTimeline() {
           </span>
           <span className="text-accent">{name(e.actor)}</span>
           <span className="text-dim flex-1 leading-relaxed">{e.text}</span>
-          <span className="text-faint tabular-nums flex-none">{e.ts}</span>
+          <span className="text-faint tabular-nums flex-none" title={e.epochMs ? fmtFullTime(e.epochMs) : undefined}>
+            {e.epochMs ? fmtRelTime(e.epochMs) : e.ts}
+          </span>
         </div>
       ))}
     </div>
