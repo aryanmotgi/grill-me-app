@@ -419,6 +419,40 @@ fn pty_ensure(
     pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux)
 }
 
+/// Validate an ssh destination (e.g. "vm", "user@host") before it is passed to
+/// ssh. Rejects anything outside [A-Za-z0-9@._-] and leading '-' so config
+/// values can never smuggle shell metacharacters or ssh options (-oProxyCommand=...).
+fn validate_ssh_host(host: &str) -> Result<(), String> {
+    let ok = !host.is_empty()
+        && !host.starts_with('-')
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '.' | '_' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid ssh host {host:?}: must match [A-Za-z0-9@._-]+ and not start with '-'"
+        ))
+    }
+}
+
+/// Validate a tmux session name before it is used in a command line.
+fn validate_tmux_session(sess: &str) -> Result<(), String> {
+    let ok = !sess.is_empty()
+        && !sess.starts_with('-')
+        && sess
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid tmux session {sess:?}: must match [A-Za-z0-9._-]+ and not start with '-'"
+        ))
+    }
+}
+
 fn pty_ensure_inner(
     app: tauri::AppHandle,
     id: String,
@@ -440,27 +474,42 @@ fn pty_ensure_inner(
     let pair = native_pty_system()
         .openpty(PtySize { rows: 32, cols: 110, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
-    let mut cmd = CommandBuilder::new("/bin/zsh");
-    match (&remote, &tmux) {
+    let mut cmd = match (&remote, &tmux) {
         (Some(host), Some(sess)) => {
-            // remote VM: attach the already-running tmux session over ssh
-            cmd.args(["-lc", &format!("exec ssh -t {host} tmux new -A -s {sess}")]);
+            // remote VM: attach the already-running tmux session over ssh.
+            // argv is passed directly (no shell interpolation); "--" stops
+            // ssh from treating the host as an option.
+            validate_ssh_host(host)?;
+            validate_tmux_session(sess)?;
+            let mut c = CommandBuilder::new("ssh");
+            c.args(["-t", "--", host.as_str(), "tmux", "new", "-A", "-s", sess.as_str()]);
+            c
         }
         (Some(host), None) => {
-            cmd.args(["-lc", &format!("exec ssh -t {host}")]);
+            validate_ssh_host(host)?;
+            let mut c = CommandBuilder::new("ssh");
+            c.args(["-t", "--", host.as_str()]);
+            c
         }
         (None, Some(sess)) => {
-            // local tmux attach-or-create
-            cmd.args(["-lc", &format!("exec tmux new -A -s {sess}")]);
+            // local tmux attach-or-create; zsh -lc keeps the login-shell PATH
+            // (tmux may live in /opt/homebrew/bin). The session name is
+            // validated first, so no shell metacharacters can be interpolated.
+            validate_tmux_session(sess)?;
+            let mut c = CommandBuilder::new("/bin/zsh");
+            c.args(["-lc", &format!("exec tmux new -A -s {sess}")]);
+            c
         }
         (None, None) => {
+            let mut c = CommandBuilder::new("/bin/zsh");
             if shell {
-                cmd.args(["-l"]);
+                c.args(["-l"]);
             } else {
-                cmd.args(["-lc", "exec claude --dangerously-skip-permissions"]);
+                c.args(["-lc", "exec claude --dangerously-skip-permissions"]);
             }
+            c
         }
-    }
+    };
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
