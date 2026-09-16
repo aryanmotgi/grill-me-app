@@ -426,6 +426,8 @@ export function SettingsModal() {
             <>
               {([
                 ["⌘K", "Command palette — jump to teammates or run actions"],
+                ["⌘H", "Home — mission control dashboard"],
+                ["⌘/", "Everything Grill Me can do — full feature index"],
                 ["⌘P", "Switch project workspace"],
                 ["⌘S", "Ship the active session (runs /ship — tests before push)"],
                 ["⌘.", "Focus mode — collapse to just your pane"],
