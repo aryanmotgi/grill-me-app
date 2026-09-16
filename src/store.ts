@@ -487,7 +487,9 @@ export const useApp = create<AppState>((set, get) => ({
       const members = [...get().members, { id, name, repoPath: path, permission: "edit" }];
       await invoke("team_config_write", { cfg: { teammates: members } });
       get().applyTeamConfig(members);
-      await invoke("pty_ensure", { id, cwd: path, shell: false });
+      // pty ids are project-namespaced — a bare id here would orphan the
+      // claude process in any non-default project (feeds poll ptyIdFor ids)
+      await invoke("pty_ensure", { id: ptyIdFor(id), cwd: path, shell: false });
       get().toast(`Spawned ${name} on ${branch} at ${path}`);
     } catch (e) {
       get().toast(`Spawn failed: ${e}`, "warn");
@@ -587,11 +589,18 @@ let persistT: ReturnType<typeof setTimeout> | undefined;
   const raw = await invoke<string>("shared_read", { name: "settings.json" }).catch(() => "");
   let appSettings: Record<string, unknown> = {};
   if (raw?.trim()) {
-    appSettings = JSON.parse(raw);
-    useApp.setState({ appSettings });
-    if (typeof appSettings.theme === "string") useApp.setState({ themeName: appSettings.theme });
-    if (appSettings.panelSizes) useApp.setState({ panelSizes: appSettings.panelSizes as { left: number; right: number; split: number } });
-    if (appSettings.terminal) useApp.setState({ termSettings: { ...DEFAULT_TERM_SETTINGS, ...(appSettings.terminal as Partial<TermSettings>) } });
+    // a corrupt settings.json must degrade to defaults, not silently kill
+    // this boot IIFE (which would leave every feed dead with no error)
+    try {
+      appSettings = JSON.parse(raw);
+      useApp.setState({ appSettings });
+      if (typeof appSettings.theme === "string") useApp.setState({ themeName: appSettings.theme });
+      if (appSettings.panelSizes) useApp.setState({ panelSizes: appSettings.panelSizes as { left: number; right: number; split: number } });
+      if (appSettings.terminal) useApp.setState({ termSettings: { ...DEFAULT_TERM_SETTINGS, ...(appSettings.terminal as Partial<TermSettings>) } });
+    } catch (e) {
+      console.error("settings.json unreadable — using defaults", e);
+      appSettings = {};
+    }
   }
   const vs = appSettings.viewState as { activeId?: string; railTab?: RailTab; splitId?: string | null } | undefined;
   if (vs) {

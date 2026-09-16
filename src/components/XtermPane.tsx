@@ -75,9 +75,10 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       // preflight: a missing claude CLI would spawn, die instantly, and loop
       // through self-healing restarts. Remote/ssh panes don't need a local
       // CLI, and plain shell panes only need zsh.
-      const isRemote = useApp.getState().members.some(
-        (m) => m.remote && (id === m.id || id.endsWith(`:${m.id}`)),
+      const member = useApp.getState().members.find(
+        (m) => id === m.id || id.endsWith(`:${m.id}`),
       );
+      const isRemote = Boolean(member?.remote);
       if (!shell && !isRemote) {
         try {
           await invoke("preflight_claude");
@@ -89,7 +90,13 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
         }
       }
       try {
-        await invoke("pty_ensure", { id, cwd, shell });
+        // pass the member's remote/tmux config — omitting it here would
+        // lazily spawn a LOCAL claude for a remote teammate's pane
+        await invoke("pty_ensure", {
+          id, cwd, shell,
+          remote: (!shell && member?.remote) || null,
+          tmux: (!shell && member?.tmuxSession) || null,
+        });
         if (autorun) {
           const sb0 = await invoke<string>("pty_scrollback", { id });
           if (!sb0) await invoke("pty_write", { id, data: autorun + "\n" });
