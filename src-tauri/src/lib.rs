@@ -1302,6 +1302,7 @@ fn git_clone(url: String, dest: String) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 const HOOK_HELPER: &str = r#"#!/usr/bin/env python3
+# grillme-hook v2 — per-line, case-insensitive, quote-stripping, fails closed.
 import json, sys, time, os, re
 
 mode, member, proj_dir = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -1310,22 +1311,47 @@ try:
 except Exception:
     sys.exit(0)
 
+
+def unquote(line):
+    # Strip simple matching single/double quotes around whitespace-separated
+    # tokens so `rm -rf "/"` matches the same patterns as `rm -rf /`.
+    toks = []
+    for tok in line.split():
+        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in "'\"":
+            tok = tok[1:-1]
+        toks.append(tok)
+    return " ".join(toks)
+
+
 if mode == "pre":
     cmd = (data.get("tool_input") or {}).get("command", "") or ""
     bl_path = os.path.expanduser("~/.grillme/blocklist.json")
-    try:
-        patterns = json.load(open(bl_path))
-    except Exception:
-        patterns = []
+    patterns = []
+    if os.path.exists(bl_path):
+        try:
+            patterns = json.load(open(bl_path))
+            if not isinstance(patterns, list):
+                raise ValueError("blocklist must be a JSON list of patterns")
+        except Exception as e:
+            print(f"BLOCKED by Grill Me safety: cannot parse {bl_path} ({e}). "
+                  "Failing closed - fix the blocklist in Settings > Safety.",
+                  file=sys.stderr)
+            sys.exit(2)
+    lines = [v for raw in cmd.splitlines() for v in (raw, unquote(raw))]
     for pat in patterns:
         try:
-            if re.search(pat, cmd):
+            rx = re.compile(pat, re.IGNORECASE)
+        except re.error as e:
+            print(f"BLOCKED by Grill Me safety: invalid blocklist pattern {pat!r} ({e}). "
+                  "Failing closed - fix the blocklist in Settings > Safety.",
+                  file=sys.stderr)
+            sys.exit(2)
+        for line in lines:
+            if rx.search(line):
                 print(f"BLOCKED by Grill Me safety blocklist (pattern: {pat}). "
                       "This command is flagged destructive - ask the user for explicit confirmation first.",
                       file=sys.stderr)
                 sys.exit(2)
-        except re.error:
-            continue
 elif mode == "post":
     ti = data.get("tool_input") or {}
     line = {
@@ -1343,6 +1369,22 @@ sys.exit(0)
 "#;
 
 const DEFAULT_BLOCKLIST: &str = r#"[
+  "(/usr/bin/|/bin/)?rm\\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)[a-z]*\\s+(/|~|\\*|\\$HOME)",
+  "(/usr/bin/|/bin/)?rm\\s+(-[a-z]*r[a-z]*\\s+-[a-z]*f[a-z]*|-[a-z]*f[a-z]*\\s+-[a-z]*r[a-z]*)\\s+(/|~|\\*|\\$HOME)",
+  "git\\s+push\\s+[^|;]*(--force(-with-lease)?|-f)\\b[^|;]*\\b(main|master)",
+  "git\\s+push\\s+[^|;]*\\b(main|master)\\b[^|;]*(--force(-with-lease)?|-f)",
+  "git\\s+reset\\s+--hard\\s+origin",
+  "git\\s+clean\\s+-[a-z]*f[a-z]*d",
+  "DROP\\s+(TABLE|DATABASE)",
+  "mkfs",
+  ">\\s*/dev/(sd|disk)",
+  "chmod\\s+-R\\s+777\\s+/",
+  "shutdown|reboot\\b"
+]"#;
+
+/// Prior shipped defaults — an on-disk blocklist identical to one of these was
+/// never edited by the user, so it is safe to upgrade in place.
+const PREVIOUS_DEFAULT_BLOCKLISTS: &[&str] = &[r#"[
   "rm\\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)[a-z]*\\s+(/|~|\\*|\\$HOME)",
   "git\\s+push\\s+[^|;]*(--force|-f)\\b[^|;]*\\b(main|master)",
   "git\\s+push\\s+[^|;]*\\b(main|master)\\b[^|;]*(--force|-f)",
@@ -1353,12 +1395,14 @@ const DEFAULT_BLOCKLIST: &str = r#"[
   ">\\s*/dev/(sd|disk)",
   "chmod\\s+-R\\s+777\\s+/",
   "shutdown|reboot\\b"
-]"#;
+]"#];
 
 fn ensure_safety_files() -> Result<PathBuf, String> {
     let bin = grillme_root().join("bin");
     std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
     let helper = bin.join("grillme-hook");
+    // Content-addressed versioning: any change to HOOK_HELPER makes existing
+    // installs rewrite the helper on the next install_hooks call.
     let cur = std::fs::read_to_string(&helper).unwrap_or_default();
     if cur != HOOK_HELPER {
         std::fs::write(&helper, HOOK_HELPER).map_err(|e| e.to_string())?;
@@ -1367,7 +1411,13 @@ fn ensure_safety_files() -> Result<PathBuf, String> {
             .map_err(|e| e.to_string())?;
     }
     let bl = grillme_root().join("blocklist.json");
-    if !bl.exists() {
+    let cur_bl = std::fs::read_to_string(&bl).ok();
+    let upgradeable = match &cur_bl {
+        None => true,
+        // untouched shipped defaults get the new defaults; user edits are kept
+        Some(s) => PREVIOUS_DEFAULT_BLOCKLISTS.contains(&s.as_str()),
+    };
+    if upgradeable && cur_bl.as_deref() != Some(DEFAULT_BLOCKLIST) {
         std::fs::write(&bl, DEFAULT_BLOCKLIST).map_err(|e| e.to_string())?;
     }
     Ok(helper)
@@ -1934,5 +1984,85 @@ mod tests {
         assert_eq!(sh_quote("/plain/path"), "'/plain/path'");
         assert_eq!(sh_quote("/has space/x"), "'/has space/x'");
         assert_eq!(sh_quote("a'b"), "'a'\\''b'");
+    }
+}
+
+#[cfg(test)]
+mod safety_tests {
+    use super::{DEFAULT_BLOCKLIST, HOOK_HELPER};
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    /// Run the real PreToolUse helper against `cmd` with `blocklist` on disk
+    /// (in a throwaway $HOME) and report whether it denied (exit code 2).
+    fn hook_denies(blocklist: &str, cmd: &str) -> bool {
+        let home = std::env::temp_dir().join(format!(
+            "grillme-hook-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let gm = home.join(".grillme");
+        std::fs::create_dir_all(&gm).unwrap();
+        std::fs::write(gm.join("blocklist.json"), blocklist).unwrap();
+        let helper = home.join("grillme-hook");
+        std::fs::write(&helper, HOOK_HELPER).unwrap();
+        let mut child = Command::new("python3")
+            .arg(&helper)
+            .args(["pre", "tester", gm.to_str().unwrap()])
+            .env("HOME", &home)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("python3 must be available");
+        let payload = serde_json::json!({ "tool_input": { "command": cmd } });
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(payload.to_string().as_bytes())
+            .unwrap();
+        child.wait().unwrap().code() == Some(2)
+    }
+
+    #[test]
+    fn default_blocklist_is_valid_json_list() {
+        let patterns: Vec<String> = serde_json::from_str(DEFAULT_BLOCKLIST).unwrap();
+        assert!(!patterns.is_empty());
+    }
+
+    #[test]
+    fn blocks_split_flag_rm() {
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "rm -r -f /"));
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "rm -f -r ~/"));
+    }
+
+    #[test]
+    fn blocks_absolute_binary_and_quoted_rm() {
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "/bin/rm -rf ~"));
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "/usr/bin/rm -rf /"));
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "rm -rf \"/\""));
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "RM -RF /"));
+    }
+
+    #[test]
+    fn blocks_force_push_variants_on_protected_branches() {
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "git push --force-with-lease origin main"));
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "git push origin master --force"));
+        assert!(hook_denies(DEFAULT_BLOCKLIST, "echo ok\ngit push -f origin main"));
+    }
+
+    #[test]
+    fn allows_safe_commands() {
+        assert!(!hook_denies(DEFAULT_BLOCKLIST, "rm -rf node_modules"));
+        assert!(!hook_denies(DEFAULT_BLOCKLIST, "git push -u origin harden-blocklist"));
+        assert!(!hook_denies(DEFAULT_BLOCKLIST, "git push --force-with-lease origin feature/x"));
+        assert!(!hook_denies(DEFAULT_BLOCKLIST, "ls -la"));
+    }
+
+    #[test]
+    fn denies_when_blocklist_is_corrupt() {
+        assert!(hook_denies("not valid json [", "ls -la"));
+        assert!(hook_denies("{\"not\": \"a list\"}", "ls -la"));
     }
 }
