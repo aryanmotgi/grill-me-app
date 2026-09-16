@@ -3,11 +3,13 @@ import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
 import { playAlert } from "../sounds";
 import {
+  fetchConflictRadar,
   fetchGitState,
   isTauri,
   loadTeamConfig,
   toActivity,
   toTeammatePatch,
+  type ConflictPair,
   type TeamMemberConfig,
 } from "./git";
 
@@ -37,6 +39,7 @@ interface FeedStore {
   patchTeammate: (id: string, patch: Partial<Teammate>) => void;
   setActivity: (events: import("../../types").ActivityEvent[]) => void;
   applyWatchState: (state: WatchState) => void;
+  setConflicts: (pairs: ConflictPair[]) => void;
 }
 
 const GIT_POLL_MS = 5000;
@@ -79,6 +82,11 @@ export function startGitFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         store.getState().patchTeammate(member.id, patch);
       }
       store.getState().setActivity(toActivity(states));
+      // conflict radar piggybacks the git tick — Rust caches results 30s,
+      // so most polls are a cheap cache read, never a subprocess storm
+      try {
+        store.getState().setConflicts(await fetchConflictRadar());
+      } catch { /* command unavailable — radar stays empty */ }
     } catch (e) {
       console.error("[git feed]", e);
     } finally {

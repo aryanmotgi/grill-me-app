@@ -16,7 +16,7 @@ import type {
   Toast,
 } from "./types";
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, type CiRun, type WatchState } from "./data/sources/feeds";
-import type { TeamMemberConfig } from "./data/sources/git";
+import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
 import { fmtClock } from "./lib/format";
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
@@ -84,6 +84,10 @@ interface AppState {
   standupLines: string[];
   ciRuns: CiRun[];
   setCiRuns: (runs: CiRun[]) => void;
+
+  /** Pre-merge conflict radar: name-level file overlap between branches. */
+  conflicts: ConflictPair[];
+  setConflicts: (pairs: ConflictPair[]) => void;
 
   /** "home" = mission control overview; "session" = terminal workspace */
   view: "home" | "session";
@@ -378,6 +382,14 @@ export const useApp = create<AppState>((set, get) => ({
     })),
 
   setCiRuns: (ciRuns) => set({ ciRuns }),
+
+  conflicts: [],
+  setConflicts: (pairs) =>
+    set((s) => {
+      // skip no-op updates — the radar polls but rarely changes
+      if (JSON.stringify(s.conflicts) === JSON.stringify(pairs)) return s;
+      return { conflicts: pairs };
+    }),
 
   advanceMergeQueue: () => {
     const q = get().mergeQueue;

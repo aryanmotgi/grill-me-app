@@ -40,6 +40,16 @@ export const fetchGitState = async (repoPath: string): Promise<GitState> => {
   return invoke<GitState>("git_state", { repoPath });
 };
 
+/** Name-level overlap between two members' branches — never a merge result. */
+export interface ConflictPair {
+  a: string;
+  b: string;
+  files: string[];
+}
+
+/** Pre-merge conflict radar: pairwise file-name overlap. Rust caches 30s. */
+export const fetchConflictRadar = () => invoke<ConflictPair[]>("git_conflict_radar");
+
 const STATUS_LABEL: Record<string, string> = {
   M: "modified",
   A: "added",
