@@ -33,10 +33,14 @@ session proves nothing. A tsc failure here is the most common trap.
 
 ```sh
 cargo check --manifest-path src-tauri/Cargo.toml
+cargo test  --manifest-path src-tauri/Cargo.toml   # 35 unit tests over the pure core
 ```
 
-`lib.rs` is a single ~1900-line file; a regression there kills every feature
-at once. If the diff touches it, also confirm any new `#[tauri::command]` is
+The test suite pins the safety blocklist regexes (including fail-closed on
+corrupt config), the ANSI/OSC stripper, token format, log rotation, and the
+project-id/ssh/tmux validators — a red test there is a real regression, not
+flake. `lib.rs` is a single ~2400-line file; a regression there kills every
+feature at once. If the diff touches it, also confirm any new `#[tauri::command]` is
 registered in the `generate_handler![...]` list near the bottom — an
 unregistered command compiles fine and fails only at runtime.
 

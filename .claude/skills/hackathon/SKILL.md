@@ -30,7 +30,10 @@ during the demo?** If no, cut it or defer it.
 3. Live coordination: file-watcher locks → conflict banner → click jumps to
    the claimed file (`liveLocks`, `highlightFiles` in store).
 4. Real pty terminal (`XtermPane`) with scrollback slider + recording.
-5. **Review & ship** (⌘S): diff review modal → commit → PR draft
+5. **Review & ship** (⌘S): diff review modal → **approve & ship** types
+   `/ship` into the session (with a screen-read readiness guard) and advances
+   the merge queue; request changes opens a blocking inbox thread. Direct
+   commit+push and `claude -p` PR drafting live in the session's changes tab
    (`git_commit_push`, `pr_draft` in `src-tauri/src/lib.rs`).
 6. Closer: auto-stitched standup (Activity tab) + `grillme` CLI hitting the
    localhost HTTP API on port 4517 — "your agents can drive the hub too."
@@ -46,7 +49,7 @@ during the demo?** If no, cut it or defer it.
 
 **Skip (expensive, invisible):**
 - New Rust commands in `lib.rs` unless a demo beat is impossible without one
-  — it is a ~1900-line single file; regressions there kill the whole demo.
+  — it is a ~2400-line single file; regressions there kill the whole demo.
 - Refactors, tests, websockets (polling already works), auth, settings depth,
   cross-platform fixes, README polish.
 - New themes. `ember` + `paperwhite` already prove the token system.
