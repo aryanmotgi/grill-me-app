@@ -664,7 +664,12 @@ static ACTIVE_PROJECT: Mutex<String> = Mutex::new(String::new());
 fn grillme_root() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let dir = PathBuf::from(home).join(".grillme");
-    let _ = std::fs::create_dir_all(&dir);
+    if !dir.exists() {
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+        }
+    }
     dir
 }
 
@@ -1377,7 +1382,35 @@ fn api_token() -> String {
             return t;
         }
     }
-    let tok: String = (0..32)
+    let tok = generate_token();
+    // Owner-only perms: create with 0o600 and re-assert in case the file existed.
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let _ = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .and_then(|mut f| f.write_all(tok.as_bytes()));
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    tok
+}
+
+fn generate_token() -> String {
+    // 32 random bytes from the OS CSPRNG, hex-encoded.
+    use std::io::Read as _;
+    let mut buf = [0u8; 32];
+    if std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .is_ok()
+    {
+        return buf.iter().map(|b| format!("{b:02x}")).collect();
+    }
+    // Last-resort fallback if /dev/urandom is unavailable.
+    (0..32)
         .map(|i| {
             let seed = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1386,9 +1419,7 @@ fn api_token() -> String {
             let c = (seed.wrapping_mul(6364136223846793005).wrapping_add(i as u64 * 31)) % 36;
             char::from_digit((c % 36) as u32, 36).unwrap_or('x')
         })
-        .collect();
-    let _ = std::fs::write(&path, &tok);
-    tok
+        .collect()
 }
 
 fn start_api_server(app: tauri::AppHandle) {
@@ -1431,8 +1462,15 @@ fn start_api_server(app: tauri::AppHandle) {
                     break;
                 }
                 let hl = h.to_lowercase();
-                if hl.starts_with("authorization:") && h.contains(&token) {
-                    authed = true;
+                if hl.starts_with("authorization:") {
+                    let value = h["authorization:".len()..].trim();
+                    let bearer = value
+                        .split_once(' ')
+                        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+                        .map(|(_, t)| t.trim());
+                    if bearer == Some(token.as_str()) {
+                        authed = true;
+                    }
                 }
                 if let Some(v) = hl.strip_prefix("content-length:") {
                     content_len = v.trim().parse().unwrap_or(0);
