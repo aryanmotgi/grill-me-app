@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // ---------------------------------------------------------------------------
@@ -1307,6 +1307,9 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     obj.insert("PreToolUse".into(), helper_hook("pre", "Bash"));
     obj.insert("PostToolUse".into(), helper_hook("post", "Bash|Read|Edit|Write"));
     let next = serde_json::to_string_pretty(&root).unwrap();
+    // the /ship slash command the review-approve flow injects must actually
+    // exist in the member repo — install it alongside the hooks
+    install_ship_command(&PathBuf::from(&repo_path))?;
     // idempotent: rewriting identical content still bumps mtime and can
     // trigger watcher/vite reload storms — skip when unchanged
     if std::fs::read_to_string(&path).map(|cur| cur == next).unwrap_or(false) {
@@ -1314,6 +1317,76 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     }
     std::fs::write(&path, next).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+// ---------------------------------------------------------------------------
+// /ship slash command: the review modal's "approve & ship" injects "/ship\n"
+// into the member's claude pty. Claude Code resolves project slash commands
+// from <repo>/.claude/commands/<name>.md, so /ship is only real if that file
+// exists — install it alongside the hooks.
+// ---------------------------------------------------------------------------
+
+/// Marker identifying a Grill Me-managed ship.md. A ship.md without this
+/// marker was authored by the user and must never be overwritten.
+const SHIP_COMMAND_MARKER: &str = "<!-- grillme:ship-command -->";
+
+const SHIP_COMMAND_MD: &str = r#"---
+description: Verify, commit, push the current branch, and open a PR (installed by Grill Me)
+---
+<!-- grillme:ship-command -->
+
+Ship the work on the current branch. Follow these steps exactly, in order:
+
+1. Run `git branch --show-current`. If the current branch is `main` or `master`,
+   STOP immediately and report that shipping from the default branch is not
+   allowed — do not commit, push, or open a PR.
+2. Detect and run the project's checks:
+   - If `package.json` exists and has a `test` script, run `npm test`.
+   - Otherwise, if `package.json` has a `build` script, run `npm run build`.
+   - If a `Cargo.toml` exists (check the repo root and `src-tauri/`), also run
+     `cargo test` in that directory.
+   If a check fails for a trivial reason (formatting, lint, an import or type
+   error introduced by the current changes), fix it and re-run the check. If
+   the failures are non-trivial, STOP and report them instead of shipping
+   broken code.
+3. Stage all changes (`git add -A`) and commit on the current branch with a
+   conventional commit message (`feat: ...`, `fix: ...`, `chore: ...`)
+   describing what was done. If there is nothing to commit but the branch has
+   unpushed or un-PR'd commits, continue to the next step.
+4. Push the branch: `git push -u origin <current-branch>`. Never push to
+   `main` or `master`.
+5. Open a pull request with `gh pr create`, with a clear title and a body
+   summarizing the changes. If a PR already exists for this branch, use it
+   instead of creating a new one.
+6. Report the PR URL on the final line of your response.
+"#;
+
+/// Outcome of a ship.md install attempt — lets callers (and tests) observe
+/// whether the file was actually written.
+#[derive(Debug, PartialEq, Eq)]
+enum ShipInstall {
+    /// ship.md was written (fresh install, or upgrade of a marker-bearing file).
+    Installed,
+    /// ship.md already has the current content — nothing written.
+    Unchanged,
+    /// A user-authored ship.md (no grillme marker) exists — left untouched.
+    SkippedUserFile,
+}
+
+/// Idempotently install .claude/commands/ship.md into a member repo.
+/// Content-compared before writing (no mtime churn), and a pre-existing
+/// ship.md without the grillme marker is preserved as user-authored.
+fn install_ship_command(repo_path: &Path) -> Result<ShipInstall, String> {
+    let dir = repo_path.join(".claude").join("commands");
+    let path = dir.join("ship.md");
+    match std::fs::read_to_string(&path) {
+        Ok(cur) if cur == SHIP_COMMAND_MD => return Ok(ShipInstall::Unchanged),
+        Ok(cur) if !cur.contains(SHIP_COMMAND_MARKER) => return Ok(ShipInstall::SkippedUserFile),
+        _ => {} // missing, unreadable, or a stale grillme-managed copy → (re)install
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(&path, SHIP_COMMAND_MD).map_err(|e| e.to_string())?;
+    Ok(ShipInstall::Installed)
 }
 
 #[tauri::command]
@@ -2423,6 +2496,82 @@ mod safety_tests {
     fn denies_when_blocklist_is_corrupt() {
         assert!(hook_denies("not valid json [", "ls -la"));
         assert!(hook_denies("{\"not\": \"a list\"}", "ls -la"));
+    }
+}
+
+#[cfg(test)]
+mod ship_command_tests {
+    use super::{install_ship_command, ShipInstall, SHIP_COMMAND_MARKER, SHIP_COMMAND_MD};
+    use std::path::PathBuf;
+
+    /// Fresh throwaway "repo" dir per test (unique per pid + thread).
+    fn tmp_repo(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "grillme-ship-test-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn ship_path(repo: &PathBuf) -> PathBuf {
+        repo.join(".claude").join("commands").join("ship.md")
+    }
+
+    #[test]
+    fn installs_ship_md_with_marker_and_real_prompt() {
+        let repo = tmp_repo("install");
+        assert_eq!(install_ship_command(&repo).unwrap(), ShipInstall::Installed);
+        let body = std::fs::read_to_string(ship_path(&repo)).unwrap();
+        assert!(body.contains(SHIP_COMMAND_MARKER), "managed file must carry the grillme marker");
+        // the prompt must actually do the job "approve & ship" promises
+        assert!(body.contains("gh pr create"));
+        assert!(body.contains("git push -u origin"));
+        assert!(body.contains("cargo test") && body.contains("npm test"));
+        assert!(body.to_lowercase().contains("never push to"));
+    }
+
+    #[test]
+    fn second_install_is_idempotent_no_rewrite() {
+        let repo = tmp_repo("idempotent");
+        assert_eq!(install_ship_command(&repo).unwrap(), ShipInstall::Installed);
+        let mtime_before = std::fs::metadata(ship_path(&repo)).unwrap().modified().unwrap();
+        // ensure a rewrite would be observable even on coarse-mtime filesystems
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert_eq!(
+            install_ship_command(&repo).unwrap(),
+            ShipInstall::Unchanged,
+            "second install must not write"
+        );
+        let mtime_after = std::fs::metadata(ship_path(&repo)).unwrap().modified().unwrap();
+        assert_eq!(mtime_before, mtime_after, "idempotent install must not bump mtime");
+    }
+
+    #[test]
+    fn preserves_user_authored_ship_md() {
+        let repo = tmp_repo("userfile");
+        let path = ship_path(&repo);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let user_content = "My own ship command — deploy to my staging box.\n";
+        std::fs::write(&path, user_content).unwrap();
+        assert_eq!(install_ship_command(&repo).unwrap(), ShipInstall::SkippedUserFile);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            user_content,
+            "user-authored ship.md must never be clobbered"
+        );
+    }
+
+    #[test]
+    fn upgrades_stale_grillme_managed_ship_md() {
+        let repo = tmp_repo("upgrade");
+        let path = ship_path(&repo);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{SHIP_COMMAND_MARKER}\nold v0 prompt\n")).unwrap();
+        assert_eq!(install_ship_command(&repo).unwrap(), ShipInstall::Installed);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), SHIP_COMMAND_MD);
     }
 }
 

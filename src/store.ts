@@ -464,7 +464,7 @@ export const useApp = create<AppState>((set, get) => ({
         return;
       }
       await invoke("pty_write", { id: ptyIdFor(id), data: "/ship\n" });
-      get().toast(`Approved — /ship running in ${name}'s session`);
+      get().toast(`Approved — ${name} is running /ship: tests, commit, push, then a PR`);
       // shipping completes this member's merge turn — rotate the queue
       if (get().mergeQueue[0] === id) get().advanceMergeQueue();
     } catch (e) {
