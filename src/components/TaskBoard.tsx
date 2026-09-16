@@ -161,17 +161,18 @@ function TaskCreate() {
     : undefined;
   const create = async () => {
     if (!title.trim()) return;
-    const next = [...tasks, {
+    const task = {
       id: `t${Date.now()}`,
       title: title.trim(),
       desc: "",
       owner: owner || teammates[0]?.id || "me",
       status: "not-started" as const,
       files: [],
-    }];
-    setShared({ tasks: next });
+    };
+    setShared({ tasks: [...tasks, task] });
     const { invoke } = await import("@tauri-apps/api/core");
-    invoke("shared_write", { name: "tasks.json", content: JSON.stringify(next, null, 2) }).catch(console.error);
+    // delta upsert — never overwrites concurrent writers' tasks
+    invoke("shared_upsert", { name: "tasks.json", itemsJson: JSON.stringify([task]), removedIds: [] }).catch(console.error);
     toast(`Task added${dupe ? " (possible duplicate flagged)" : ""}`);
     setTitle(""); setOpen(false);
   };

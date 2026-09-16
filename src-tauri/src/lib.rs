@@ -960,6 +960,204 @@ fn shared_write(name: String, content: String) -> Result<(), String> {
     std::fs::rename(&tmp, &target).map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------------------
+// Merge-safe shared writes. tasks.json / messages.json are arrays of
+// {"id": …} objects written by multiple writers (frontend store, second app
+// instance, HTTP thread). Whole-file read-modify-write from a stale snapshot
+// silently destroys the other writer's data, so mutations go through a
+// read+merge+atomic-rename critical section instead:
+//   - a global in-process Mutex serializes same-app writers;
+//   - a sidecar lockfile (create_new + bounded retry + stale cleanup)
+//     serializes cross-process writers.
+// team.json is an object; it gets a shallow field-level merge.
+// ---------------------------------------------------------------------------
+
+static SHARED_MERGE_LOCK: Mutex<()> = Mutex::new(());
+
+const SHARED_LOCK_RETRY_MS: u64 = 25;
+const SHARED_LOCK_TIMEOUT_MS: u64 = 2_000;
+const SHARED_LOCK_STALE_S: u64 = 10;
+
+/// Holds the sidecar lockfile; removing it on Drop releases the lock even on
+/// early-return error paths.
+#[derive(Debug)]
+struct SidecarLock {
+    path: PathBuf,
+}
+
+impl Drop for SidecarLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Cross-process lock on `<target>.lock` via O_EXCL create. Bounded retry
+/// (~2s); a lockfile older than SHARED_LOCK_STALE_S is a crashed holder and
+/// gets cleaned up.
+fn acquire_sidecar_lock(target: &std::path::Path) -> Result<SidecarLock, String> {
+    let mut os = target.as_os_str().to_owned();
+    os.push(".lock");
+    let path = PathBuf::from(os);
+    let deadline = Instant::now() + std::time::Duration::from_millis(SHARED_LOCK_TIMEOUT_MS);
+    loop {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => return Ok(SidecarLock { path }),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let stale = std::fs::metadata(&path)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|m| m.elapsed().ok())
+                    .is_some_and(|age| age.as_secs() > SHARED_LOCK_STALE_S);
+                if stale {
+                    let _ = std::fs::remove_file(&path);
+                    // fall through to the deadline check, then retry create
+                }
+                if Instant::now() >= deadline {
+                    return Err(format!(
+                        "timed out waiting for shared-state lock {}",
+                        path.display()
+                    ));
+                }
+                if !stale {
+                    std::thread::sleep(std::time::Duration::from_millis(SHARED_LOCK_RETRY_MS));
+                }
+            }
+            Err(e) => return Err(format!("cannot create lock {}: {e}", path.display())),
+        }
+    }
+}
+
+/// Pure merge of an id-keyed JSON array. Incoming items overwrite existing
+/// entries with the same "id" in place; ids in `removed` are deleted; every
+/// other existing entry is preserved untouched. Genuinely new items go to the
+/// front (`prepend_new`, messages.json shows newest-first) or the back
+/// (tasks.json appends). Incoming items without a string "id" are dropped —
+/// there is nothing to merge them by.
+fn merge_by_id(
+    current: &str,
+    incoming: Vec<serde_json::Value>,
+    removed: &[String],
+    prepend_new: bool,
+) -> Vec<serde_json::Value> {
+    let existing: Vec<serde_json::Value> = serde_json::from_str::<serde_json::Value>(current)
+        .ok()
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+    let removed: std::collections::HashSet<&str> = removed.iter().map(String::as_str).collect();
+    let id_of = |v: &serde_json::Value| v.get("id").and_then(|i| i.as_str()).map(str::to_string);
+
+    let mut by_id: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut incoming_order: Vec<String> = vec![];
+    for item in incoming {
+        if let Some(id) = id_of(&item) {
+            if !by_id.contains_key(&id) {
+                incoming_order.push(id.clone());
+            }
+            by_id.insert(id, item);
+        }
+    }
+
+    let mut out: Vec<serde_json::Value> = vec![];
+    let mut replaced: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for item in existing {
+        match id_of(&item) {
+            Some(id) if removed.contains(id.as_str()) => {}
+            Some(id) => match by_id.get(&id) {
+                Some(replacement) => {
+                    out.push(replacement.clone());
+                    replaced.insert(id);
+                }
+                None => out.push(item),
+            },
+            None => out.push(item), // preserve id-less legacy entries
+        }
+    }
+    let fresh: Vec<serde_json::Value> = incoming_order
+        .iter()
+        .filter(|id| !replaced.contains(*id) && !removed.contains(id.as_str()))
+        .map(|id| by_id[id.as_str()].clone())
+        .collect();
+    if prepend_new {
+        let mut v = fresh;
+        v.extend(out);
+        v
+    } else {
+        out.extend(fresh);
+        out
+    }
+}
+
+/// Read-merge-write one array file under both locks, with an atomic
+/// temp+rename publish. Path-parameterized so tests can exercise the full
+/// critical section against a temp dir.
+fn upsert_at(
+    target: &std::path::Path,
+    incoming: Vec<serde_json::Value>,
+    removed_ids: &[String],
+    prepend_new: bool,
+) -> Result<(), String> {
+    let _in_process = lock_or_recover(&SHARED_MERGE_LOCK);
+    let _cross_process = acquire_sidecar_lock(target)?;
+    let current = std::fs::read_to_string(target).unwrap_or_default();
+    let merged = merge_by_id(&current, incoming, removed_ids, prepend_new);
+    let content =
+        serde_json::to_string_pretty(&serde_json::Value::Array(merged)).map_err(|e| e.to_string())?;
+    let tmp = target.with_extension("tmp-merge");
+    std::fs::write(&tmp, &content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, target).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn shared_upsert(name: String, items_json: String, removed_ids: Vec<String>) -> Result<(), String> {
+    if name != "tasks.json" && name != "messages.json" {
+        return Err("shared_upsert only supports tasks.json / messages.json".into());
+    }
+    let incoming: Vec<serde_json::Value> = serde_json::from_str(&items_json)
+        .map_err(|e| format!("items must be a JSON array of objects: {e}"))?;
+    upsert_at(
+        &shared_path(&name),
+        incoming,
+        &removed_ids,
+        name == "messages.json",
+    )
+}
+
+/// Shallow field-level merge for team.json: only fields the caller provides
+/// overwrite; everything else on disk is preserved. Path-parameterized for
+/// the same testability reason as upsert_at.
+fn merge_team_at(
+    target: &std::path::Path,
+    merge_queue: Option<Vec<String>>,
+    sponsor: Option<serde_json::Value>,
+) -> Result<(), String> {
+    let _in_process = lock_or_recover(&SHARED_MERGE_LOCK);
+    let _cross_process = acquire_sidecar_lock(target)?;
+    let mut root: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(target)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    if let Some(q) = merge_queue {
+        root.insert("mergeQueue".into(), serde_json::json!(q));
+    }
+    if let Some(sp) = sponsor {
+        root.insert("sponsor".into(), sp);
+    }
+    let content = serde_json::to_string_pretty(&serde_json::Value::Object(root))
+        .map_err(|e| e.to_string())?;
+    let tmp = target.with_extension("tmp-merge");
+    std::fs::write(&tmp, &content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, target).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn shared_merge_team(
+    merge_queue: Option<Vec<String>>,
+    sponsor: Option<serde_json::Value>,
+) -> Result<(), String> {
+    merge_team_at(&shared_path("team.json"), merge_queue, sponsor)
+}
+
 #[tauri::command]
 fn standup_append(id: String, note: String) -> Result<(), String> {
     use std::io::Write as _;
@@ -2430,6 +2628,8 @@ pub fn run() {
             pty_record,
             shared_read,
             shared_write,
+            shared_upsert,
+            shared_merge_team,
             standup_append,
             standup_tail,
             git_commit_push,
@@ -2764,6 +2964,181 @@ mod ship_command_tests {
         std::fs::write(&path, format!("{SHIP_COMMAND_MARKER}\nold v0 prompt\n")).unwrap();
         assert_eq!(install_ship_command(&repo).unwrap(), ShipInstall::Installed);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), SHIP_COMMAND_MD);
+    }
+}
+
+#[cfg(test)]
+mod shared_merge_tests {
+    use super::{acquire_sidecar_lock, merge_by_id, merge_team_at, upsert_at};
+    use std::path::PathBuf;
+
+    fn tmp_target(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "grillme-merge-test-{}-{tag}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("tasks.json")
+    }
+
+    fn item(id: &str, title: &str) -> serde_json::Value {
+        serde_json::json!({ "id": id, "title": title })
+    }
+
+    fn read_ids(path: &std::path::Path) -> Vec<String> {
+        let raw = std::fs::read_to_string(path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("file must stay valid JSON");
+        v.as_array()
+            .expect("file must stay a JSON array")
+            .iter()
+            .map(|t| t["id"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// THE regression test for the lost-update bug: two writers who both
+    /// started from the same snapshot each write their own new item as a
+    /// delta. Under the old whole-file shared_write flow the second write
+    /// (snapshot + t3) clobbers the first (snapshot + t2) and t2 vanishes;
+    /// the merge path must keep t1, t2, AND t3.
+    #[test]
+    fn sequential_upserts_from_stale_snapshots_both_survive() {
+        let target = tmp_target("stale-snapshots");
+        let _ = std::fs::remove_file(&target);
+        upsert_at(&target, vec![item("t1", "seed")], &[], false).unwrap();
+        // writer A and writer B both saw only [t1]; each sends its delta
+        upsert_at(&target, vec![item("t2", "from A")], &[], false).unwrap();
+        upsert_at(&target, vec![item("t3", "from B")], &[], false).unwrap();
+        assert_eq!(read_ids(&target), vec!["t1", "t2", "t3"]);
+    }
+
+    #[test]
+    fn concurrent_upserts_of_distinct_ids_all_survive() {
+        let target = tmp_target("concurrent");
+        let _ = std::fs::remove_file(&target);
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let target = target.clone();
+                std::thread::spawn(move || {
+                    upsert_at(
+                        &target,
+                        vec![item(&format!("c{i}"), &format!("thread {i}"))],
+                        &[],
+                        false,
+                    )
+                    .unwrap();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let mut ids = read_ids(&target);
+        ids.sort();
+        let expected: Vec<String> = (0..8).map(|i| format!("c{i}")).collect();
+        assert_eq!(ids, expected);
+    }
+
+    #[test]
+    fn removed_ids_delete_only_targets() {
+        let target = tmp_target("removals");
+        let _ = std::fs::remove_file(&target);
+        upsert_at(
+            &target,
+            vec![item("a", "keep"), item("b", "drop"), item("c", "keep")],
+            &[],
+            false,
+        )
+        .unwrap();
+        upsert_at(&target, vec![], &["b".to_string()], false).unwrap();
+        assert_eq!(read_ids(&target), vec!["a", "c"]);
+    }
+
+    #[test]
+    fn upsert_overwrites_in_place_and_prepends_new_when_asked() {
+        // in-place overwrite by id keeps position; prepend_new puts genuinely
+        // new items first (messages.json is newest-first)
+        let merged = merge_by_id(
+            r#"[{"id":"m1","text":"old"},{"id":"m2","text":"two"}]"#,
+            vec![
+                serde_json::json!({ "id": "m1", "text": "edited" }),
+                serde_json::json!({ "id": "m3", "text": "new" }),
+            ],
+            &[],
+            true,
+        );
+        let ids: Vec<&str> = merged.iter().map(|m| m["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["m3", "m1", "m2"]);
+        assert_eq!(merged[1]["text"], "edited");
+    }
+
+    #[test]
+    fn merge_survives_corrupt_or_missing_current_file() {
+        assert_eq!(merge_by_id("", vec![item("x", "t")], &[], false).len(), 1);
+        assert_eq!(
+            merge_by_id("{not json", vec![item("x", "t")], &[], false).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn team_merge_only_overwrites_provided_fields() {
+        let target = tmp_target("team").with_file_name("team.json");
+        let _ = std::fs::remove_file(&target);
+        merge_team_at(
+            &target,
+            Some(vec!["a".into(), "b".into()]),
+            Some(serde_json::json!([{ "sponsor": "x", "done": false }])),
+        )
+        .unwrap();
+        // second writer updates only the queue — sponsor must be preserved
+        merge_team_at(&target, Some(vec!["b".into(), "a".into()]), None).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+        assert_eq!(v["mergeQueue"], serde_json::json!(["b", "a"]));
+        assert_eq!(v["sponsor"][0]["sponsor"], "x");
+        // and the mirror: sponsor-only write preserves the queue
+        merge_team_at(&target, None, Some(serde_json::json!([]))).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+        assert_eq!(v["mergeQueue"], serde_json::json!(["b", "a"]));
+        assert_eq!(v["sponsor"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn stale_lockfile_is_cleaned_up_and_write_proceeds() {
+        let target = tmp_target("stale-lock");
+        let _ = std::fs::remove_file(&target);
+        let lock_path = PathBuf::from({
+            let mut os = target.as_os_str().to_owned();
+            os.push(".lock");
+            os
+        });
+        // a crashed holder left the lockfile behind >10s ago
+        let f = std::fs::File::create(&lock_path).unwrap();
+        f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(11))
+            .unwrap();
+        drop(f);
+        upsert_at(&target, vec![item("s1", "after crash")], &[], false).unwrap();
+        assert_eq!(read_ids(&target), vec!["s1"]);
+        // the lock is released after the write
+        assert!(!lock_path.exists());
+    }
+
+    #[test]
+    fn held_fresh_lock_times_out_instead_of_clobbering() {
+        let target = tmp_target("held-lock");
+        let _ = std::fs::remove_file(&target);
+        let held = acquire_sidecar_lock(&target).unwrap();
+        let started = std::time::Instant::now();
+        let err = acquire_sidecar_lock(&target).unwrap_err();
+        assert!(err.contains("timed out"));
+        // bounded retry: ~2s, not forever
+        assert!(started.elapsed() >= std::time::Duration::from_millis(1_500));
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        drop(held);
+        // once released, the next writer gets through immediately
+        upsert_at(&target, vec![item("h1", "ok")], &[], false).unwrap();
+        assert_eq!(read_ids(&target), vec!["h1"]);
     }
 }
 

@@ -148,16 +148,15 @@ export function TeamPanel() {
 }
 
 function SponsorList() {
-  const { sponsorChecklist, setShared, mergeQueue } = useApp();
+  const { sponsorChecklist, setShared } = useApp();
   const toggle = async (i: number) => {
     const next = sponsorChecklist.map((s, j) => (j === i ? { ...s, done: !s.done } : s));
     setShared({ sponsorChecklist: next });
     if (isTauri()) {
       const { invoke } = await import("@tauri-apps/api/core");
-      invoke("shared_write", {
-        name: "team.json",
-        content: JSON.stringify({ mergeQueue, sponsor: next }, null, 2),
-      }).catch(console.error);
+      // field-level merge: only sponsor changes; a concurrent mergeQueue
+      // rotation in another instance is preserved on disk
+      invoke("shared_merge_team", { mergeQueue: null, sponsor: next }).catch(console.error);
     }
   };
   return (

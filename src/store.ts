@@ -203,7 +203,8 @@ export const useApp = create<AppState>((set, get) => ({
         m.id === id ? { ...m, response, answered: true } : m,
       ),
     }));
-    persistShared("messages.json", get().messages);
+    const changed = get().messages.find((m) => m.id === id);
+    if (changed) upsertShared("messages.json", [changed]);
   },
 
   toggleAnswered: (id) => {
@@ -212,7 +213,8 @@ export const useApp = create<AppState>((set, get) => ({
         m.id === id ? { ...m, answered: !m.answered } : m,
       ),
     }));
-    persistShared("messages.json", get().messages);
+    const changed = get().messages.find((m) => m.id === id);
+    if (changed) upsertShared("messages.json", [changed]);
   },
 
   sendMessage: (to, text, kind = "question", threadId) => {
@@ -235,7 +237,7 @@ export const useApp = create<AppState>((set, get) => ({
         : undefined,
     };
     set((s) => ({ messages: [msg, ...s.messages] }));
-    persistShared("messages.json", get().messages);
+    upsertShared("messages.json", [msg]);
     get().toast(to === "all" ? "Broadcast sent to every session" : `Queued for ${to} — delivered at next check-in`);
   },
 
@@ -247,7 +249,8 @@ export const useApp = create<AppState>((set, get) => ({
           : t,
       ),
     }));
-    persistShared("tasks.json", get().tasks);
+    const changedTask = get().tasks.find((t) => t.id === id);
+    if (changedTask) upsertShared("tasks.json", [changedTask]);
     if (status === "done") {
       const task = get().tasks.find((t) => t.id === id);
       if (task && isTauri()) {
@@ -411,7 +414,7 @@ export const useApp = create<AppState>((set, get) => ({
     const q = get().mergeQueue;
     const next = [...q.slice(1), q[0]];
     set({ mergeQueue: next });
-    persistShared("team.json", { mergeQueue: next, sponsor: get().sponsorChecklist });
+    mergeSharedTeam({ mergeQueue: next });
     const name = get().teammates.find((t) => t.id === next[0])?.name ?? next[0];
     get().toast(`Merge turn passed to ${name}`);
   },
@@ -677,10 +680,35 @@ export function memberIdFromPtyId(ptyId: string): string {
   return i === -1 ? base : base.slice(i + 1);
 }
 
+/** Whole-file write — settings.json only (single-writer UI preferences).
+ *  tasks/messages/team go through the merge-safe delta paths below so two
+ *  concurrent writers can never destroy each other's entries. */
 async function persistShared(name: string, data: unknown) {
   if (!isTauri()) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("shared_write", { name, content: JSON.stringify(data, null, 2) }).catch(console.error);
+}
+
+/** Delta upsert into an id-keyed shared array file: `items` overwrite/insert
+ *  by id, `removedIds` delete, everything else on disk is preserved. */
+export async function upsertShared(
+  name: "tasks.json" | "messages.json",
+  items: unknown[],
+  removedIds: string[] = [],
+) {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("shared_upsert", { name, itemsJson: JSON.stringify(items), removedIds }).catch(console.error);
+}
+
+/** Field-level merge into team.json — only the fields provided overwrite. */
+export async function mergeSharedTeam(patch: { mergeQueue?: string[]; sponsor?: unknown }) {
+  if (!isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("shared_merge_team", {
+    mergeQueue: patch.mergeQueue ?? null,
+    sponsor: patch.sponsor ?? null,
+  }).catch(console.error);
 }
 
 // ---------------------------------------------------------------------------
