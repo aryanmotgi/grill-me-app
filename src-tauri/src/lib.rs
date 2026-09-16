@@ -1066,9 +1066,30 @@ fn activity_series(id: String) -> Vec<u32> {
     buckets
 }
 
+/// Validate a member id before it is embedded in hook command lines written
+/// to .claude/settings.json. Rejects anything outside [A-Za-z0-9_-] so an id
+/// can never smuggle shell metacharacters into every teammate's session.
+fn validate_member_id(id: &str) -> Result<(), String> {
+    let ok = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("invalid member id {id:?}: must match [A-Za-z0-9_-]+"))
+    }
+}
+
+/// Single-quote a string for POSIX sh: wrap in ' and escape embedded ' as '\''.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Claude Code hooks that report exact session state into events.jsonl.
 #[tauri::command]
 fn install_hooks(repo_path: String, member_id: String) -> Result<String, String> {
+    validate_member_id(&member_id)?;
     if !PathBuf::from(&repo_path).join(".git").exists() {
         return Err("not a git worktree — skipping hook install".into());
     }
@@ -1085,9 +1106,13 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     let proj_s = grillme_dir().to_string_lossy().into_owned();
     let events = grillme_dir().join("events.jsonl").to_string_lossy().into_owned();
     let hook_cmd = |event: &str| {
-        format!(
-            "sh -c 'IN=$(cat); printf \"%s\\n\" \"{{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"{member_id}\\\",\\\"event\\\":\\\"{event}\\\"}}\" >> {events}'"
-        )
+        // events path is sh_quoted so a HOME with spaces/quotes cannot break
+        // (or inject into) the script; member_id is validated above.
+        let script = format!(
+            "IN=$(cat); printf \"%s\\n\" \"{{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"{member_id}\\\",\\\"event\\\":\\\"{event}\\\"}}\" >> {}",
+            sh_quote(&events)
+        );
+        format!("sh -c {}", sh_quote(&script))
     };
     let mk = |event: &str| {
         serde_json::json!([{ "hooks": [{ "type": "command", "command": hook_cmd(event) }] }])
@@ -1103,7 +1128,7 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     obj.insert("UserPromptSubmit".into(), mk("prompt"));
     let helper_hook = |mode: &str, matcher: &str| {
         serde_json::json!([{ "matcher": matcher, "hooks": [{ "type": "command",
-            "command": format!("python3 {helper_s} {mode} {member_id} {proj_s}") }] }])
+            "command": format!("python3 {} {mode} {member_id} {}", sh_quote(&helper_s), sh_quote(&proj_s)) }] }])
     };
     obj.insert("PreToolUse".into(), helper_hook("pre", "Bash"));
     obj.insert("PostToolUse".into(), helper_hook("post", "Bash|Read|Edit|Write"));
@@ -1883,4 +1908,31 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sh_quote, validate_member_id};
+
+    #[test]
+    fn member_id_accepts_safe_chars() {
+        assert!(validate_member_id("alice").is_ok());
+        assert!(validate_member_id("bob_2-dev").is_ok());
+    }
+
+    #[test]
+    fn member_id_rejects_metacharacters() {
+        assert!(validate_member_id("").is_err());
+        assert!(validate_member_id("a;rm -rf /").is_err());
+        assert!(validate_member_id("x$(whoami)").is_err());
+        assert!(validate_member_id("a b").is_err());
+        assert!(validate_member_id("a'b").is_err());
+    }
+
+    #[test]
+    fn sh_quote_wraps_and_escapes() {
+        assert_eq!(sh_quote("/plain/path"), "'/plain/path'");
+        assert_eq!(sh_quote("/has space/x"), "'/has space/x'");
+        assert_eq!(sh_quote("a'b"), "'a'\\''b'");
+    }
 }
