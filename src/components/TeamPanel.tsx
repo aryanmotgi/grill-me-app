@@ -134,9 +134,13 @@ export function TeamPanel() {
         <button className="btn" title="Full project state bundle — tasks, messages, config, logs"
           onClick={async () => {
             const { invoke } = await import("@tauri-apps/api/core");
-            const bundle = await invoke<string>("project_export").catch((e) => `{"error":"${e}"}`);
-            download(`grillme-project-backup-${Date.now()}.json`, bundle);
-            toast("Project state exported");
+            try {
+              const bundle = await invoke<string>("project_export");
+              download(`grillme-project-backup-${Date.now()}.json`, bundle);
+              toast("Project state exported");
+            } catch (e) {
+              toast(`Export failed: ${e}`, "warn");
+            }
           }}>
           <Icon name="download" size={10} /> backup
         </button>

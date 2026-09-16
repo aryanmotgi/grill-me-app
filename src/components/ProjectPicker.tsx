@@ -39,7 +39,7 @@ const commitAge = (min: number | null) =>
  * read from each project's state dir without opening it.
  */
 export function ProjectPicker() {
-  const { activeProject, pickerOpen, setPickerOpen, setAppSetting } = useApp();
+  const { activeProject, pickerOpen, setPickerOpen, setAppSetting, toast } = useApp();
   const [projects, setProjects] = useState<Project[]>([]);
   const [stats, setStats] = useState<Record<string, CardStats>>({});
   const [discovered, setDiscovered] = useState<string[]>([]);
@@ -129,14 +129,19 @@ export function ProjectPicker() {
     if (!url) return;
     setCloning(true);
     const repo = url.split("/").pop()?.replace(/\.git$/, "") ?? "cloned";
-    const dest = `/Users/aryanmotgi/Terminal/${repo}`;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
+      // clone next to an existing project; fall back to the home dir
+      const sibling = projects.find((p) => p.path)?.path;
+      const parent = sibling
+        ? sibling.replace(/\/[^/]+$/, "")
+        : await import("@tauri-apps/api/path").then(({ homeDir }) => homeDir());
+      const dest = `${parent.replace(/\/+$/, "")}/${repo}`;
       await invoke("git_clone", { url, dest });
       await register(repo, dest, ACCENTS[projects.length % ACCENTS.length]);
       setCloneUrl("");
     } catch (e) {
-      alert(`clone failed: ${e}`);
+      toast(`Clone failed: ${e}`, "warn");
     } finally {
       setCloning(false);
     }
@@ -212,7 +217,9 @@ export function ProjectPicker() {
                 onClick={() => setColor(c)} />
             ))}
             <span className="flex-1" />
-            <button className="btn primary" onClick={() => { if (name && path) { register(name, path, color); setName(""); setPath(""); } }}>
+            <button className="btn primary" disabled={!name.trim() || !path.trim()}
+              title={!name.trim() || !path.trim() ? "Enter a project name and path first" : "Add this project"}
+              onClick={() => { register(name, path, color); setName(""); setPath(""); }}>
               <Icon name="plus" size={10} /> add
             </button>
           </div>

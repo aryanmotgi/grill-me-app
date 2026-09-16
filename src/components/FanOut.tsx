@@ -35,7 +35,7 @@ export function FanOut() {
   };
 
   const run = async () => {
-    if (!isTauri()) return;
+    if (!isTauri()) { toast("Fan-out needs the native app to spawn sessions", "warn"); return; }
     setBusy(true);
     const { invoke } = await import("@tauri-apps/api/core");
     const items = parse();
@@ -82,7 +82,7 @@ export function FanOut() {
       }
     }
     const waiting = items.filter((i) => i.dependsOn !== null).length;
-    toast(`Fan-out: ${spawned} session(s) running in parallel${waiting ? `, ${waiting} waiting on dependencies` : ""}`);
+    toast(`Fan-out: ${spawned} session${spawned === 1 ? "" : "s"} running in parallel${waiting ? `, ${waiting} waiting on dependencies` : ""}`);
     setBusy(false);
     setOpen(false);
     setText("");

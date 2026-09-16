@@ -30,6 +30,10 @@ export function ReviewModal() {
 
   if (!reviewFor) return null;
 
+  const unavailable = !isTauri()
+    ? "diff needs the native app — run npm run tauri dev"
+    : !member ? "no worktree configured for this session — diff unavailable" : null;
+
   const approve = () => {
     shipApproved(reviewFor);
     setReviewFor(null);
@@ -53,12 +57,15 @@ export function ReviewModal() {
           <span className="flex-1" />
           <button className="btn" onClick={() => setReviewFor(null)}>cancel</button>
           <button className="btn" onClick={requestChanges}>request changes</button>
-          <button className="btn primary" onClick={approve} title="Runs /ship in their session — tests before push">
+          <button className="btn primary" disabled={Boolean(unavailable)} onClick={approve}
+            title={unavailable ?? "Runs /ship in their session — tests before push"}>
             approve & ship
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-          {!data ? (
+          {unavailable ? (
+            <div className="text-faint text-[11px]">{unavailable}</div>
+          ) : !data ? (
             <div className="text-faint text-[11px]">loading diff…</div>
           ) : (
             <>

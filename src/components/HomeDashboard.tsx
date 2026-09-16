@@ -3,6 +3,8 @@ import { Icon } from "./Icon";
 import { ptyIdFor, useApp } from "../store";
 import { isTauri } from "../data/sources/git";
 
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
 const fmtTokens = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : `${n}`;
 
@@ -79,16 +81,16 @@ export function HomeDashboard() {
             ))}
             {blocking.map((m) => (
               <button key={m.id} className="flex items-center gap-3 px-4 py-2.5 bg-raised rounded-md text-left hover:brightness-110 transition-all cursor-pointer border-l-2 border-l-danger"
-                onClick={() => { setRailTab("inbox"); setView("session"); }}>
+                title={m.text} onClick={() => { setRailTab("inbox"); setView("session"); }}>
                 <Icon name="warn" size={12} className="text-danger" />
-                <span className="text-[12px]"><b>{teammates.find((t) => t.id === m.from)?.name ?? m.from}</b> is blocked: {m.text.slice(0, 70)}</span>
+                <span className="text-[12px]"><b>{teammates.find((t) => t.id === m.from)?.name ?? m.from}</b> is blocked: {clip(m.text, 70)}</span>
                 <span className="ml-auto text-faint text-[10px]">reply</span>
               </button>
             ))}
             {proposals.map((m) => (
-              <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 bg-raised rounded-md border-l-2 border-l-accent">
+              <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 bg-raised rounded-md border-l-2 border-l-accent" title={m.text}>
                 <Icon name="mail" size={12} className="text-accent" />
-                <span className="text-[12px] flex-1"><b>{teammates.find((t) => t.id === m.from)?.name ?? m.from}</b> proposes: {m.text.slice(0, 60)}</span>
+                <span className="text-[12px] flex-1"><b>{teammates.find((t) => t.id === m.from)?.name ?? m.from}</b> proposes: {clip(m.text, 60)}</span>
                 <button className="btn" onClick={() => { respondProposal(m.id, "yes"); toast("Answered yes"); }}>yes</button>
                 <button className="btn" onClick={() => { respondProposal(m.id, "no"); toast("Answered no"); }}>no</button>
                 <button className="btn" onClick={() => { respondProposal(m.id, "unsure"); }}>unsure</button>
@@ -96,9 +98,9 @@ export function HomeDashboard() {
             ))}
             {questions.map((m) => (
               <button key={m.id} className="flex items-center gap-3 px-4 py-2.5 bg-raised rounded-md text-left hover:brightness-110 transition-all cursor-pointer border-l-2 border-l-warn"
-                onClick={() => { setRailTab("inbox"); setView("session"); }}>
+                title={m.text} onClick={() => { setRailTab("inbox"); setView("session"); }}>
                 <Icon name="mail" size={12} className="text-warn" />
-                <span className="text-[12px]"><b>{teammates.find((t) => t.id === m.from)?.name ?? m.from}</b> asks: {m.text.slice(0, 70)}</span>
+                <span className="text-[12px]"><b>{teammates.find((t) => t.id === m.from)?.name ?? m.from}</b> asks: {clip(m.text, 70)}</span>
                 <span className="ml-auto text-faint text-[10px]">reply</span>
               </button>
             ))}
