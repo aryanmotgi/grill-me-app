@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store";
+import { surfaceVisible } from "../lib/soloVisibility";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
 import type { Teammate } from "../types";
@@ -161,14 +162,22 @@ function SessionRow({ mate }: { mate: Teammate }) {
 export function SessionList() {
   const teammates = useApp((s) => s.teammates);
   const width = useApp((s) => s.panelSizes.left);
+  const appMode = useApp((s) => s.appMode);
+  const ownId = useApp((s) => s.members[0]?.id);
+  // solo: only the own session row (members[0]; first fake row in browser dev)
+  const shown = surfaceVisible(appMode, "other-session-rows")
+    ? teammates
+    : teammates.filter((t, i) => (ownId ? t.id === ownId : i === 0));
   return (
     <aside style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
       <div className="px-3 py-2 flex items-center justify-between">
         <span className="panel-label">sessions</span>
-        <span className="text-faint text-[10px]">{teammates.length} on vm</span>
+        {surfaceVisible(appMode, "session-count") ? (
+          <span className="text-faint text-[10px]">{teammates.length} on vm</span>
+        ) : null}
       </div>
       <div className="overflow-y-auto">
-        {teammates.map((mate) => (
+        {shown.map((mate) => (
           <SessionRow key={mate.id} mate={mate} />
         ))}
       </div>

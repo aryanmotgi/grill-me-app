@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
 import { attentionSessions, useApp } from "../store";
+import { surfaceVisible } from "../lib/soloVisibility";
 import { themes } from "../theme/themes";
 import { isTauri } from "../data/sources/git";
 
@@ -76,7 +77,7 @@ export function TopBar() {
   const {
     teammates, mergeQueue, advanceMergeQueue, members, setMergePilotOpen,
     activeId, shipSession, setSwitcherOpen, setSettingsOpen, setPickerOpen,
-    activeProject, setRailTab, messages,
+    activeProject, setRailTab, messages, appMode,
   } = useApp();
 
   const attention = attentionSessions(teammates);
@@ -100,9 +101,12 @@ export function TopBar() {
         </button>
       </div>
 
-      {/* one calm status cluster: who's working, who needs you */}
+      {/* one calm status cluster: who's working, who needs you.
+          solo strips the team counters — own needs-you always stays */}
       <div className="flex items-center gap-2.5 text-[11px] text-dim">
-        <span className="flex items-center gap-1.5"><span className="status-dot working" aria-hidden />{working} working</span>
+        {surfaceVisible(appMode, "working-counter") ? (
+          <span className="flex items-center gap-1.5"><span className="status-dot working" aria-hidden />{working} working</span>
+        ) : null}
         {attention.length > 0 ? (
           <button className="flex items-center gap-1.5 text-warn cursor-pointer hover:brightness-110"
             title={attention.length === 1
@@ -116,24 +120,26 @@ export function TopBar() {
             <span className="status-dot needs-input" aria-hidden />{attention.length} need you
           </button>
         ) : null}
-        {waiting.length > 0 ? (
+        {surfaceVisible(appMode, "team-waiting") && waiting.length > 0 ? (
           <button className={`cursor-pointer ${blocking ? "text-danger" : "text-warn"} hover:brightness-110`}
             title={waiting.map((m) => `${m.from} → ${m.to}: ${clip(m.text, 50)}`).join("\n")}
             onClick={() => setRailTab("inbox")}>
             {blocking ? `${blocking} blocked · ` : ""}{waiting.length} unanswered
           </button>
         ) : null}
-        {myTurn ? (
-          <button className="tag ok cursor-pointer" title="It's your merge turn — click to run the merge; right-click to pass"
-            onClick={() => setMergePilotOpen(true)}
-            onContextMenu={(e) => { e.preventDefault(); advanceMergeQueue(); }}>
-            <Icon name="merge" size={11} /> your merge turn
-          </button>
-        ) : (
-          <span className="text-faint text-[10px]" title="Merge rotation — shows in Team panel">
-            merge: {mergerName}
-          </span>
-        )}
+        {surfaceVisible(appMode, "merge-chip") ? (
+          myTurn ? (
+            <button className="tag ok cursor-pointer" title="It's your merge turn — click to run the merge; right-click to pass"
+              onClick={() => setMergePilotOpen(true)}
+              onContextMenu={(e) => { e.preventDefault(); advanceMergeQueue(); }}>
+              <Icon name="merge" size={11} /> your merge turn
+            </button>
+          ) : (
+            <span className="text-faint text-[10px]" title="Merge rotation — shows in Team panel">
+              merge: {mergerName}
+            </span>
+          )
+        ) : null}
       </div>
 
       <span className="flex-1" />

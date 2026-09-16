@@ -15,6 +15,10 @@ import { Onboarding } from "./components/Onboarding";
 import { ReviewModal } from "./components/ReviewModal";
 import { HomeDashboard } from "./components/HomeDashboard";
 import { FeatureIndex } from "./components/FeatureIndex";
+import { ModeSelect } from "./components/ModeSelect";
+import { TeamFlow } from "./components/teamflow/TeamFlow";
+import { visibleRailTabs } from "./lib/soloVisibility";
+import type { RailTab } from "./store";
 
 function DragHandle({ onDrag, onDone }: { onDrag: (dx: number) => void; onDone: () => void }) {
   return (
@@ -41,7 +45,7 @@ export default function App() {
     teammates, activeId, splitId, focusMode, demoMode, themeName,
     setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen,
     dense, mergePilotOpen, setMergePilotOpen, members, setActive,
-    panelSizes, setPanelSize, view, setView,
+    panelSizes, setPanelSize, view, setView, appMode, teamFlowNeeded,
   } = useApp();
 
   useEffect(() => {
@@ -50,6 +54,8 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // ModeSelect owns the keyboard until a mode is chosen
+      if (useApp.getState().appMode === null) return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key === "/") {
         e.preventDefault();
@@ -76,8 +82,12 @@ export default function App() {
         toggleFocus();
       }
       if (mod && e.key >= "1" && e.key <= "5") {
-        e.preventDefault();
-        setRailTab((["tasks", "inbox", "activity", "team", "preview"] as const)[Number(e.key) - 1]);
+        // solo strips inbox/team tabs — ⌘1-N follows the visible order
+        const tab = visibleRailTabs(useApp.getState().appMode)[Number(e.key) - 1];
+        if (tab) {
+          e.preventDefault();
+          setRailTab(tab as RailTab);
+        }
       }
       if (e.key === "Escape") {
         // close exactly one overlay, topmost first
@@ -99,6 +109,11 @@ export default function App() {
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
+
+  // mode routing: no mode chosen → ModeSelect (before ProjectPicker);
+  // team just picked → TeamFlow screens until the setup flow completes
+  if (appMode === null) return <ModeSelect />;
+  if (appMode === "team" && teamFlowNeeded) return <TeamFlow />;
 
   return (
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>

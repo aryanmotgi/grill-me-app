@@ -22,6 +22,7 @@ import { needsAttention } from "./lib/attention";
 import { fmtClock } from "./lib/format";
 import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type PtyStatus } from "./lib/ptyReady";
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
+import type { AppMode } from "./lib/soloVisibility";
 
 export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
 
@@ -133,6 +134,13 @@ interface AppState {
    *  hint and self-healing restarts are suppressed until it clears. */
   claudeMissing: boolean;
   setClaudeMissing: (missing: boolean) => void;
+
+  /** Solo/team mode. null = not chosen yet → ModeSelect screen. Persisted. */
+  appMode: AppMode;
+  setAppMode: (m: AppMode) => void;
+  /** Set when Team is picked this session — routes to the TeamFlow screens
+   *  (create/join → lobby → setup) until the flow completes. */
+  teamFlowNeeded: boolean;
 }
 
 let toastSeq = 0;
@@ -521,6 +529,13 @@ export const useApp = create<AppState>((set, get) => ({
   claudeMissing: false,
   setClaudeMissing: (missing) => set({ claudeMissing: missing }),
 
+  appMode: null,
+  teamFlowNeeded: false,
+  setAppMode: (m) => {
+    set({ appMode: m, teamFlowNeeded: m === "team" });
+    get().setAppSetting("appMode", m);
+  },
+
   applyWatchState: (ws) =>
     set((s) => {
       const now = Math.floor(Date.now() / 1000);
@@ -601,6 +616,7 @@ let persistT: ReturnType<typeof setTimeout> | undefined;
       if (typeof appSettings.theme === "string") useApp.setState({ themeName: appSettings.theme });
       if (appSettings.panelSizes) useApp.setState({ panelSizes: appSettings.panelSizes as { left: number; right: number; split: number } });
       if (appSettings.terminal) useApp.setState({ termSettings: { ...DEFAULT_TERM_SETTINGS, ...(appSettings.terminal as Partial<TermSettings>) } });
+      if (appSettings.appMode === "solo" || appSettings.appMode === "team") useApp.setState({ appMode: appSettings.appMode });
     } catch (e) {
       console.error("settings.json unreadable — using defaults", e);
       appSettings = {};
@@ -714,6 +730,15 @@ export async function mergeSharedTeam(patch: { mergeQueue?: string[]; sponsor?: 
 // ---------------------------------------------------------------------------
 // Derived helpers — pure functions over store state
 // ---------------------------------------------------------------------------
+
+/**
+ * THE solo check — every component asks this (usually as a zustand selector:
+ * `useApp(isSolo)`) instead of comparing appMode inline. Per-surface
+ * decisions live in lib/soloVisibility's `surfaceVisible`.
+ */
+export function isSolo(s: Pick<AppState, "appMode">): boolean {
+  return s.appMode === "solo";
+}
 
 /**
  * Files currently claimed. When the file watcher is live (Tauri), claims are
