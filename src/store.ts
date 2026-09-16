@@ -550,6 +550,10 @@ export const useApp = create<AppState>((set, get) => ({
   setAppMode: (m) => {
     set({ appMode: m, teamFlowNeeded: m === "team" });
     get().setAppSetting("appMode", m);
+    // picking team AFTER boot: the boot IIFE only starts the room feed when
+    // appMode was already persisted as "team", so start it here too (the feed
+    // is idempotent — a guard flag makes the second call a no-op).
+    if (m === "team") startRoomFeed(useApp);
   },
   room: null,
   roomRole: null,
