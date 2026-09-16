@@ -1557,9 +1557,14 @@ fn api_token() -> String {
     let path = grillme_root().join("api-token");
     if let Ok(t) = std::fs::read_to_string(&path) {
         let t = t.trim().to_string();
-        if !t.is_empty() {
+        if is_strong_token(&t) {
+            // Pre-hardening installs wrote the file 0o644 — always re-assert 0o600.
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
             return t;
         }
+        // Legacy weak token (32 base36, clock-seeded) or garbage: fall through and
+        // regenerate. Safe — the grillme CLI re-reads the file on every invocation.
     }
     let tok = generate_token();
     // Owner-only perms: create with 0o600 and re-assert in case the file existed.
@@ -1576,6 +1581,11 @@ fn api_token() -> String {
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
     tok
+}
+
+/// New-format tokens are 64 lowercase hex chars (32 CSPRNG bytes).
+fn is_strong_token(t: &str) -> bool {
+    t.len() == 64 && t.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn generate_token() -> String {
@@ -1987,7 +1997,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{sh_quote, validate_member_id};
+    use super::{is_strong_token, sh_quote, validate_member_id};
 
     #[test]
     fn member_id_accepts_safe_chars() {
@@ -2009,6 +2019,20 @@ mod tests {
         assert_eq!(sh_quote("/plain/path"), "'/plain/path'");
         assert_eq!(sh_quote("/has space/x"), "'/has space/x'");
         assert_eq!(sh_quote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
+    fn strong_token_accepts_new_format() {
+        assert!(is_strong_token(&"a1".repeat(32))); // 64 lowercase hex chars
+    }
+
+    #[test]
+    fn strong_token_rejects_legacy_and_malformed() {
+        assert!(!is_strong_token("")); // empty
+        assert!(!is_strong_token(&"z9".repeat(16))); // legacy 32-char base36
+        assert!(!is_strong_token(&"g1".repeat(32))); // right length, non-hex
+        assert!(!is_strong_token(&"A1".repeat(32))); // uppercase hex
+        assert!(!is_strong_token(&"a1".repeat(31))); // too short
     }
 }
 

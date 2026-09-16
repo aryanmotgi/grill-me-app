@@ -86,7 +86,7 @@ export function ProjectPicker() {
         if (p) choose(p);
       }
       if (e.key === "Enter" && projects[0]) choose(projects[0]);
-      if (e.key === "Escape" && activeProject) setPickerOpen(false);
+      // Escape is handled by App's single Esc chain (topmost-first) to avoid double-close
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
