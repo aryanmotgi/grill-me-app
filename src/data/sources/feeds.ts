@@ -1,6 +1,7 @@
 import type { StoreApi, UseBoundStore } from "zustand";
 import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
+import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
 import { playAlert } from "../sounds";
 import {
   fetchConflictRadar,
@@ -317,12 +318,21 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
 
         // auto-pause: idle claude TUIs burn 10-25% CPU each just repainting.
         // SIGSTOP after quiet threshold; typing/viewing resumes instantly.
+        // Never pauses a needs-input session — it is quiet because it is
+        // waiting on a HUMAN, and pausing would bury the request.
         const idleMin = Number(stg.appSettings.autoPauseIdleMin ?? 5);
         const isViewed = stg.activeId === memberId && stg.view === "session";
         if (
           stg.appSettings.autoPauseIdle !== false &&
-          st.alive && !st.paused && !rateLimited && !isViewed &&
-          st.quietMs > idleMin * 60_000
+          autoPauseEligible({
+            status: rateLimited ? "needs-input" : status,
+            alive: st.alive,
+            paused: st.paused,
+            rateLimited,
+            isViewed,
+            quietMs: st.quietMs,
+            idleThresholdMs: idleMin * 60_000,
+          })
         ) {
           autoPaused.add(st.id);
           invoke("pty_pause", { id: st.id, pause: true }).catch(() => {});
@@ -336,13 +346,18 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         const recording = st.recording !== null;
         const lastNew = st.tail[st.tail.length - 1];
         const lastCur = cur?.terminal[cur.terminal.length - 1]?.text;
+        // pause masks working/idle only — a needs-input status (OSC/BEL,
+        // hook event, or rate limit) survives pause so every attention
+        // surface keeps showing the session until a human answers
+        const displayStatus = resolveDisplayStatus(status, st.paused, rateLimited);
         // skip no-op patches — every patch re-renders panes and the list
-        if (cur && cur.status === status && cur.recording === recording &&
+        if (cur && cur.status === displayStatus && cur.recording === recording &&
+            cur.paused === st.paused &&
             cur.terminal.length === st.tail.length && lastCur === lastNew) {
           continue;
         }
         store.getState().patchTeammate(memberId, {
-          status: st.paused ? "idle" : rateLimited ? "needs-input" : status,
+          status: displayStatus,
           paused: st.paused,
           recording,
           health: stuck ? "stale" : cur?.health === "disconnected" ? "disconnected" : "ok",

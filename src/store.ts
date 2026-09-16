@@ -18,6 +18,7 @@ import type {
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, type CiRun, type WatchState } from "./data/sources/feeds";
 import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
+import { needsAttention } from "./lib/attention";
 import { fmtClock } from "./lib/format";
 import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type PtyStatus } from "./lib/ptyReady";
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
@@ -733,11 +734,13 @@ export function nextUnblockedTask(tasks: Task[], justDoneId: string): Task | und
   );
 }
 
-/** Sessions needing attention: needs-input, stale, or disconnected. */
+/**
+ * Sessions needing attention: needs-input, stale, or disconnected.
+ * Includes paused sessions that need input — pausing changes the process
+ * state, not the attention state (predicate lives in lib/attention).
+ */
 export function attentionSessions(teammates: Teammate[]): Teammate[] {
-  return teammates.filter(
-    (t) => t.status === "needs-input" || t.health !== "ok",
-  );
+  return teammates.filter(needsAttention);
 }
 
 export function attentionCount(teammates: Teammate[]): number {
