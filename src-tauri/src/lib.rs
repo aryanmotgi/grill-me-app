@@ -1993,6 +1993,20 @@ fn pty_resources() -> Vec<SessionResources> {
         .collect()
 }
 
+/// Truncate `s` to at most `max` bytes without panicking mid-character:
+/// walk back from `max` to the nearest UTF-8 char boundary before cutting.
+/// `String::truncate` panics if the cut lands inside a multibyte character.
+fn truncate_at_char_boundary(s: &mut String, max: usize) {
+    if s.len() <= max {
+        return;
+    }
+    let mut n = max;
+    while !s.is_char_boundary(n) {
+        n -= 1;
+    }
+    s.truncate(n);
+}
+
 #[derive(Serialize)]
 struct ReviewData {
     branch: String,
@@ -2009,10 +2023,66 @@ fn git_review(repo_path: String) -> Result<ReviewData, String> {
     let diffstat = git(&repo_path, &["diff", "--stat", "main"]).unwrap_or_default();
     let mut diff = git(&repo_path, &["diff", "main"]).unwrap_or_default();
     if diff.len() > 120_000 {
-        diff.truncate(120_000);
+        truncate_at_char_boundary(&mut diff, 120_000);
         diff.push_str("\n… diff truncated at 120KB …");
     }
     Ok(ReviewData { branch, log, diffstat, diff })
+}
+
+#[cfg(test)]
+mod truncate_boundary_tests {
+    use super::truncate_at_char_boundary;
+
+    #[test]
+    fn multibyte_char_straddling_limit_does_not_panic() {
+        // "aé" = [0x61, 0xC3, 0xA9]; cutting at byte 2 lands inside 'é'.
+        // String::truncate(2) would panic here on the old code.
+        let mut s = String::from("aé");
+        truncate_at_char_boundary(&mut s, 2);
+        assert_eq!(s, "a");
+
+        // U+FFFD replacement char (3 bytes), as produced by from_utf8_lossy
+        // on binary hunks; cut lands mid-char.
+        let mut s = String::from("ab\u{FFFD}cd");
+        truncate_at_char_boundary(&mut s, 4);
+        assert_eq!(s, "ab");
+
+        // Box-drawing char (3 bytes) straddling the limit.
+        let mut s = String::from("─────");
+        truncate_at_char_boundary(&mut s, 7);
+        assert_eq!(s, "──");
+    }
+
+    #[test]
+    fn ascii_passthrough_truncates_exactly() {
+        let mut s = String::from("hello world");
+        truncate_at_char_boundary(&mut s, 5);
+        assert_eq!(s, "hello");
+    }
+
+    #[test]
+    fn cut_exactly_on_char_boundary_keeps_whole_chars() {
+        // "aé" is 3 bytes; max 3 is exactly on a boundary — keep everything.
+        let mut s = String::from("aé");
+        truncate_at_char_boundary(&mut s, 3);
+        assert_eq!(s, "aé");
+
+        // max 1 is also a boundary (after 'a').
+        let mut s = String::from("aé");
+        truncate_at_char_boundary(&mut s, 1);
+        assert_eq!(s, "a");
+    }
+
+    #[test]
+    fn max_greater_than_len_is_noop() {
+        let mut s = String::from("héllo");
+        truncate_at_char_boundary(&mut s, 1_000);
+        assert_eq!(s, "héllo");
+
+        let mut empty = String::new();
+        truncate_at_char_boundary(&mut empty, 10);
+        assert_eq!(empty, "");
+    }
 }
 
 
