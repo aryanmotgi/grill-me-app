@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Icon } from "./Icon";
 import { attentionCount, useApp } from "../store";
 import { themes } from "../theme/themes";
+import { isTauri } from "../data/sources/git";
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
 async function openBrowserPanel(label: string, url: string) {
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
@@ -17,9 +20,13 @@ async function openBrowserPanel(label: string, url: string) {
 function OverflowMenu() {
   const {
     focusMode, toggleFocus, demoMode, toggleDemo, dense, toggleDense,
-    themeName, setTheme, setAppSetting, setMergePilotOpen,
+    themeName, setTheme, setAppSetting, setMergePilotOpen, toast,
   } = useApp();
   const [open, setOpen] = useState(false);
+  const openPanel = (label: string, url: string) => {
+    if (!isTauri()) { toast("Opening windows needs the native app", "warn"); return; }
+    openBrowserPanel(label, url);
+  };
   const item = "flex items-center gap-2 w-full px-3 py-1.5 text-left text-[11px] text-dim hover:text-ink hover:bg-raised cursor-pointer transition-colors";
   return (
     <div className="relative">
@@ -29,10 +36,10 @@ function OverflowMenu() {
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 z-40 w-52 bg-overlay hairline rounded-md shadow-2xl py-1 rise">
             <div className="panel-label px-3 pt-1.5 pb-0.5">open</div>
-            <button className={item} onClick={() => { openBrowserPanel("github", "https://github.com"); setOpen(false); }}>
+            <button className={item} onClick={() => { openPanel("github", "https://github.com"); setOpen(false); }}>
               GitHub window
             </button>
-            <button className={item} onClick={() => { openBrowserPanel("claude", "https://claude.ai"); setOpen(false); }}>
+            <button className={item} onClick={() => { openPanel("claude", "https://claude.ai"); setOpen(false); }}>
               claude.ai window <span className="text-faint text-[9px]">(shortcut only)</span>
             </button>
             <button className={item} onClick={() => { setMergePilotOpen(true); setOpen(false); }}>
@@ -104,7 +111,7 @@ export function TopBar() {
         ) : null}
         {waiting.length > 0 ? (
           <button className={`cursor-pointer ${blocking ? "text-danger" : "text-warn"} hover:brightness-110`}
-            title={waiting.map((m) => `${m.from} → ${m.to}: ${m.text.slice(0, 50)}`).join("\n")}
+            title={waiting.map((m) => `${m.from} → ${m.to}: ${clip(m.text, 50)}`).join("\n")}
             onClick={() => setRailTab("inbox")}>
             {blocking ? `${blocking} blocked · ` : ""}{waiting.length} unanswered
           </button>

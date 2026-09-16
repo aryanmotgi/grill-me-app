@@ -42,10 +42,16 @@ export function GlobalSearch() {
                 {mate.name} · {hits.length} hit{hits.length > 1 ? "s" : ""}
               </button>
               {hits.slice(0, 3).map((l, i) => (
-                <div key={i} className="text-[11px] text-dim truncate mt-0.5 font-mono">
+                <div key={i} title={l.text} className="text-[11px] text-dim truncate mt-0.5 font-mono">
                   {l.text}
                 </div>
               ))}
+              {hits.length > 3 ? (
+                <button className="text-faint text-[10px] mt-0.5 cursor-pointer hover:text-accent"
+                  onClick={() => setActive(mate.id)}>
+                  +{hits.length - 3} more — open session
+                </button>
+              ) : null}
             </div>
           ))}
         </div>

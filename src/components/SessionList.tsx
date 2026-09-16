@@ -193,7 +193,9 @@ function Spawner() {
       <input className="bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"
         placeholder="branch (e.g. feature/inbox)" value={branch} onChange={(e) => setBranch(e.target.value)} />
       <div className="flex gap-1.5">
-        <button className="btn primary" onClick={() => { if (id && branch) { spawnSession(id, id, branch); setOpen(false); } }}>
+        <button className="btn primary" disabled={!id.trim() || !branch.trim()}
+          title={!id.trim() || !branch.trim() ? "Enter a member id and branch first" : "Create the worktree and spawn a session"}
+          onClick={() => { spawnSession(id, id, branch); setOpen(false); }}>
           create worktree + spawn
         </button>
         <button className="btn" onClick={() => setOpen(false)}>cancel</button>

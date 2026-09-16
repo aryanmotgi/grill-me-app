@@ -400,6 +400,7 @@ export function SettingsModal() {
               ))}
               <div className="mt-3">
                 <button className="btn" onClick={async () => {
+                  if (!isTauri()) { toast("Notifications need the native app", "warn"); return; }
                   const notif = await import("@tauri-apps/plugin-notification");
                   notif.sendNotification({ title: "Grill Me test", body: "Notifications are working." });
                 }}>send test notification</button>
