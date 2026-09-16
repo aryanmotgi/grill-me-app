@@ -1,6 +1,6 @@
 ---
 name: judge-qa
-description: Prepares hackathon judge Q&A for Grill Me — generates the questions judges are most likely to ask (why Tauri, real ptys vs log tailing, safety under skip-permissions, versus cmux/Conductor) with strong answers grounded in this repo's actual implementation, cited by file and line. Use when the user says "judge prep", "judge Q&A", "grill me for the demo", "what will judges ask", or is about to present.
+description: Prepares hackathon judge Q&A for Grill Me — generates the questions judges are most likely to ask (why Tauri, real ptys vs log tailing, safety under --dangerously-skip-permissions, versus cmux/Conductor) with answers grounded in this repo's actual implementation, cited by file and line. Use when the user says "judge prep", "judge Q&A", "grill me for the demo", "what will judges ask", "drill me", or is about to present to judges.
 ---
 
 # Judge Q&A Prep
@@ -12,9 +12,9 @@ cited as `file:line`. Honest limitations beat bluffing — judges probe weak spo
 ## 1. Verify claims before writing answers
 
 Read (at minimum) before generating: `src-tauri/src/lib.rs` (pty spawn, hooks,
-blocklist, HTTP API), `src/data/sources/feeds.ts` (status derivation, self-healing),
-`DESIGN.md`, `README.md`. If an answer below no longer matches the code, fix the
-answer, not the code.
+blocklist, HTTP API — a single ~1900-line file), `src/data/sources/feeds.ts`
+(status derivation, self-healing), `DESIGN.md`, `README.md`. If an answer below
+no longer matches the code, fix the answer, not the code.
 
 ## 2. Question bank — cover every category, then add 2-3 fresh ones per category
 
@@ -33,7 +33,7 @@ answer, not the code.
   alone: OSC 9/99/777 notifications and BEL parsed in the stateful ANSI stripper
   (`append_stripped`), quiet-time thresholds, and exact Claude Code hook events
   (`Notification`/`Stop`/`UserPromptSubmit` → events.jsonl) reconciled in
-  `feeds.ts startPtyFeed`. Hooks win when fresh; OSC beats guessing.
+  `feeds.ts startPtyFeed`. Hooks win when fresh (30 min); OSC beats guessing.
 - **"What breaks under load / long sessions?"** — Prepared answer: idle Claude TUIs
   repaint constantly, so the app SIGSTOPs quiet sessions (`pty_pause`, auto-pause in
   feeds.ts) and resumes on view/keystroke; usage parsing reads transcripts
@@ -53,9 +53,14 @@ answer, not the code.
   the blocklist is a seatbelt plus audit trail, not a sandbox. Roadmap answer:
   protect settings.json via the blocklist itself and verify hook integrity on poll.
 - **"The localhost API — who can call it?"** — Loopback-only on :4517, bearer token
-  at `~/.grillme/api-token`, so any caller must already have local file access.
-  Know the weak spot: the token is generated with a time-seeded LCG, not a CSPRNG —
-  acceptable for same-user localhost, and say so if pressed.
+  at `~/.grillme/api-token`: 32 bytes from the OS CSPRNG (/dev/urandom), hex-encoded,
+  file mode 0600 inside a 0700 `~/.grillme` (`generate_token`/`api_token`). Any
+  caller must already be the same local user.
+- **"Did you harden the obvious injection paths?"** — Yes, and name them: project
+  ids are validated against path traversal before becoming directories
+  (`valid_project_id` — rejects `.`/`..`, allowlists filename chars), and remote
+  spawns pass argv directly with validated ssh hosts / tmux session names plus a
+  `--` separator, so no shell interpolation (`validate_ssh_host` in `pty_ensure_inner`).
 
 ### Business / competition
 
@@ -73,7 +78,7 @@ answer, not the code.
   is attaching to local processes, worktrees, and ptys — a web app can't.
 - **"What did you NOT build?"** — Show judgment: no invented plan-limit %s
   (unknowable locally), no CRDT sync (files + atomic rename suffice at team scale),
-  no auth service (loopback + token).
+  no auth service (loopback + CSPRNG token).
 
 ### Demo resilience
 
@@ -85,6 +90,6 @@ answer, not the code.
 
 Produce a briefing the presenter can skim in 5 minutes: for each question, a
 **one-line answer**, a 2-3 sentence expansion, and the `file:line` evidence. End
-with a "weak spots — concede gracefully" list (hook editability, token RNG,
-single-machine trust model). If the user asks, switch to drill mode: ask them the
-questions one at a time and grade their answers against the briefing.
+with a "weak spots — concede gracefully" list (hook editability, single-machine
+trust model, polling not push). If the user asks, switch to drill mode: ask them
+the questions one at a time and grade their answers against the briefing.
