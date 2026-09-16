@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
 import { ptyIdFor, useApp } from "../store";
+import { deliverBriefWhenReady } from "../lib/ptyReady";
 import { isTauri } from "../data/sources/git";
 import type { Task } from "../types";
 
@@ -69,13 +70,20 @@ export function FanOut() {
         await invoke("team_config_write", { cfg: { teammates: nextMembers } });
         applyTeamConfig(nextMembers);
         await invoke("pty_ensure", { id: ptyIdFor(sid), cwd: path, shell: false, remote: null, tmux: null });
-        // brief for the agent, sent straight into its session
-        setTimeout(() => {
-          invoke("pty_write", {
-            id: ptyIdFor(sid),
-            data: `Work on this task: ${items[i].title}. When done, tell the user and stop.\n`,
-          }).catch(() => {});
-        }, 6000);
+        // brief for the agent — delivered once the session is actually at an
+        // idle claude prompt (poll every 1s, up to 30s), not on a blind timer
+        const title = items[i].title;
+        deliverBriefWhenReady(
+          ptyIdFor(sid),
+          `Work on this task: ${title}. When done, tell the user and stop.\n`,
+        ).then((delivered) => {
+          if (!delivered) {
+            useApp.getState().toast(
+              `Brief NOT delivered to ${sid} — session never became ready. Paste "${title}" into its pane manually.`,
+              "warn",
+            );
+          }
+        });
         spawned++;
       } catch (e) {
         toast(`Spawn failed for "${items[i].title}": ${e}`, "warn");
