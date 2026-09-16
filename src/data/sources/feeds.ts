@@ -408,12 +408,14 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
   const seed = async () => {
     const st = store.getState();
     if (st.members.length === 0) return; // config not loaded yet
-    if ((await read("tasks.json")) === null) await write("tasks.json", st.tasks);
+    // a fresh project starts EMPTY — the fake.ts fixtures are a browser-dev
+    // seam only and must never be written into a real project's shared state
+    if ((await read("tasks.json")) === null) await write("tasks.json", []);
     if ((await read("messages.json")) === null) await write("messages.json", []);
     if ((await read("team.json")) === null) {
       await write("team.json", {
         mergeQueue: st.members.map((m) => m.id),
-        sponsor: st.sponsorChecklist,
+        sponsor: [],
       });
     }
     // the existence probes above populated rawCache, which would make the
