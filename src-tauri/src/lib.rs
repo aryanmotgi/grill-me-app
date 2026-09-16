@@ -2079,6 +2079,85 @@ fn git_state_cached(repo_path: String) -> String {
         .unwrap_or_default()
 }
 
+// ---------------------------------------------------------------------------
+// Conflict radar: pre-merge overlap detection between members' branches.
+// Name-level only — intersects `git diff --name-only main...HEAD` file lists
+// pairwise across worktrees. Never runs merges. Cached 30s (subprocess-cheap,
+// same spirit as GIT_CACHE).
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct ConflictPair {
+    pub a: String,
+    pub b: String,
+    pub files: Vec<String>,
+}
+
+/// Pure pairwise intersection over (member name, branch, changed files).
+/// Same-branch pairs are skipped — identical branches merge trivially.
+fn overlap_pairs(members: &[(String, String, Vec<String>)]) -> Vec<ConflictPair> {
+    let mut out = Vec::new();
+    for i in 0..members.len() {
+        for j in (i + 1)..members.len() {
+            let (name_a, branch_a, files_a) = &members[i];
+            let (name_b, branch_b, files_b) = &members[j];
+            if branch_a == branch_b {
+                continue;
+            }
+            let set_b: std::collections::HashSet<&str> =
+                files_b.iter().map(String::as_str).collect();
+            let mut files: Vec<String> = files_a
+                .iter()
+                .filter(|f| set_b.contains(f.as_str()))
+                .cloned()
+                .collect();
+            if !files.is_empty() {
+                files.sort();
+                files.dedup();
+                out.push(ConflictPair {
+                    a: name_a.clone(),
+                    b: name_b.clone(),
+                    files,
+                });
+            }
+        }
+    }
+    out
+}
+
+static CONFLICT_CACHE: OnceLock<Mutex<Option<(Instant, Vec<ConflictPair>)>>> = OnceLock::new();
+
+#[tauri::command]
+fn git_conflict_radar() -> Vec<ConflictPair> {
+    let cache = CONFLICT_CACHE.get_or_init(|| Mutex::new(None));
+    if let Some((at, pairs)) = lock_or_recover(cache).as_ref() {
+        if at.elapsed() < std::time::Duration::from_secs(30) {
+            return pairs.clone();
+        }
+    }
+    let members: Vec<(String, String, Vec<String>)> = team_config()
+        .teammates
+        .iter()
+        .filter_map(|m| {
+            let branch = git(&m.repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])
+                .ok()?
+                .trim()
+                .to_string();
+            let files: Vec<String> = git(&m.repo_path, &["diff", "--name-only", "main...HEAD"])
+                .ok()?
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect();
+            Some((m.name.clone(), branch, files))
+        })
+        .collect();
+    let pairs = overlap_pairs(&members);
+    *lock_or_recover(cache) = Some((Instant::now(), pairs.clone()));
+    pairs
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2133,7 +2212,8 @@ pub fn run() {
             events_tail,
             worktree_add,
             git_diff_file,
-            pr_draft
+            pr_draft,
+            git_conflict_radar
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2141,7 +2221,43 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_strong_token, sh_quote, validate_member_id};
+    use super::{is_strong_token, overlap_pairs, sh_quote, validate_member_id};
+
+    fn m(name: &str, branch: &str, files: &[&str]) -> (String, String, Vec<String>) {
+        (name.into(), branch.into(), files.iter().map(|s| s.to_string()).collect())
+    }
+
+    #[test]
+    fn overlap_pairs_finds_shared_files() {
+        let pairs = overlap_pairs(&[
+            m("Mei", "feat/a", &["src/app.ts", "src/store.ts", "README.md"]),
+            m("Sam", "feat/b", &["src/store.ts", "README.md", "other.rs"]),
+            m("Ana", "feat/c", &["docs/x.md"]),
+        ]);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].a, "Mei");
+        assert_eq!(pairs[0].b, "Sam");
+        assert_eq!(pairs[0].files, vec!["README.md", "src/store.ts"]);
+    }
+
+    #[test]
+    fn overlap_pairs_empty_when_disjoint() {
+        let pairs = overlap_pairs(&[
+            m("Mei", "feat/a", &["a.ts"]),
+            m("Sam", "feat/b", &["b.ts"]),
+        ]);
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn overlap_pairs_skips_same_branch() {
+        // two worktrees on the same branch share every file — not a conflict
+        let pairs = overlap_pairs(&[
+            m("Mei", "feat/a", &["a.ts"]),
+            m("Sam", "feat/a", &["a.ts"]),
+        ]);
+        assert!(pairs.is_empty());
+    }
 
     #[test]
     fn member_id_accepts_safe_chars() {

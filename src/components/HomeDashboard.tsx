@@ -19,7 +19,7 @@ export function HomeDashboard() {
   const {
     teammates, messages, tasks, mergeQueue, members, activity, standupLines,
     setActive, setRailTab, setView, shipSession, setMergePilotOpen, resources,
-    respondProposal, toast,
+    respondProposal, toast, conflicts,
   } = useApp();
   const [audit, setAudit] = useState<{ blocked: number; total: number }>({ blocked: 0, total: 0 });
 
@@ -137,6 +137,20 @@ export function HomeDashboard() {
               );
             })}
           </div>
+          {conflicts.length > 0 ? (
+            <div className="flex flex-col items-start gap-1 mt-2">
+              {conflicts.map((c) => (
+                <button
+                  key={`${c.a}∧${c.b}`}
+                  className="tag warn cursor-pointer hover:brightness-110 transition-all"
+                  title={c.files.join("\n")}
+                  onClick={() => toast(`${c.a} ∧ ${c.b} both touch: ${c.files.join(", ")}`, "warn")}
+                >
+                  overlap: {c.a} ∧ {c.b} — {c.files.length} file{c.files.length === 1 ? "" : "s"}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         {/* TODAY */}
