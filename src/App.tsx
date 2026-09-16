@@ -82,12 +82,15 @@ export default function App() {
       if (e.key === "Escape") {
         // close exactly one overlay, topmost first
         const s = useApp.getState();
-        if (s.switcherOpen) setSwitcherOpen(false);
+        if (s.pickerOpen && s.activeProject) {
+          // picker renders z-50 above everything; Esc inside its inputs is a no-op
+          if ((e.target as HTMLElement)?.tagName !== "INPUT") setPickerOpen(false);
+        }
+        else if (s.switcherOpen) setSwitcherOpen(false);
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
         else if (s.reviewFor) s.setReviewFor(null);
         else if (s.mergePilotOpen) setMergePilotOpen(false);
-        else if (s.pickerOpen && s.activeProject) setPickerOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);

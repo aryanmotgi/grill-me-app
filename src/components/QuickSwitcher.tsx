@@ -79,7 +79,11 @@ export function QuickSwitcher() {
           value={query}
           onChange={(e) => { setQuery(e.target.value); setCursor(0); }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") setSwitcherOpen(false);
+            if (e.key === "Escape") {
+              // stop here so App's window handler doesn't also close the next overlay
+              e.stopPropagation();
+              setSwitcherOpen(false);
+            }
             if (e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, total - 1));
             if (e.key === "ArrowUp") setCursor((c) => Math.max(c - 1, 0));
             if (e.key === "Enter") {
