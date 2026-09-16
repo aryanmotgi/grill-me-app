@@ -338,14 +338,8 @@ struct PtySession {
     master: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     ring: VecDeque<u8>,
-    lines: VecDeque<String>,
-    partial: String,
-    esc: u8, // 0 none, 1 saw ESC, 2 in CSI, 3 in OSC
-    osc_buf: String,
-    /// exact needs-input signal: OSC 9 / 99 / 777 notification received
-    osc_notify: bool,
+    strip: LineStripper,
     last_output: Instant,
-    bell: bool,
     alive: bool,
     recording: Option<std::fs::File>,
     recording_path: Option<String>,
@@ -374,58 +368,105 @@ fn ptys() -> &'static Mutex<HashMap<String, PtySession>> {
 }
 
 /// Stateful ANSI stripper feeding the plain-text line tail (search, status).
-fn append_stripped(s: &mut PtySession, chunk: &[u8]) {
-    for &b in chunk {
-        match s.esc {
-            1 => {
-                s.esc = match b {
-                    b'[' => 2,
-                    b']' => 3,
-                    _ => 0,
-                };
-            }
-            2 => {
-                if (0x40..=0x7e).contains(&b) {
-                    s.esc = 0;
+/// Pure (no pty handles) so it is unit-testable. Also owns the two attention
+/// signals derived from the byte stream: `bell` (BEL outside any escape
+/// sequence — BEL as an OSC terminator does NOT count) and `osc_notify`
+/// (OSC 9 / 99 / 777 notification, terminated by BEL or ST).
+#[derive(Default)]
+struct LineStripper {
+    esc: u8, // 0 none, 1 saw ESC, 2 in CSI, 3 in OSC, 4 in OSC saw ESC (ST pending)
+    osc_buf: String,
+    /// raw bytes of the current line — decoded lossily at line commit so
+    /// multi-byte UTF-8 survives byte-wise parsing
+    partial: Vec<u8>,
+    lines: VecDeque<String>,
+    /// exact needs-input signal: OSC 9 / 99 / 777 notification received
+    osc_notify: bool,
+    /// attention bell: BEL received outside any escape sequence
+    bell: bool,
+}
+
+impl LineStripper {
+    fn feed(&mut self, chunk: &[u8]) {
+        for &b in chunk {
+            match self.esc {
+                1 => {
+                    self.esc = match b {
+                        b'[' => 2,
+                        b']' => 3,
+                        _ => 0,
+                    };
                 }
-            }
-            3 => {
-                if b == 0x07 {
-                    // OSC terminator: check for standard notification codes
-                    if s.osc_buf.starts_with("9;")
-                        || s.osc_buf.starts_with("99;")
-                        || s.osc_buf.starts_with("99:")
-                        || s.osc_buf.starts_with("777;notify")
-                    {
-                        s.osc_notify = true;
+                2 => {
+                    if (0x40..=0x7e).contains(&b) {
+                        self.esc = 0;
                     }
-                    s.osc_buf.clear();
-                    s.esc = 0;
-                } else if s.osc_buf.len() < 512 {
-                    s.osc_buf.push(b as char);
                 }
-            }
-            _ => match b {
-                0x1b => s.esc = 1,
-                b'\n' => {
-                    let line = s.partial.trim_end().to_string();
-                    if !line.trim().is_empty() {
-                        s.lines.push_back(line);
-                        while s.lines.len() > 300 {
-                            s.lines.pop_front();
+                3 => {
+                    if b == 0x07 {
+                        // BEL here terminates the OSC — not an attention bell
+                        self.finish_osc();
+                    } else if b == 0x1b {
+                        // possible ST terminator (ESC \)
+                        self.esc = 4;
+                    } else if self.osc_buf.len() < 512 {
+                        self.osc_buf.push(b as char);
+                    }
+                }
+                4 => {
+                    if b == b'\\' {
+                        // ST terminator completed
+                        self.finish_osc();
+                    } else {
+                        // ESC without '\' aborts the OSC and starts a fresh
+                        // escape sequence
+                        self.osc_buf.clear();
+                        self.esc = match b {
+                            0x1b => 1,
+                            b'[' => 2,
+                            b']' => 3,
+                            _ => 0,
+                        };
+                    }
+                }
+                _ => match b {
+                    0x1b => self.esc = 1,
+                    0x07 => self.bell = true,
+                    b'\n' => {
+                        let line =
+                            String::from_utf8_lossy(&self.partial).trim_end().to_string();
+                        if !line.trim().is_empty() {
+                            self.lines.push_back(line);
+                            while self.lines.len() > 300 {
+                                self.lines.pop_front();
+                            }
+                        }
+                        self.partial.clear();
+                    }
+                    b'\r' => self.partial.clear(),
+                    0x00..=0x1f => {}
+                    _ => {
+                        if self.partial.len() < 4000 {
+                            self.partial.push(b);
                         }
                     }
-                    s.partial.clear();
-                }
-                b'\r' => s.partial.clear(),
-                0x00..=0x1f => {}
-                _ => {
-                    if s.partial.len() < 4000 {
-                        s.partial.push(b as char);
-                    }
-                }
-            },
+                },
+            }
         }
+    }
+
+    /// OSC sequence terminated (BEL or ST): check for standard notification
+    /// codes, then reset.
+    fn finish_osc(&mut self) {
+        if self.osc_buf.starts_with("9;")
+            || self.osc_buf.starts_with("99;")
+            || self.osc_buf.starts_with("99:")
+            || self.osc_buf.starts_with("777;notify")
+        {
+            self.osc_notify = true;
+        }
+        self.osc_buf.clear();
+        self.esc = 0;
     }
 }
 
@@ -546,13 +587,8 @@ fn pty_ensure_inner(
             master: pair.master,
             child,
             ring: VecDeque::new(),
-            lines: VecDeque::new(),
-            partial: String::new(),
-            esc: 0,
-            osc_buf: String::new(),
-            osc_notify: false,
+            strip: LineStripper::default(),
             last_output: Instant::now(),
-            bell: false,
             alive: true,
             recording: None,
             recording_path: None,
@@ -596,11 +632,11 @@ fn pty_ensure_inner(
                             while s.ring.len() > 400_000 {
                                 s.ring.pop_front();
                             }
-                            if chunk.contains(&0x07) {
-                                s.bell = true;
-                            }
                             s.last_output = Instant::now();
-                            append_stripped(s, chunk);
+                            // bell/notify detection lives in the stateful
+                            // stripper: a BEL that terminates an OSC title
+                            // sequence is not an attention bell.
+                            s.strip.feed(chunk);
                             if let Some(f) = s.recording.as_mut() {
                                 let _ = f.write_all(chunk);
                             }
@@ -628,8 +664,8 @@ fn pty_write(id: String, data: String) -> Result<(), String> {
         }
         s.paused = false;
     }
-    s.bell = false;
-    s.osc_notify = false;
+    s.strip.bell = false;
+    s.strip.osc_notify = false;
     s.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())
 }
 
@@ -685,8 +721,8 @@ fn pty_status() -> Vec<PtyStatus> {
                 id: id.clone(),
                 alive: s.alive,
                 quiet_ms: s.last_output.elapsed().as_millis(),
-                bell: s.bell,
-                osc_notify: s.osc_notify,
+                bell: s.strip.bell,
+                osc_notify: s.strip.osc_notify,
                 tail: {
                     // TUIs repaint without newlines — read the live screen,
                     // not the (often empty) newline-committed history
@@ -1275,7 +1311,7 @@ fn project_card_stats(id: String, path: String) -> ProjectCardStats {
         };
         if matches && sess.alive {
             st.sessions_alive += 1;
-            if sess.bell {
+            if sess.strip.bell {
                 st.needs_input = true;
             }
         }
@@ -1866,7 +1902,9 @@ fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
         match esc {
             1 => esc = match b { b'[' => 2, b']' => 3, _ => 0 },
             2 => { if (0x40..=0x7e).contains(&b) { esc = 0; } }
-            3 => { if b == 0x07 { esc = 0; } }
+            // OSC ends with BEL or ST (ESC \); state 4 = in OSC, saw ESC
+            3 => { if b == 0x07 { esc = 0; } else if b == 0x1b { esc = 4; } }
+            4 => esc = match b { b'\\' => 0, 0x1b => 1, b'[' => 2, b']' => 3, _ => 0 },
             _ => match b {
                 0x1b => esc = 1,
                 b'\n' | b'\r' => flush(&mut cur, &mut out),
@@ -2140,6 +2178,74 @@ mod pure_fn_tests {
             strip_ansi_stateless(b"first\rsecond"),
             vec!["first".to_string(), "second".to_string()]
         );
+    }
+
+    #[test]
+    fn strip_ansi_removes_st_terminated_osc() {
+        // OSC 0 (set title) terminated by ST (ESC \) must vanish entirely
+        assert_eq!(
+            strip_ansi_stateless(b"\x1b]0;window title\x1b\\visible"),
+            vec!["visible".to_string()]
+        );
+    }
+
+    // -- LineStripper (stateful pty line history + bell/notify signals) ------
+
+    #[test]
+    fn stripper_bel_terminating_osc_is_not_a_bell() {
+        // ESC ] 0 ; title BEL — the BEL ends the title sequence; it must not
+        // register as a needs-input attention bell
+        let mut s = LineStripper::default();
+        s.feed(b"\x1b]0;window title\x07prompt\n");
+        assert!(!s.bell);
+        assert_eq!(s.lines.back().unwrap(), "prompt");
+    }
+
+    #[test]
+    fn stripper_bare_bel_sets_bell() {
+        let mut s = LineStripper::default();
+        s.feed(b"needs input\x07\n");
+        assert!(s.bell);
+        assert_eq!(s.lines.back().unwrap(), "needs input");
+    }
+
+    #[test]
+    fn stripper_st_terminated_osc_does_not_swallow_output() {
+        // OSC ended by ST (ESC \) — text after it must survive
+        let mut s = LineStripper::default();
+        s.feed(b"\x1b]0;title\x1b\\visible text\n");
+        assert!(!s.bell);
+        assert_eq!(s.lines.back().unwrap(), "visible text");
+    }
+
+    #[test]
+    fn stripper_osc_notify_detected_with_either_terminator() {
+        let mut s = LineStripper::default();
+        s.feed(b"\x1b]9;done\x07");
+        assert!(s.osc_notify);
+
+        let mut s = LineStripper::default();
+        s.feed(b"\x1b]777;notify;title;body\x1b\\");
+        assert!(s.osc_notify);
+    }
+
+    #[test]
+    fn stripper_preserves_multibyte_utf8_in_history() {
+        // é (2 bytes), ✓ (3 bytes), 日本 (3 bytes each) must not be mangled
+        let mut s = LineStripper::default();
+        s.feed("caf\u{e9} \u{2713} \u{65e5}\u{672c}\n".as_bytes());
+        assert_eq!(s.lines.back().unwrap(), "caf\u{e9} \u{2713} \u{65e5}\u{672c}");
+    }
+
+    #[test]
+    fn stripper_state_persists_across_chunks() {
+        // OSC split across reads, ST terminator split across reads
+        let mut s = LineStripper::default();
+        s.feed(b"\x1b]0;spl");
+        s.feed(b"it\x1b");
+        s.feed(b"\\after\n");
+        assert!(!s.bell);
+        assert_eq!(s.lines.back().unwrap(), "after");
     }
 
     // -- valid_project_id ----------------------------------------------------
