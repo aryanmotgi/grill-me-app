@@ -101,19 +101,22 @@ shared guardrails, shared visibility. That is a different product, not a feature
   only mechanism that can stop a command when permissions are skipped, plus a
   per-tool-call audit log.
 - **Agents orchestrating agents.** A token-protected localhost HTTP API and a
-  `grillme` CLI (`sessions` / `send` / `read` / `new`) let any agent spawn,
-  prompt, and read other sessions — the fan-out engine is built on it, on git
-  worktrees created per task.
+  `grillme` CLI (`sessions` / `send` / `type` / `read` / `new`) let any agent
+  spawn, prompt, and read other sessions — the fan-out engine is built on it,
+  on git worktrees created per task.
 - **Hardened against itself.** We red-teamed our own attack surface the night
   before submitting: the API token is 32 bytes from the OS CSPRNG, stored `0600`,
   matched with an exact `Bearer`-scheme parse; remote sessions spawn via argv —
   never an interpolated shell string — with ssh hosts and tmux session names
   validated against a strict charset (a config value can't smuggle
   `-oProxyCommand=...`); project ids are validated as safe path components, so
-  nothing traverses out of `~/.grillme`.
-- **~1,900 lines of dependency-light Rust** — pty management, git plumbing, file
+  nothing traverses out of `~/.grillme`; and the blocklist **fails closed** — a
+  corrupt or unreadable safety config denies commands instead of waving them through.
+- **~2,400 lines of dependency-light Rust** — pty management, git plumbing, file
   watching with TTL'd locks, transcript token accounting with a hand-written
-  ISO8601 parser, and the HTTP server, in one auditable file (41 `#[tauri::command]`s).
+  ISO8601 parser, and the HTTP server, in one auditable file (41 `#[tauri::command]`s) —
+  with **35 unit tests** over the pure core: blocklist regexes, the ANSI/OSC
+  stripper, and every injection/traversal validator.
 - **A disciplined design system** ("Refined Ember"): one theme object drives every
   color via CSS variables; swap the object and the entire app — terminals
   included — reskins. And every feature in the catalog feeds the ⌘K palette, so
@@ -121,7 +124,8 @@ shared guardrails, shared visibility. That is a different product, not a feature
 
 ## The ask
 
-We built Grill Me in the open across 29 PRs and we use it to build itself.
+We built Grill Me in the open across 44 PRs — 23 of them landed in one
+overnight hardening-and-polish push — and we use it to build itself.
 
 - **Judges:** score us on the live demo — four real agents, a real blocked
   command, a real diff shipped to main, in three minutes.

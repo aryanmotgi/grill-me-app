@@ -22,7 +22,7 @@ that spawns agents, and a localhost API so agents can drive the hub themselves.
   - [ ] Fan-out: checklist pasted → parallel sessions spawning
   - [ ] Conflict banner + file locks in the session list
   - [ ] Embedded terminal with scrollback slider
-  - [ ] Review & ship modal (diff → commit → PR draft)
+  - [ ] Review & ship modal (commits ahead → diff → approve & ship)
   - [ ] Inbox with a BLOCKING message + OS notification
 - [ ] **Team listed** on Devpost — all four members added as collaborators
 - [ ] **Built-with tags** — tauri, rust, react, typescript, claude, anthropic, xterm, zustand, tailwindcss
@@ -70,8 +70,13 @@ else's terminal.
 - **Inbox that respects flow** — messages are typed (`question` / `fyi` /
   `blocking` / `proposal`); FYIs batch into a digest, blocking messages
   interrupt with a distinct WebAudio tone + OS notification.
-- **Review & ship** — ⌘S opens branch log + diffstat + diff, commits and
-  pushes, and drafts a PR body by piping the diff through `claude -p`.
+- **Review & ship** — ⌘S opens the pre-merge review: commits ahead of main,
+  diffstat, full diff. Approve types `/ship` into that agent's own terminal
+  (after reading its screen — a dead or mid-generation session warns instead
+  of typing blind) and advances the merge queue; request changes opens a
+  blocking inbox thread to the owner. The session's changes tab handles
+  direct commit+push and drafts PR bodies by piping the diff through
+  `claude -p`.
 - **Safety rails** — a PreToolUse hook enforces a regex blocklist
   (`rm -rf /`, force-push to main, `DROP TABLE`, …) with exit code 2, which
   denies the tool call *even under `--dangerously-skip-permissions`*; every
@@ -90,8 +95,8 @@ else's terminal.
 ### How we built it
 
 - **Tauri 2** native shell: React 19 frontend in the OS webview, all real work
-  in a single-file Rust backend (`src-tauri/src/lib.rs`, ~1,900 lines, 41
-  `#[tauri::command]`s).
+  in a single-file Rust backend (`src-tauri/src/lib.rs`, ~2,400 lines, 41
+  `#[tauri::command]`s, 35 unit tests over the pure core).
 - **Rust pty layer**: `portable-pty` spawns `zsh -lc 'exec claude
   --dangerously-skip-permissions'` per worktree (or `ssh -t` / `tmux new -A`
   for remote members). Each session keeps a 400 KB byte ring, a stripped
@@ -166,19 +171,24 @@ a time-seeded generator and a sloppy header check, the ssh spawn path
 interpolated config values into a shell string, and project ids became path
 components unvalidated. All three are fixed (CSPRNG + `0600` + exact Bearer
 parse; argv-only spawn with validated hosts; traversal-proof ids) — each one
-a small PR the same night we found it.
+a small PR the same night we found it. The same pass made the blocklist fail
+closed (a corrupt safety config denies instead of allowing) and left behind
+35 unit tests pinning the blocklist regexes, the ANSI/OSC stripper, and every
+validator.
 
 ### Accomplishments we're proud of
 
 - Real terminals, real git, real hooks — the demo has no smoke: every status
   dot traces back to a process signal.
 - The safety blocklist denies destructive commands even in
-  skip-permissions mode, with an audit trail per teammate.
+  skip-permissions mode, fails closed on bad config, and leaves an audit
+  trail per teammate — all pinned by unit tests.
 - We hardened the app against the same class of agent accidents it exists to
   prevent: CSPRNG-tokened API, injection-proof remote spawning,
   traversal-proof project storage.
 - The app dogfoods itself: we coordinated building Grill Me *in* Grill Me —
-  its own merge queue, tasks, and inbox (29 PRs, feature branch each).
+  its own merge queue, tasks, and inbox (44 PRs, feature branch each, 23 of
+  them in one overnight hardening-and-polish push).
 - An agent-orchestration API in ~180 lines of dependency-free Rust HTTP.
 
 ### What we learned
@@ -208,5 +218,5 @@ a small PR the same night we found it.
 | Problem | 0:00–0:20 | Four terminals, chaos framing |
 | Fan-out wow | 0:20–1:00 | Paste checklist → worktrees + live sessions spawn |
 | Coordination | 1:00–1:40 | File locks, conflict banner, blocking message + tone |
-| It's real | 1:40–2:20 | Terminal typing, ⌘S review & ship, PR draft |
+| It's real | 1:40–2:20 | Terminal typing, ⌘S review → approve & ship (`/ship` runs in-session, merge queue advances) |
 | Closer | 2:20–3:00 | `grillme` CLI driving a session from outside; standup |

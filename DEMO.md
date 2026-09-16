@@ -12,7 +12,8 @@ The story arc: **chaos → visibility → safety → scale → ship.**
 
 - **Driver** runs the app and mouse. **Narrator** speaks. (Can be one person; two is smoother.)
 - Grill Me open full-screen in the **session view**, 4 live claude-code sessions in the
-  left rail: `aryan`, `maya`, `dev`, `sam` (or your real 4 names from `~/.grillme/config.json`).
+  left rail: `Aryan`, `Shreyash`, `Nandan`, `Rithik` — the four teammate ids in
+  `~/.grillme/config.json` (session ids match; the demo-drive skill drives them by name).
 - Second display or phone timer visible to the driver only.
 
 ---
@@ -34,24 +35,27 @@ merge-turn indicator, and activity timeline visible in one glance.
 
 ### 0:20 – 0:50 — Needs-input alert: nobody blocks silently
 
-**On screen:** `maya`'s dot flips to pulsing amber, the attention badge in the top bar
-increments, and a distinct alert tone plays. Driver clicks the badge — jump straight
-into her terminal, where Claude is asking a question.
+**On screen:** `Shreyash`'s dot flips to pulsing amber, the attention badge in the top bar
+increments, and a distinct alert tone plays. Driver clicks the badge — when exactly one
+session needs input, the click deep-links straight into that terminal, where Claude is
+asking a question. (Multiple needy sessions route to the home overview instead — in this
+demo only one fires, so the jump is direct.)
 
-> "Maya's agent just hit a question. We didn't find out by walking over — the app heard it.
+> "Shreyash's agent just hit a question. We didn't find out by walking over — the app heard it.
 > Our Rust backend parses the raw pty stream, catches the OSC 9 terminal notification
 > Claude emits, cross-checks it against Claude Code's own hook events, and fires an alert.
-> Anyone on the team can jump in and unblock her in five seconds."
+> Anyone on the team can jump in and unblock him in five seconds."
 
-**Driver:** type the answer into Maya's pane, press Enter, dot goes green. Back to overview.
+**Driver:** type the answer into Shreyash's pane, press Enter, dot goes green. Back to overview.
 
-**Trigger:** pre-seed Maya's session with a prompt that must ask a clarifying question, e.g.
+**Trigger:** pre-seed Shreyash's session with a prompt that must ask a clarifying question, e.g.
 `Ask me whether we should use REST or GraphQL before writing any code.` Backstop trigger if
-it answers itself: run `printf '\e]9;needs input\a'` in her pane's shell — same OSC path fires.
+it answers itself: run `printf '\e]9;needs input\a'` in his pane's shell — same OSC path fires
+(the parser accepts BEL or ST terminators either way).
 
 ### 0:50 – 1:20 — Safety: the blocklist catches the disaster
 
-**On screen:** Driver switches to the sacrifice session (`dev`) and asks Claude to run the
+**On screen:** Driver switches to the sacrifice session (`Nandan`) and asks Claude to run the
 seeded destructive command (e.g. "run `git push --force origin main`"). The PreToolUse hook
 rejects it: **"BLOCKED by Grill Me safety blocklist"** appears in the terminal and Claude
 turns to ask for explicit confirmation instead of executing.
@@ -72,7 +76,8 @@ with its owner.
 
 > "A native file watcher tracks what every agent is editing across all four repos. The moment
 > two people's agents touch the same file, this banner fires — before the merge conflict
-> exists, not after. File claims live for thirty minutes and survive restarts."
+> exists, not after. File claims live for thirty minutes, held in Rust — a UI reload
+> loses nothing."
 
 ### 1:55 – 2:25 — Fan-out: one checklist becomes a fleet
 
@@ -88,15 +93,16 @@ a real Claude session already typing — and one task sits on the board as "wait
 
 ### 2:25 – 2:50 — Review & ship: nothing hits main unreviewed
 
-**On screen:** Driver clicks **review & ship** on `sam`'s finished session. The pre-merge review
+**On screen:** Driver clicks **review & ship** on `Rithik`'s finished session. The pre-merge review
 modal opens: commits ahead of main, diffstat, full diff. Driver clicks **approve & ship** —
-a toast confirms `/ship` is now running inside Sam's own session. Merge-turn indicator advances
-to the next teammate.
+a toast confirms `/ship` is now running inside Rithik's own session. Merge-turn indicator advances
+to the next teammate. (Approve reads the session's screen first — if the agent is dead or
+mid-generation it warns instead of typing blind, so this beat can't silently no-op.)
 
 > "When an agent says it's done, a human looks at the actual diff — right here. Approve, and
-> Grill Me types `/ship` straight into that agent's terminal: tests, then push. Request changes,
-> and it opens a blocking thread in their inbox instead. The merge queue in the top bar means
-> four people never race for main."
+> Grill Me types `/ship` straight into that agent's terminal: tests, then push — and the merge
+> queue advances. Request changes, and it opens a blocking thread in their inbox instead. The
+> merge queue in the top bar means four people never race for main."
 
 ### 2:50 – 3:00 — Close
 
@@ -126,8 +132,8 @@ anything organic.
 ### 0:10 – 0:35 — Needs-input
 
 Fire the trigger immediately: seeded prompt if it's already pending, otherwise
-`printf '\e]9;x\a'` in Maya's pane — don't wait for a natural one. Amber dot, tone,
-click the badge, type the answer, dot green.
+`printf '\e]9;x\a'` in Shreyash's pane — don't wait for a natural one. Amber dot, tone,
+click the badge (one needy session → it deep-links straight in), type the answer, dot green.
 
 > "An agent asked a question; the app heard it in the byte stream. Anyone on the
 > team can unblock anyone. Nobody sits blocked for twenty minutes."
@@ -160,9 +166,11 @@ full thirty seconds — it is the single most memorable moment.
       (Team tab shows hooks OK — this also refreshes `~/.grillme/bin/grillme-hook` and the blocklist).
 - [ ] All 4 ptys warmed: click into each session so `claude` is past its startup screen
       (never demo the "starting claude…" overlay). Give each a small real task so dots are green.
-- [ ] Maya's session seeded with the question-forcing prompt (see beat 2). Do this LAST so the
-      needs-input fires on cue, not early. If it fires early, mark answered and re-seed.
-- [ ] Sam's session has 2-3 real commits ahead of main so the review diff is non-empty.
+- [ ] Shreyash's session seeded with the question-forcing prompt (see beat 2). Do this LAST so
+      the needs-input fires on cue, not early. If it fires early, mark answered and re-seed.
+- [ ] Rithik's session has 2-3 real commits ahead of main so the review diff is non-empty, and
+      his `claude` prompt is visible (idle, not mid-generation) — approve & ship checks this
+      before typing `/ship` and will warn instead of shipping if the session isn't ready.
 
 **Data (T-15):**
 - [ ] Task board seeded (`tasks.json`): ~5 tasks, mixed statuses, believable titles.
@@ -199,12 +207,13 @@ all work offline. Only the Claude API (agents responding) and CI status need net
 
 | Failure | Line | Action |
 |---|---|---|
-| Needs-input doesn't fire | "Claude's feeling confident today — here's the same signal by hand." | `printf '\e]9;x\a'` backstop in Maya's pane |
+| Needs-input doesn't fire | "Claude's feeling confident today — here's the same signal by hand." | `printf '\e]9;x\a'` backstop in Shreyash's pane |
 | A session pane dies | "Sessions crash — that's why restart is one click." | Click the restart card; move to next beat while it boots |
 | Fan-out spawn errors | "Worktree race — the two that made it are already working." | Point at spawned sessions; skip the failed one |
 | Blocklist doesn't trigger | "It pattern-matched safe — let me show you the list it enforces." | Open Settings → safety, show blocklist JSON |
 | Claude API slow/rate-limited | "Rate limits are real — notice the app *detected* that and flagged the session." | The rate-limit detection IS a feature; sell it |
-| Review diff empty | "Clean tree — Sam already shipped. Here's the audit trail proving it." | Show audit tail / activity timeline |
+| Review diff empty | "Clean tree — Rithik already shipped. Here's the audit trail proving it." | Show audit tail / activity timeline |
+| Approve & ship warns "not ready" | "The app just saved us — it read his screen and refused to type into a busy agent." | Wait for the prompt (or Esc his generation), approve again |
 | App hard-crashes | "Native apps, live demos. While it relaunches — 30 seconds of how it works." | Relaunch (state persists in ~/.grillme); narrate architecture |
 | Running out of time | Switch to the 60-second fallback path from wherever you are | Jump to the blocklist beat; close from there |
 | Total loss | "Murphy wins the demo, not the product — here's this exact flow recorded an hour ago." | Play `demo.mp4`, keep narrating live |

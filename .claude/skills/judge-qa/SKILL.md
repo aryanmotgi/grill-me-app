@@ -12,7 +12,8 @@ cited as `file:line`. Honest limitations beat bluffing — judges probe weak spo
 ## 1. Verify claims before writing answers
 
 Read (at minimum) before generating: `src-tauri/src/lib.rs` (pty spawn, hooks,
-blocklist, HTTP API — a single ~1900-line file), `src/data/sources/feeds.ts`
+blocklist, HTTP API — a single ~2400-line file with 35 unit tests at the
+bottom), `src/data/sources/feeds.ts`
 (status derivation, self-healing), `DESIGN.md`, `README.md`. If an answer below
 no longer matches the code, fix the answer, not the code.
 
@@ -31,9 +32,17 @@ no longer matches the code, fix the answer, not the code.
   (`pty-output/<id>`). Log tailing can't type, resize, or attach remote tmux.
 - **"How do you know a session needs input?"** — Layered signals, not heuristics
   alone: OSC 9/99/777 notifications and BEL parsed in the stateful ANSI stripper
-  (`append_stripped`), quiet-time thresholds, and exact Claude Code hook events
+  (`LineStripper::feed` — it accepts BEL *and* ST terminators, and a BEL that
+  terminates an OSC does not count as an attention bell), quiet-time thresholds,
+  and exact Claude Code hook events
   (`Notification`/`Stop`/`UserPromptSubmit` → events.jsonl) reconciled in
   `feeds.ts startPtyFeed`. Hooks win when fresh (30 min); OSC beats guessing.
+- **"Did you test any of this, or is it all demo-ware?"** — 35 Rust unit tests
+  over the pure core (bottom of `lib.rs`): every blocklist regex variant
+  (split flags, quoted paths, force-push permutations), the ANSI/OSC stripper
+  (ST/BEL terminators, multi-byte UTF-8, cross-chunk state), project-id /
+  ssh-host / tmux-name injection rejection, token format, and log rotation.
+  Run `cargo test --manifest-path src-tauri/Cargo.toml` live if challenged.
 - **"What breaks under load / long sessions?"** — Prepared answer: idle Claude TUIs
   repaint constantly, so the app SIGSTOPs quiet sessions (`pty_pause`, auto-pause in
   feeds.ts) and resumes on view/keystroke; usage parsing reads transcripts
@@ -46,7 +55,9 @@ no longer matches the code, fix the answer, not the code.
   hook (`grillme-hook`, installed by `install_hooks`) regex-matches every Bash
   command against `~/.grillme/blocklist.json` (rm -rf /, force-push to main,
   hard reset, DROP TABLE, mkfs…) and exits 2 — Claude Code treats that as a deny
-  and must ask the human. PostToolUse appends every tool call to `audit.jsonl`,
+  and must ask the human. The hook **fails closed**: a corrupt or unreadable
+  blocklist denies rather than allows (unit-tested — `denies_when_blocklist_is_corrupt`).
+  PostToolUse appends every tool call to `audit.jsonl`,
   which also powers "teammate changed a file you just read" warnings.
 - **Follow-up: "Can the agent just edit the hook config?"** — Be honest: hooks live
   in the repo's `.claude/settings.json`, so a determined agent could remove them;
