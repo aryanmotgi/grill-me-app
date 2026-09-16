@@ -16,6 +16,7 @@ import type {
   Teammate,
   Toast,
 } from "./types";
+import { roomTasksToAppTasks, taskBrief } from "./components/teamflow/logic";
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, startRoomFeed, type CiRun, type WatchState } from "./data/sources/feeds";
 import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
@@ -153,6 +154,9 @@ interface AppState {
   /** true after 3 consecutive room polls failed — Lobby shows the
    *  host-offline banner; the next successful poll clears it. */
   roomOffline: boolean;
+  /** Phase "done": host persists plan + tasks, everyone leaves the flow and
+   *  gets their first assigned task briefed into their own session. */
+  finishTeamSetup: () => Promise<void>;
 }
 
 let toastSeq = 0;
@@ -559,6 +563,62 @@ export const useApp = create<AppState>((set, get) => ({
       JSON.stringify(s.room) === JSON.stringify(room) ? s : { room },
     ),
 
+  finishTeamSetup: async () => {
+    // snapshot + clear synchronously: a second call (direct host call racing
+    // the feed-driven subscription) sees room === null and no-ops.
+    const { room, roomRole, roomSelf } = get();
+    if (!room) return;
+    // clear teamFlowNeeded too — App routes to TeamFlow while it is true, so
+    // the workspace only renders once setup is done
+    set({ room: null, roomRole: null, roomSelf: null, teamFlowNeeded: false, view: "home" });
+
+    const teamMembers = get().members;
+    const boardTasks = roomTasksToAppTasks(room.tasks, room.members, teamMembers, room.code);
+
+    // everyone: setup tasks land on the local task board (each machine owns
+    // its own ~/.grillme tasks.json — no cross-writer conflict)
+    set((s) => {
+      const byId = new Map(s.tasks.map((t) => [t.id, t]));
+      for (const t of boardTasks) byId.set(t.id, t);
+      return { tasks: [...byId.values()] };
+    });
+    if (isTauri()) await upsertShared("tasks.json", boardTasks);
+
+    // host: persist the plan as PROJECT_PLAN.md. plugin-fs write scope is
+    // $HOME/.grillme/** — the project repo root is outside it, so the plan
+    // lands next to the project's shared files instead (flagged in the PR).
+    if (roomRole === "host" && isTauri() && room.plan.trim()) {
+      const project = get().activeProject;
+      const rel =
+        project && project !== "default"
+          ? `.grillme/projects/${project}/PROJECT_PLAN.md`
+          : ".grillme/PROJECT_PLAN.md";
+      try {
+        const { writeTextFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+        await writeTextFile(rel, room.plan, { baseDir: BaseDirectory.Home });
+        get().toast(`Setup done — plan saved to ~/${rel}`);
+      } catch (e) {
+        get().toast(`Plan write failed: ${e}`, "warn");
+      }
+    } else {
+      get().toast("Team setup complete — your tasks are on the board");
+    }
+
+    // own first assigned task → brief into own session once it's ready
+    const mine = roomSelf ? room.tasks.find((t) => t.assignee === roomSelf.memberId) : undefined;
+    const ownId = teamMembers[0]?.id;
+    if (mine && ownId && isTauri()) {
+      deliverBriefWhenReady(ptyIdFor(ownId), taskBrief(mine)).then((delivered) => {
+        if (!delivered) {
+          get().toast(
+            `Brief NOT delivered — session never became ready. Paste "${mine.title}" into your pane manually.`,
+            "warn",
+          );
+        }
+      });
+    }
+  },
+
   applyWatchState: (ws) =>
     set((s) => {
       const now = Math.floor(Date.now() / 1000);
@@ -585,6 +645,15 @@ export const useApp = create<AppState>((set, get) => ({
     }),
 }));
 
+
+// Team setup completion: fires exactly once on the room-feed transition to
+// phase "done" (host AND guests). finishTeamSetup clears room synchronously,
+// so later feed reads of the done room (prev.room === null) can never refire.
+useApp.subscribe((st, prev) => {
+  if (st.room?.phase === "done" && prev.room && prev.room.phase !== "done") {
+    void st.finishTeamSetup();
+  }
+});
 
 /** Base for config members with no fake seed — unwired fields stay visibly empty. */
 function emptyTeammate(id: string): Teammate {

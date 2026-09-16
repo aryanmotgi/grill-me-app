@@ -136,6 +136,7 @@ export interface RoomTask {
   id: string;
   title: string;
   detail: string;
+  /** room member id, or null while unassigned */
   assignee: string | null;
 }
 
