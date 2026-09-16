@@ -55,7 +55,9 @@ export function FanOut() {
     }));
     const merged = [...tasks, ...newTasks];
     setShared({ tasks: merged });
-    invoke("shared_write", { name: "tasks.json", content: JSON.stringify(merged, null, 2) }).catch(console.error);
+    // delta upsert: only the new tasks are sent, so a concurrent writer's
+    // entries can never be clobbered by this snapshot
+    invoke("shared_upsert", { name: "tasks.json", itemsJson: JSON.stringify(newTasks), removedIds: [] }).catch(console.error);
 
     let spawned = 0;
     for (let i = 0; i < items.length; i++) {

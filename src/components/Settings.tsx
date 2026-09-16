@@ -423,10 +423,14 @@ export function SettingsModal() {
               </Row>
               <Row label="Clear all inbox messages" hint="Empties the shared inbox for this project — cannot be undone">
                 <button className="btn" onClick={async () => {
+                  // capture BEFORE clearing local state — these are the ids we delete
+                  const clearedIds = useApp.getState().messages.map((m) => m.id);
                   setShared({ messages: [] });
                   if (isTauri()) {
                     const { invoke } = await import("@tauri-apps/api/core");
-                    invoke("shared_write", { name: "messages.json", content: "[]" }).catch(console.error);
+                    // removed_ids delete only what this user saw; a message
+                    // arriving concurrently from another writer survives
+                    invoke("shared_upsert", { name: "messages.json", itemsJson: "[]", removedIds: clearedIds }).catch(console.error);
                   }
                   toast("Inbox cleared", "warn");
                 }}>clear inbox</button>
