@@ -38,6 +38,9 @@ function OverflowMenu() {
             <button className={item} onClick={() => { setMergePilotOpen(true); setOpen(false); }}>
               Merge pilot terminal
             </button>
+            <button className={item} onClick={() => { useApp.setState({ featureIndexOpen: true }); setOpen(false); }}>
+              Everything Grill Me can do <span className="text-faint text-[9px] ml-auto">⌘/</span>
+            </button>
             <div className="panel-label px-3 pt-2 pb-0.5">view</div>
             <button className={item} onClick={() => { toggleFocus(); setOpen(false); }}>
               {focusMode ? "Exit focus mode" : "Focus mode"} <span className="text-faint text-[9px] ml-auto">⌘.</span>
@@ -130,9 +133,10 @@ export function TopBar() {
         <span className="ml-auto font-mono text-[9px]">⌘K</span>
       </button>
 
-      <button className="btn primary demo-hide" title="Review & ship the active session's work (⌘S)"
+      <button className="btn primary demo-hide"
+        title={`Review & ship ${teammates.find((t) => t.id === activeId)?.name ?? "the active session"}'s work (⌘S)`}
         onClick={() => shipSession(activeId)}>
-        <Icon name="push" size={11} /> review & ship
+        <Icon name="push" size={11} /> review & ship{(() => { const n = teammates.find((t) => t.id === activeId)?.name; return n ? ` — ${n}` : ""; })()}
       </button>
       <OverflowMenu />
       <button className="btn demo-hide" title="Settings" onClick={() => setSettingsOpen(true)}>

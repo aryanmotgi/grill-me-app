@@ -98,8 +98,8 @@ function SessionRow({ mate }: { mate: Teammate }) {
         </div>
       ) : null}
 
-      {/* row actions — hover only, keeps rows quiet */}
-      <div className="mt-1.5 pl-4 gap-1.5 items-center hidden group-hover:flex demo-hide">
+      {/* row actions — active row always, others on hover; keeps the list quiet */}
+      <div className={`mt-1.5 pl-4 gap-1.5 items-center demo-hide ${isActive ? "flex" : "hidden group-hover:flex"}`}>
         <button
           className={`btn ${inSplit ? "active" : ""}`}
           onClick={(e) => { e.stopPropagation(); setSplit(inSplit ? null : mate.id); }}

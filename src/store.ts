@@ -346,7 +346,12 @@ export const useApp = create<AppState>((set, get) => ({
       teammates: s.teammates.map((t) => (t.id === id ? { ...t, ...patch } : t)),
     })),
 
-  setActivity: (activity) => set({ activity }),
+  setActivity: (activity) => {
+    // no-op guard: polling feeds call this every few seconds with mostly-identical data
+    const prev = get().activity;
+    if (prev.length === activity.length && JSON.stringify(prev) === JSON.stringify(activity)) return;
+    set({ activity });
+  },
 
   setShared: (p) =>
     set(() => ({
