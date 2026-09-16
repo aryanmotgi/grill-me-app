@@ -11,11 +11,12 @@ import {
 import type {
   ActivityEvent,
   Message,
+  RoomState,
   Task,
   Teammate,
   Toast,
 } from "./types";
-import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, type CiRun, type WatchState } from "./data/sources/feeds";
+import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, startRoomFeed, type CiRun, type WatchState } from "./data/sources/feeds";
 import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
 import { needsAttention } from "./lib/attention";
@@ -141,6 +142,17 @@ interface AppState {
   /** Set when Team is picked this session — routes to the TeamFlow screens
    *  (create/join → lobby → setup) until the flow completes. */
   teamFlowNeeded: boolean;
+  /** Team-mode room state (host-owned, polled live by startRoomFeed). */
+  room: RoomState | null;
+  roomRole: "host" | "guest" | null;
+  /** Own identity in the room; hostAddr is "127.0.0.1:4518" for the host. */
+  roomSelf: { memberId: string; hostAddr: string } | null;
+  setRoom: (room: RoomState | null) => void;
+  /** Host's LAN IPv4 (from room_host_start) — shown so teammates can join. */
+  roomHostIp: string | null;
+  /** true after 3 consecutive room polls failed — Lobby shows the
+   *  host-offline banner; the next successful poll clears it. */
+  roomOffline: boolean;
 }
 
 let toastSeq = 0;
@@ -535,6 +547,17 @@ export const useApp = create<AppState>((set, get) => ({
     set({ appMode: m, teamFlowNeeded: m === "team" });
     get().setAppSetting("appMode", m);
   },
+  room: null,
+  roomRole: null,
+  roomSelf: null,
+  roomHostIp: null,
+  roomOffline: false,
+  setRoom: (room) =>
+    set((s) =>
+      // no-op guard: the room feed calls this every 1.5s with mostly-identical
+      // state — skipping identical JSON avoids re-rendering every subscriber
+      JSON.stringify(s.room) === JSON.stringify(room) ? s : { room },
+    ),
 
   applyWatchState: (ws) =>
     set((s) => {
@@ -631,6 +654,9 @@ let persistT: ReturnType<typeof setTimeout> | undefined;
     });
   }
   restoreReady = true;
+  // team mode: install the room poller. It no-ops until TeamStart sets
+  // roomSelf (create/join), so this is only live when a room actually exists.
+  if (appSettings.appMode === "team") startRoomFeed(useApp);
   const project = typeof appSettings.activeProject === "string" ? appSettings.activeProject : null;
   if (!project) return; // ProjectPicker shows; feeds start after selection reload
   await invoke("set_active_project", { id: project }).catch(() => {});

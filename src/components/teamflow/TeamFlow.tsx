@@ -1,23 +1,21 @@
 import { useApp } from "../../store";
+import { TeamStart } from "./TeamStart";
+import { Lobby } from "./Lobby";
 
 /**
- * Placeholder — the real TeamStart/Lobby/Brainstorm/Plan/Tasks/Assign
- * screens land in the team-flow PR, which owns this directory.
+ * Phase router for team mode. Minimal stub — the setup-flow PR extends this
+ * with the brainstorm/plan/tasks/assign screens; keep wiring-only changes.
  */
 export function TeamFlow() {
-  const setAppMode = useApp((s) => s.setAppMode);
+  const room = useApp((s) => s.room);
+  const roomSelf = useApp((s) => s.roomSelf);
+
+  if (!roomSelf) return <TeamStart />;
+  const phase = room?.phase ?? "lobby";
+  if (phase === "lobby") return <Lobby />;
   return (
     <div className="h-full flex items-center justify-center bg-bg">
-      <div className="max-w-sm flex flex-col gap-3 p-5 bg-panel hairline rounded-md rise">
-        <span className="panel-label">team mode</span>
-        <p className="text-[12px] text-dim leading-relaxed">
-          Team setup coming from the flow PR — create/join a room, lobby, and
-          shared planning land there.
-        </p>
-        <button className="btn self-start" onClick={() => setAppMode(null)}>
-          back to mode select
-        </button>
-      </div>
+      <div className="text-[12px] text-dim">{phase} — setup flow coming up</div>
     </div>
   );
 }

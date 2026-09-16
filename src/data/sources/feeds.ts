@@ -38,6 +38,10 @@ interface FeedStore {
   }) => void;
   claudeMissing: boolean;
   setClaudeMissing: (missing: boolean) => void;
+  room: import("../../types").RoomState | null;
+  roomSelf: { memberId: string; hostAddr: string } | null;
+  roomOffline: boolean;
+  setRoom: (room: import("../../types").RoomState | null) => void;
   applyTeamConfig: (members: TeamMemberConfig[]) => void;
   patchTeammate: (id: string, patch: Partial<Teammate>) => void;
   setActivity: (events: import("../../types").ActivityEvent[]) => void;
@@ -101,6 +105,81 @@ export function startGitFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   // instead of killing the feed for the rest of the session
   tick();
   setInterval(tick, GIT_POLL_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Team-mode room feed. The host's app owns RoomState (a second Rust listener
+// on 0.0.0.0:4518); everyone — host included — polls it through the
+// room_client proxy command so the webview never fetches cross-origin. The
+// host's hostAddr is loopback 127.0.0.1:4518; guests use the LAN address they
+// typed at join. Backend commands land in a parallel PR — every invoke is
+// guarded so this file typechecks and degrades gracefully without them.
+// ---------------------------------------------------------------------------
+
+const ROOM_POLL_MS = 1500;
+/** Consecutive poll failures before the Lobby shows the host-offline banner. */
+const ROOM_OFFLINE_AFTER_FAILS = 3;
+
+/** Thin wrapper over the room_client Tauri command (LAN HTTP proxy). */
+export async function roomClient(
+  hostAddr: string,
+  path: string,
+  body?: unknown,
+): Promise<string> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("room_client", {
+    hostAddr,
+    path,
+    bodyJson: body === undefined ? null : JSON.stringify(body),
+  });
+}
+
+let roomFeedStarted = false;
+
+/**
+ * 1.5s tick: heartbeat POST + GET /room/state → store.setRoom. Idempotent —
+ * called from the boot path (appMode "team") AND from TeamStart after a
+ * successful create/join; only the first call installs the interval. Each
+ * tick no-ops until roomSelf and a room code exist, so starting "early" is
+ * free. Poll failures never crash: after 3 in a row the store's roomOffline
+ * flag raises the host-offline banner, and the next success clears it.
+ */
+export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
+  if (roomFeedStarted || !isTauri()) return;
+  roomFeedStarted = true;
+
+  let busy = false;
+  let fails = 0;
+  const tick = async () => {
+    if (busy) return; // previous tick still awaiting — don't pile up
+    busy = true;
+    try {
+      const st = store.getState();
+      const self = st.roomSelf;
+      const code = st.room?.code;
+      if (!self || !code) return; // not in a room yet
+      // heartbeat first so the host counts us alive even if state parse fails
+      await roomClient(self.hostAddr, "/room/heartbeat", {
+        code,
+        memberId: self.memberId,
+      });
+      const raw = await roomClient(self.hostAddr, `/room/state?code=${code}`);
+      const state = JSON.parse(raw) as import("../../types").RoomState;
+      store.getState().setRoom(state); // no-op guard on identical JSON inside
+      fails = 0;
+      if (store.getState().roomOffline) store.setState({ roomOffline: false });
+    } catch (e) {
+      fails += 1;
+      if (fails >= ROOM_OFFLINE_AFTER_FAILS && !store.getState().roomOffline) {
+        store.setState({ roomOffline: true });
+      }
+      console.error("[room feed]", e);
+    } finally {
+      busy = false;
+    }
+  };
+  tick();
+  setInterval(tick, ROOM_POLL_MS);
 }
 
 // ---------------------------------------------------------------------------
