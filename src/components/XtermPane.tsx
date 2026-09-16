@@ -24,8 +24,9 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
   const ref = useRef<HTMLDivElement>(null);
   const latRef = useRef<HTMLSpanElement>(null);
   const ts = useApp((s) => s.termSettings);
-  /** starting → live on first output; dead on pty-exit */
-  const [phase, setPhase] = useState<"starting" | "live" | "dead">("starting");
+  /** starting → live on first output; dead on pty-exit; missing when the
+   *  claude CLI preflight fails (no spawn attempted, no respawn loop) */
+  const [phase, setPhase] = useState<"starting" | "live" | "dead" | "missing">("starting");
   const [respawnTick, setRespawnTick] = useState(0);
 
   useEffect(() => {
@@ -71,6 +72,22 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
     (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
       const { listen } = await import("@tauri-apps/api/event");
+      // preflight: a missing claude CLI would spawn, die instantly, and loop
+      // through self-healing restarts. Remote/ssh panes don't need a local
+      // CLI, and plain shell panes only need zsh.
+      const isRemote = useApp.getState().members.some(
+        (m) => m.remote && (id === m.id || id.endsWith(`:${m.id}`)),
+      );
+      if (!shell && !isRemote) {
+        try {
+          await invoke("preflight_claude");
+          useApp.getState().setClaudeMissing(false);
+        } catch {
+          useApp.getState().setClaudeMissing(true);
+          if (!disposed) setPhase("missing");
+          return;
+        }
+      }
       try {
         await invoke("pty_ensure", { id, cwd, shell });
         if (autorun) {
@@ -172,6 +189,19 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
           <div className="text-center rise">
             <div className="status-dot working mx-auto mb-2" style={{ width: 10, height: 10 }} />
             <div className="text-dim text-[11px]">starting {shell ? "shell" : "claude"}…</div>
+          </div>
+        </div>
+      ) : null}
+      {phase === "missing" ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-term-bg/85">
+          <div className="text-center rise px-4">
+            <div className="text-dim text-[12px] mb-1">claude CLI not found</div>
+            <div className="text-faint text-[10px] mb-3">
+              install: <span className="font-mono">npm install -g @anthropic-ai/claude-code</span>, then restart
+            </div>
+            <button className="btn primary" onClick={() => { setPhase("starting"); setRespawnTick((t) => t + 1); }}>
+              check again
+            </button>
           </div>
         </div>
       ) : null}
