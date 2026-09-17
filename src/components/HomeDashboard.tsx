@@ -63,6 +63,7 @@ function NeedsYouHero() {
 
   return (
     <section
+      data-tour="needs-you"
       className={`glass rounded-lg p-5 border-l-2 ${count > 0 ? "border-l-accent" : "border-l-ok"}`}
     >
       <div className="flex items-baseline gap-3 mb-3">

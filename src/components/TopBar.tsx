@@ -150,6 +150,7 @@ export function TopBar() {
 
       {/* search-or-act pill — the front door to everything */}
       <button
+        data-tour="command"
         className="flex items-center gap-2 w-64 px-3 py-1.5 bg-raised hairline rounded-md text-[11px] text-faint cursor-text hover:border-accent transition-colors"
         onClick={() => setSwitcherOpen(true)}>
         <Icon name="search" size={11} />
@@ -157,13 +158,13 @@ export function TopBar() {
         <span className="ml-auto font-mono text-[9px]">⌘K</span>
       </button>
 
-      <button className="btn primary demo-hide"
+      <button className="btn primary demo-hide" data-tour="ship"
         title={`Review & ship ${teammates.find((t) => t.id === activeId)?.name ?? "the active session"}'s work (⌘S)`}
         onClick={() => shipSession(activeId)}>
         <Icon name="push" size={11} /> review & ship{(() => { const n = teammates.find((t) => t.id === activeId)?.name; return n ? ` — ${n}` : ""; })()}
       </button>
       <OverflowMenu />
-      <button className="btn demo-hide" title="Settings" onClick={() => setSettingsOpen(true)}>
+      <button className="btn demo-hide" data-tour="settings" title="Settings" onClick={() => setSettingsOpen(true)}>
         <Icon name="gear" size={11} />
       </button>
     </header>
