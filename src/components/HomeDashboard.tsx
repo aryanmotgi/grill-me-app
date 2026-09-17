@@ -620,6 +620,55 @@ function ActivityFeed() {
 }
 
 // ---------------------------------------------------------------------------
+// 7b. RECENT DECISIONS — a subtle peek at the shared decisions log (what we
+// decided and why), newest-first. Only rendered when non-empty, mirroring the
+// conflict-radar / merge-pipeline pattern; the header opens the full overlay.
+// ---------------------------------------------------------------------------
+const DECISIONS_PEEK = 3;
+
+function RecentDecisions() {
+  const decisions = useApp((s) => s.decisions);
+  const teammates = useApp((s) => s.teammates);
+  if (decisions.length === 0) return null;
+
+  const nameOf = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
+  // decisions arrive already deduped + newest-first from setShared/addDecision.
+  const recent = decisions.slice(0, DECISIONS_PEEK);
+
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="panel-label">decisions</span>
+        <button
+          className="text-faint text-[10px] hover:text-data transition-colors cursor-pointer"
+          onClick={() => useApp.setState({ decisionsOpen: true })}
+        >
+          {decisions.length > DECISIONS_PEEK ? <>view all <span className="num">{decisions.length}</span></> : "open log"}
+        </button>
+      </div>
+      <div className="glass rounded-lg divide-y divide-line/50">
+        {recent.map((d) => (
+          <button
+            key={d.id}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-raised/50 transition-colors cursor-pointer first:rounded-t-lg last:rounded-b-lg"
+            onClick={() => useApp.setState({ decisionsOpen: true })}
+            title={d.text}
+          >
+            <Icon name="check" size={11} className="text-data flex-none" aria-hidden />
+            <span className="text-dim text-[12px] truncate flex-1">{d.text}</span>
+            {d.tag ? <span className="tag flex-none">{d.tag}</span> : null}
+            <span className="text-accent text-[11px] font-semibold flex-none">{nameOf(d.author)}</span>
+            <span className="text-faint text-[10px] tabular-nums flex-none" title={fmtFullTime(d.epochMs)}>
+              {fmtRelTime(d.epochMs)}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 8. QUICK ACTIONS — icon tiles. One primary (ship) per the design law.
 // ---------------------------------------------------------------------------
 function QuickActions() {
@@ -695,6 +744,7 @@ export function HomeDashboard() {
         )}
 
         <ActivityFeed />
+        <RecentDecisions />
         <QuickActions />
       </div>
     </div>

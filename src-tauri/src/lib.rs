@@ -933,7 +933,7 @@ fn grillme_dir() -> PathBuf {
     dir
 }
 
-const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json"];
+const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json", "decisions.json"];
 
 fn shared_path(name: &str) -> PathBuf {
     if name == "settings.json" {
@@ -1111,8 +1111,8 @@ fn upsert_at(
 
 #[tauri::command]
 fn shared_upsert(name: String, items_json: String, removed_ids: Vec<String>) -> Result<(), String> {
-    if name != "tasks.json" && name != "messages.json" {
-        return Err("shared_upsert only supports tasks.json / messages.json".into());
+    if name != "tasks.json" && name != "messages.json" && name != "decisions.json" {
+        return Err("shared_upsert only supports tasks.json / messages.json / decisions.json".into());
     }
     let incoming: Vec<serde_json::Value> = serde_json::from_str(&items_json)
         .map_err(|e| format!("items must be a JSON array of objects: {e}"))?;
@@ -1120,7 +1120,9 @@ fn shared_upsert(name: String, items_json: String, removed_ids: Vec<String>) -> 
         &shared_path(&name),
         incoming,
         &removed_ids,
-        name == "messages.json",
+        // messages.json and decisions.json are shown newest-first, so genuinely
+        // new entries prepend; tasks.json appends.
+        name == "messages.json" || name == "decisions.json",
     )
 }
 
@@ -4314,6 +4316,19 @@ mod shared_merge_tests {
         let ids: Vec<&str> = merged.iter().map(|m| m["id"].as_str().unwrap()).collect();
         assert_eq!(ids, vec!["m3", "m1", "m2"]);
         assert_eq!(merged[1]["text"], "edited");
+    }
+
+    #[test]
+    fn decisions_upsert_prepends_newest_and_survives_stale_snapshots() {
+        // decisions.json is an append-only, id-keyed, newest-first log — two
+        // teammates each appending a decision from the same [d1] snapshot must
+        // both survive, with the newest entries at the front.
+        let target = tmp_target("decisions").with_file_name("decisions.json");
+        let _ = std::fs::remove_file(&target);
+        upsert_at(&target, vec![item("d1", "use zustand")], &[], true).unwrap();
+        upsert_at(&target, vec![item("d2", "ship phase 1")], &[], true).unwrap();
+        upsert_at(&target, vec![item("d3", "adopt tauri 2")], &[], true).unwrap();
+        assert_eq!(read_ids(&target), vec!["d3", "d2", "d1"]);
     }
 
     #[test]

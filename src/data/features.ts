@@ -39,6 +39,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Standup log", what: "Auto-stitched from finished tasks", where: "right rail → feed", go: () => { const st = useApp.getState(); st.setRailTab("activity"); st.setView("session"); } },
     { name: "Standup", what: "AI per-teammate Done / Doing / Blocked from git log + tasks; post to the standup log", where: "⌘K → standup", go: () => useApp.setState({ standupOpen: true }) },
     { name: "Session handoff", what: "Claude summarizes where you are + what's next, then sends it to a teammate", where: "session pane → hand off · ⌘K", go: () => { const st = useApp.getState(); st.setHandoffFor(st.activeId); } },
+    { name: "Decisions log", what: "Shared, append-only record of what the team decided and why — newest-first, with an optional tag", where: "⌘K → decisions log", go: () => useApp.setState({ decisionsOpen: true }) },
   ]],
   ["Shipping", [
     { name: "Review & ship", what: "Pre-merge review (commits, diff) → approve runs /ship with tests", where: "top bar amber button · ⌘S", go: () => { const st = useApp.getState(); st.shipSession(st.activeId); } },
