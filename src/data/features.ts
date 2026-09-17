@@ -44,6 +44,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Safety blocklist", what: "Destructive commands always require explicit confirmation", where: "settings → safety", go: () => useApp.getState().setSettingsOpen(true, "safety") },
     { name: "Audit log", what: "Every command a session ran, timestamped", where: "session pane → audit", go: () => useApp.getState().setView("session") },
     { name: "Usage per session", what: "Real token counts since each session started", where: "right rail → more → team", go: () => { const st = useApp.getState(); st.setRailTab("team"); st.setView("session"); } },
+    { name: "Token & cost dashboard", what: "Per-session token totals, burn chart, biggest spender, and an estimated $", where: "⌘/ → token & cost", go: () => useApp.setState({ tokenDashOpen: true }) },
     { name: "CPU / memory", what: "Live per-session resource use", where: "session rows when busy · home" },
     { name: "Project backup", what: "Export full project state as one file", where: "team panel → backup", go: () => { const st = useApp.getState(); st.setRailTab("team"); st.setView("session"); } },
   ]],

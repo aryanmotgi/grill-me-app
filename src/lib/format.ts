@@ -21,6 +21,16 @@ export const fmtTokens = (n: number): string => {
 export const fmtMem = (mb: number): string =>
   mb >= 1024 ? `${trimZero((mb / 1024).toFixed(1))}G` : `${Math.round(mb)}M`;
 
+/**
+ * USD for cost estimates: 0 → "$0.00", a tiny non-zero amount → "<$0.01" (so a
+ * real-but-fractional-cent spend never reads as free), otherwise two decimals
+ * with thousands separators: 1234.5 → "$1,234.50".
+ */
+export const fmtUsd = (n: number): string => {
+  if (n > 0 && n < 0.01) return "<$0.01";
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
