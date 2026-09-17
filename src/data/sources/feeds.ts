@@ -35,6 +35,7 @@ interface FeedStore {
     mergeQueue?: string[];
     sponsorChecklist?: { sponsor: string; requirement: string; done: boolean }[];
     standupLines?: string[];
+    decisions?: import("../../types").Decision[];
   }) => void;
   claudeMissing: boolean;
   setClaudeMissing: (missing: boolean) => void;
@@ -506,6 +507,7 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
     // seam only and must never be written into a real project's shared state
     if ((await read("tasks.json")) === null) await write("tasks.json", []);
     if ((await read("messages.json")) === null) await write("messages.json", []);
+    if ((await read("decisions.json")) === null) await write("decisions.json", []);
     if ((await read("team.json")) === null) {
       await write("team.json", {
         mergeQueue: st.members.map((m) => m.id),
@@ -518,6 +520,7 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
     // a notification burst later). Forget those reads so tick 1 parses fresh.
     delete rawCache["tasks.json"];
     delete rawCache["messages.json"];
+    delete rawCache["decisions.json"];
     delete rawCache["team.json"];
     seeded = true;
   };
@@ -559,15 +562,17 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         if (!seeded) return; // members not loaded yet — retry next tick
       }
       const me = store.getState().members[0]?.id;
-      const [tasks, messages, team, standupLines] = await Promise.all([
+      const [tasks, messages, decisions, team, standupLines] = await Promise.all([
         read("tasks.json"),
         read("messages.json"),
+        read("decisions.json"),
         read("team.json"),
         invoke<string[]>("standup_tail"),
       ]);
       store.getState().setShared({
         tasks: tasks === "__unchanged__" ? undefined : tasks ?? undefined,
         messages: messages === "__unchanged__" ? undefined : messages ?? undefined,
+        decisions: decisions === "__unchanged__" ? undefined : decisions ?? undefined,
         mergeQueue: team === "__unchanged__" ? undefined : team?.mergeQueue,
         sponsorChecklist: team === "__unchanged__" ? undefined : team?.sponsor,
         standupLines,

@@ -81,6 +81,22 @@ export interface Message {
   response?: "yes" | "no" | "unsure";
 }
 
+/** One entry in the shared, append-only team decisions log — what we decided
+ *  and why. Stored id-keyed in decisions.json (newest-first). */
+export interface Decision {
+  id: string;
+  /** What was decided (and, ideally, why). */
+  text: string;
+  /** Member id who logged it. */
+  author: string;
+  /** Epoch ms when logged — the newest-first sort key. */
+  epochMs: number;
+  /** "HH:MM" display clock, mirrored from epochMs at write time. */
+  ts: string;
+  /** Optional free-form category, e.g. "architecture", "product". */
+  tag?: string;
+}
+
 export interface ActivityEvent {
   id: string;
   kind: "commit" | "merge" | "message" | "status";

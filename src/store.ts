@@ -10,12 +10,14 @@ import {
 } from "./data/fake";
 import type {
   ActivityEvent,
+  Decision,
   Message,
   RoomState,
   Task,
   Teammate,
   Toast,
 } from "./types";
+import { dedupeDecisions, makeDecision } from "./lib/decisions";
 import { roomTasksToAppTasks, taskBrief } from "./components/teamflow/logic";
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, startRoomFeed, type CiRun, type WatchState } from "./data/sources/feeds";
 import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
@@ -177,8 +179,18 @@ interface AppState {
     mergeQueue?: string[];
     sponsorChecklist?: typeof sponsorChecklist;
     standupLines?: string[];
+    decisions?: Decision[];
   }) => void;
   advanceMergeQueue: () => void;
+
+  /** Shared, append-only team decisions log (decisions.json), newest-first. */
+  decisions: Decision[];
+  /** Decisions-log overlay (⌘K + features.ts). */
+  decisionsOpen: boolean;
+  /** Append a decision: shapes it via makeDecision, prepends locally, and
+   *  persists through the merge-safe id-keyed shared_upsert path. No-ops on
+   *  empty text. */
+  addDecision: (text: string, tag?: string) => void;
 
   /** Files to flash in the claimed list after a conflict-banner click. */
   highlightFiles: string[];
@@ -484,7 +496,19 @@ export const useApp = create<AppState>((set, get) => ({
         : {}),
       ...(p.sponsorChecklist ? { sponsorChecklist: p.sponsorChecklist } : {}),
       ...(p.standupLines ? { standupLines: p.standupLines } : {}),
+      ...(p.decisions ? { decisions: dedupeDecisions(p.decisions) } : {}),
     })),
+
+  decisions: [],
+  decisionsOpen: false,
+  addDecision: (text, tag) => {
+    const meId = get().members[0]?.id ?? "me";
+    const entry = makeDecision(text, meId, tag);
+    if (!entry) return;
+    set((s) => ({ decisions: dedupeDecisions([entry, ...s.decisions]) }));
+    upsertShared("decisions.json", [entry]);
+    get().toast("Decision logged for the team");
+  },
 
   setCiRuns: (ciRuns) => set({ ciRuns }),
 
@@ -953,7 +977,7 @@ async function persistShared(name: string, data: unknown) {
 /** Delta upsert into an id-keyed shared array file: `items` overwrite/insert
  *  by id, `removedIds` delete, everything else on disk is preserved. */
 export async function upsertShared(
-  name: "tasks.json" | "messages.json",
+  name: "tasks.json" | "messages.json" | "decisions.json",
   items: unknown[],
   removedIds: string[] = [],
 ) {
