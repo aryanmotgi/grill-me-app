@@ -113,6 +113,8 @@ interface AppState {
   navSelId: string | null;
   /** Diff review board overlay — every member's branch-vs-main diff. */
   diffBoardOpen: boolean;
+  /** PR dashboard overlay — open PRs with CI + review state (panel-pr-dashboard). */
+  prDashboardOpen: boolean;
   /** Cross-session search overlay (panel-cross-search). Toggled via setState. */
   crossSearchOpen: boolean;
   /** Session timeline scrubber overlay — replay recent pty output by line. */
@@ -491,6 +493,7 @@ export const useApp = create<AppState>((set, get) => ({
   cheatsheetOpen: false,
   navSelId: null,
   diffBoardOpen: false,
+  prDashboardOpen: false,
   crossSearchOpen: false,
   scrubberOpen: false,
   setScrubberOpen: (scrubberOpen) => set({ scrubberOpen }),

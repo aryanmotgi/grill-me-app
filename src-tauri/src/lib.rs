@@ -1451,6 +1451,46 @@ fn ci_state(repo_path: String) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// Open PRs for the repo with CI rollup + review state, straight from `gh`.
+/// Mirrors ci_state: gh under no_prompt so a missing auth/credential prompt
+/// can never hang the caller. Returns the raw JSON array for the frontend to
+/// shape — no fabricated fields.
+#[tauri::command]
+fn pr_list(repo_path: String) -> Result<String, String> {
+    let out = no_prompt(
+        Command::new("gh")
+            .args([
+                "pr", "list", "--state", "open", "--json",
+                "number,title,headRefName,statusCheckRollup,reviewDecision,isDraft,author",
+            ])
+            .current_dir(&repo_path),
+    )
+    .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// Squash-merge one open PR by number via `gh pr merge <n> --squash`. Number is
+/// typed (u64) so it can never smuggle args into the gh command line. Runs
+/// under no_prompt like the other gh helpers.
+#[tauri::command]
+fn pr_merge(repo_path: String, number: u64) -> Result<String, String> {
+    let out = no_prompt(
+        Command::new("gh")
+            .args(["pr", "merge", &number.to_string(), "--squash"])
+            .current_dir(&repo_path),
+    )
+    .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
 
 #[tauri::command]
 fn team_config_write(cfg: TeamConfig) -> Result<(), String> {
@@ -3419,6 +3459,8 @@ pub fn run() {
             git_revert_file,
             usage_stats,
             ci_state,
+            pr_list,
+            pr_merge,
             team_config_write,
             projects_list,
             projects_write,
