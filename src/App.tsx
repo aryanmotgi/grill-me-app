@@ -17,6 +17,7 @@ import { SessionHandoff } from "./components/SessionHandoff";
 import { HomeDashboard } from "./components/HomeDashboard";
 import { FeatureIndex } from "./components/FeatureIndex";
 import { DiffBoard } from "./components/DiffBoard";
+import { PrDashboard } from "./components/PrDashboard";
 import { CrossSessionSearch } from "./components/CrossSessionSearch";
 import { SessionScrubber } from "./components/SessionScrubber";
 import { PresenceMap } from "./components/PresenceMap";
@@ -36,7 +37,7 @@ import type { RailTab } from "./store";
 function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
   return (
     s.switcherOpen || s.crossSearchOpen || s.scrubberOpen || s.presenceMapOpen ||
-    s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen ||
+    s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen || s.prDashboardOpen ||
     s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
     s.cinemaOpen || s.handoffFor !== null
   );
@@ -196,6 +197,7 @@ export default function App() {
         else if (s.standupOpen) useApp.setState({ standupOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
+        else if (s.prDashboardOpen) useApp.setState({ prDashboardOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
         else if (s.reviewFor) s.setReviewFor(null);
         else if (s.handoffFor) s.setHandoffFor(null);
@@ -296,6 +298,7 @@ export default function App() {
       <SessionHandoff />
       <FeatureIndex />
       <DiffBoard />
+      <PrDashboard />
       <CrossSessionSearch />
       <SessionScrubber />
       <PresenceMap />

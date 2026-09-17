@@ -39,6 +39,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
   ["Shipping", [
     { name: "Review & ship", what: "Pre-merge review (commits, diff) → approve runs /ship with tests", where: "top bar amber button · ⌘S", go: () => { const st = useApp.getState(); st.shipSession(st.activeId); } },
     { name: "Diff review board", what: "Every session's branch-vs-main diff in one scrollable, collapsible column", where: "⌘K → diff review board", go: () => useApp.setState({ diffBoardOpen: true }) },
+    { name: "PR dashboard", what: "Open PRs with CI status, review state, and one-click squash-merge (via gh)", where: "⌘K → PR dashboard", go: () => useApp.setState({ prDashboardOpen: true }) },
     { name: "PR draft", what: "One-shot Claude writes the PR body from your diff", where: "session pane → changes → draft PR body" },
     { name: "Inline diffs", what: "Click any changed file for its diff, right in the app", where: "changes tab · claimed files" },
     { name: "Revert a file", what: "Per-file git checkout from the changes tab", where: "changes tab → revert" },
