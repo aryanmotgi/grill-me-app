@@ -1685,6 +1685,182 @@ fn pr_draft(repo_path: String) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+// ---------------------------------------------------------------------------
+// Auto-standup — gather each teammate's recent git log + task/event signals,
+// then pipe a compact brief to `claude -p` for a per-teammate Done/Doing/
+// Blocked summary. Mirrors pr_draft's claude-shelling (zsh -lc for login PATH,
+// no_prompt env) but feeds the brief over stdin — like room::claude_pipe — so
+// member data never touches a command line.
+// ---------------------------------------------------------------------------
+
+const STANDUP_PROMPT: &str = "The input is JSON describing a small dev team. Each member has: \
+recent git commits (last 24h), current branch, uncommitted file count, tasks that are done / \
+in-progress / blocked, and whether their session is waiting on input. \
+Write a concise daily standup in GitHub-flavored markdown, one section per member as \
+'## <name> (<branch>)' followed by exactly three lines — 'Done:', 'Doing:', 'Blocked:'. \
+Ground every line ONLY in the provided data; never invent activity. If a member has no signal \
+in any source, write 'no recorded activity'. If a member's repo was unavailable, say so. \
+Keep it terse, no filler, no preamble. Output only the markdown.";
+
+/// Map each member id → whether their most recent hook event is a bare
+/// `notification` (session waiting on a decision, per the standup skill).
+fn standup_waiting_map(dir: &std::path::Path) -> std::collections::HashMap<String, bool> {
+    let mut last: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if let Ok(s) = std::fs::read_to_string(dir.join("events.jsonl")) {
+        for line in complete_lines(&s).lines() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                if let (Some(id), Some(ev)) = (v["id"].as_str(), v["event"].as_str()) {
+                    last.insert(id.to_string(), ev.to_string());
+                }
+            }
+        }
+    }
+    last.into_iter().map(|(k, v)| (k, v == "notification")).collect()
+}
+
+/// Assemble the grounded per-member brief as JSON for the model. Reads real
+/// data only (git per repo + tasks.json + events.jsonl); missing files are
+/// treated as empty and a broken worktree is flagged, never skipped silently.
+fn standup_brief_json() -> String {
+    let cfg = team_config();
+    let dir = grillme_dir();
+
+    let tasks: Vec<serde_json::Value> = std::fs::read_to_string(dir.join("tasks.json"))
+        .ok()
+        .and_then(|r| serde_json::from_str::<serde_json::Value>(&r).ok())
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+
+    // task id → status, so blockedBy chains can be resolved to "still blocked".
+    let mut status_by_id: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for t in &tasks {
+        if let (Some(id), Some(st)) = (t["id"].as_str(), t["status"].as_str()) {
+            status_by_id.insert(id.to_string(), st.to_string());
+        }
+    }
+
+    let waiting = standup_waiting_map(&dir);
+
+    let mut members = Vec::new();
+    for m in &cfg.teammates {
+        let branch = git(&m.repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        let repo_available = !branch.is_empty();
+        let commits: Vec<String> = git(
+            &m.repo_path,
+            &["log", "--since=24 hours ago", "--pretty=format:%h %s (%cr)", "-n", "15"],
+        )
+        .map(|s| s.lines().map(str::to_string).collect())
+        .unwrap_or_default();
+        let uncommitted = git(&m.repo_path, &["status", "--porcelain"])
+            .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
+            .unwrap_or(0);
+
+        let owned = |t: &&serde_json::Value| t["owner"].as_str() == Some(m.id.as_str());
+        let done: Vec<String> = tasks
+            .iter()
+            .filter(|t| owned(t) && t["status"] == "done")
+            .filter_map(|t| t["title"].as_str().map(str::to_string))
+            .collect();
+        let doing: Vec<String> = tasks
+            .iter()
+            .filter(|t| owned(t) && t["status"] == "in-progress")
+            .filter_map(|t| t["title"].as_str().map(str::to_string))
+            .collect();
+        let blocked: Vec<String> = tasks
+            .iter()
+            .filter(owned)
+            .filter_map(|t| {
+                let dep = t["blockedBy"].as_str()?;
+                let dep_done =
+                    status_by_id.get(dep).map(|s| s == "done").unwrap_or(false);
+                if dep_done {
+                    return None;
+                }
+                Some(format!(
+                    "{} (blocked by {})",
+                    t["title"].as_str().unwrap_or("task"),
+                    dep
+                ))
+            })
+            .collect();
+
+        members.push(serde_json::json!({
+            "name": m.name,
+            "branch": branch,
+            "repoAvailable": repo_available,
+            "commits": commits,
+            "uncommittedFiles": uncommitted,
+            "tasksDone": done,
+            "tasksInProgress": doing,
+            "tasksBlocked": blocked,
+            "waitingOnInput": waiting.get(&m.id).copied().unwrap_or(false),
+        }));
+    }
+
+    serde_json::json!({ "members": members }).to_string()
+}
+
+/// Strip a single outer ```lang … ``` fence if the model wrapped the whole
+/// reply in one — inner fences (real code blocks) are preserved.
+fn strip_outer_fence(s: &str) -> String {
+    let t = s.trim();
+    if let Some(rest) = t.strip_prefix("```") {
+        if let Some((_, body)) = rest.split_once('\n') {
+            if let Some(inner) = body.trim_end().strip_suffix("```") {
+                return inner.trim().to_string();
+            }
+        }
+    }
+    t.to_string()
+}
+
+/// Pipe `input` to `claude -p <prompt>` over stdin (see module comment above).
+fn standup_claude_pipe(input: &str, prompt: &str) -> Result<String, String> {
+    use std::io::Write as _;
+    let script = format!("claude -p {}", sh_quote(prompt));
+    let mut child = no_prompt(Command::new("/bin/zsh").args(["-lc", &script]))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn claude: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+        // dropping stdin closes the pipe so claude sees EOF
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Auto-standup: real git + task/event signals → `claude -p` → per-teammate
+/// Done/Doing/Blocked markdown. Uses the active project's data dir + team
+/// roster, so it takes no arguments.
+#[tauri::command]
+fn generate_standup() -> Result<String, String> {
+    // Surface an honest "claude not installed" error before doing any work.
+    preflight_claude()?;
+    let mut brief = standup_brief_json();
+    // Cap input size like pr_draft (60k), trimmed to a char boundary.
+    if brief.len() > 60_000 {
+        let mut end = 60_000;
+        while !brief.is_char_boundary(end) {
+            end -= 1;
+        }
+        brief.truncate(end);
+    }
+    let raw = standup_claude_pipe(&brief, STANDUP_PROMPT)?;
+    let cleaned = strip_outer_fence(&raw);
+    if cleaned.is_empty() {
+        return Err("claude returned an empty standup".into());
+    }
+    Ok(cleaned)
+}
 
 #[derive(Serialize, Default)]
 struct ProjectCardStats {
@@ -2660,6 +2836,7 @@ pub fn run() {
             worktree_add,
             git_diff_file,
             pr_draft,
+            generate_standup,
             git_conflict_radar,
             room::room_host_start,
             room::room_host_stop,
@@ -2676,8 +2853,22 @@ pub fn run() {
 mod tests {
     use super::{
         can_write_session_with, is_strong_token, member_for_pty, overlap_pairs, sh_quote,
-        validate_member_id, TeamMember,
+        strip_outer_fence, validate_member_id, TeamMember,
     };
+
+    #[test]
+    fn strip_outer_fence_removes_wrapping_markdown_fence() {
+        let out = strip_outer_fence("```markdown\n## Mei\nDone: x\n```");
+        assert_eq!(out, "## Mei\nDone: x");
+    }
+
+    #[test]
+    fn strip_outer_fence_leaves_unfenced_and_inner_fences_intact() {
+        assert_eq!(strip_outer_fence("## Mei\nDone: x"), "## Mei\nDone: x");
+        // an inner code block must survive untouched (no outer fence)
+        let s = "## Mei\nDone:\n```sh\nls\n```\nmore";
+        assert_eq!(strip_outer_fence(s), s);
+    }
 
     fn m(name: &str, branch: &str, files: &[&str]) -> (String, String, Vec<String>) {
         (name.into(), branch.into(), files.iter().map(|s| s.to_string()).collect())

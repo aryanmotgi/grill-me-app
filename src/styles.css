@@ -328,6 +328,23 @@ select.btn, .btn[type] {
   }
 }
 
+/* ---- inline loading spinner ---- */
+/* A hairline ring with one lit cyan (data) arc. The global reduced-motion
+   rule above clamps the spin to a stop, leaving a static ring — no stuck state. */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--data);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ---- onboarding spotlight tour ---- */
 /* The cut-out: a transparent box whose massive box-shadow darkens the rest of
    the screen, leaving the real UI element bright inside an accent ring. */
