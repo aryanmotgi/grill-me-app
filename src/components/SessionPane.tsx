@@ -253,8 +253,39 @@ function ExplainSession({ mate }: { mate: Teammate }) {
   );
 }
 
+// Read this session's live scrollback (base64 raw pty bytes), strip ANSI, and
+// save it as a Markdown transcript through the native save dialog. Honest
+// toasts on non-native (browser dev) and on failure/cancel.
+async function exportTranscript(mate: Teammate, toast: (t: string, k?: "info" | "warn") => void) {
+  if (!isTauri()) { toast("Export runs in the desktop app", "warn"); return; }
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const b64 = await invoke<string>("pty_scrollback", { id: ptyIdFor(mate.id) });
+    let raw = "";
+    if (b64) {
+      const bin = atob(b64);
+      const u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      raw = new TextDecoder().decode(u);
+    }
+    const at = Date.now();
+    const { buildTranscript, transcriptFilename } = await import("../lib/transcript");
+    const md = buildTranscript(raw, { name: mate.name, branch: mate.branch, at });
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const path = await save({
+      defaultPath: transcriptFilename(mate.name, at),
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    if (!path) return; // user cancelled the dialog
+    await invoke("transcript_write", { path, content: md });
+    toast(`Transcript saved → ${path}`);
+  } catch (e) {
+    toast(`Export failed: ${e}`, "warn");
+  }
+}
+
 export function SessionPane({ mate }: { mate: Teammate }) {
-  const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor, requestHelp, resolveHelp } = useApp();
+  const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor, requestHelp, resolveHelp, toast } = useApp();
   const helpPending = useApp((s) => isHelpPending(s.messages, mate.id));
   const [tab, setTab] = useState<PaneTab>("terminal");
   const member = members.find((m) => m.id === mate.id);
@@ -308,6 +339,13 @@ export function SessionPane({ mate }: { mate: Teammate }) {
               : "Flag this session as stuck — pings the team and shows on everyone's home"}
           >
             <Icon name="help" size={11} /> {helpPending ? "got help" : "request help"}
+          </button>
+          <button
+            className="btn ml-1"
+            onClick={() => exportTranscript(mate, toast)}
+            title="Export transcript: save this session's terminal scrollback as a Markdown file"
+          >
+            <Icon name="download" size={11} /> export
           </button>
           <button
             className="btn ml-1"

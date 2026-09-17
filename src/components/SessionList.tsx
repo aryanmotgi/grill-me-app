@@ -8,6 +8,7 @@ import { Icon } from "./Icon";
 import { EmptyState } from "./EmptyState";
 import type { Teammate } from "../types";
 import { fmtMem } from "../lib/format";
+import { nextPresence, normalizePresence, PRESENCE_HINT, PRESENCE_LABEL, PRESENCE_TONE } from "../lib/selfPresence";
 
 /** Everything a SessionRow needs to be a drag handle + keyboard-movable item.
  *  Absent (undefined) when there's nothing to reorder (a single visible row). */
@@ -76,7 +77,8 @@ export function Sparkline({ id }: { id: string }) {
 }
 
 function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder }) {
-  const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members, setWatchOpen, clearCap, patchTeammate } = useApp();
+  const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members, setWatchOpen, clearCap, patchTeammate, setAppSetting } = useApp();
+  const presence = useApp((s) => normalizePresence(s.appSettings.presence));
   const navSelId = useApp((s) => s.navSelId);
   // authoritative on the real process state so the button can also resume a
   // session the feed paused (idle auto-pause or a cost-cap stop)
@@ -151,6 +153,16 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
           <Icon name="branch" size={11} /> {mate.branch}
         </span>
         <span className="flex-1" />
+        {isOwnSession ? (
+          <button
+            className={`flex items-center gap-1 text-[10px] ${PRESENCE_TONE[presence]} hover:brightness-110 cursor-pointer`}
+            title={`${PRESENCE_HINT[presence]} — click to change`}
+            onClick={(e) => { e.stopPropagation(); setAppSetting("presence", nextPresence(presence)); }}
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-current" aria-hidden />
+            {PRESENCE_LABEL[presence]}
+          </button>
+        ) : null}
         {mate.dnd ? <span title="Do not disturb" className="text-faint"><Icon name="bellOff" size={11} /></span> : null}
       </div>
 

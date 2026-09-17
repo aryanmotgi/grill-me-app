@@ -912,6 +912,25 @@ fn projects_write(content: String) -> Result<(), String> {
     std::fs::write(grillme_root().join("projects.json"), content).map_err(|e| e.to_string())
 }
 
+/// Write an exported session transcript to a user-chosen path. The path comes
+/// from the native save dialog (the user explicitly picked it), so we write it
+/// directly instead of routing through the sandboxed fs plugin scope. We only
+/// guard that it looks like a Markdown file so a stray call can't clobber an
+/// arbitrary file type.
+#[tauri::command]
+fn transcript_write(path: String, content: String) -> Result<(), String> {
+    if !is_markdown_path(&path) {
+        return Err("transcript path must end in .md".into());
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// True when `path` names a Markdown file (case-insensitive `.md`).
+fn is_markdown_path(path: &str) -> bool {
+    path.rsplit('.').next().map(|e| e.eq_ignore_ascii_case("md")).unwrap_or(false)
+        && path.len() > 3
+}
+
 #[tauri::command]
 fn set_active_project(id: String) -> Result<(), String> {
     if !valid_project_id(&id) {
@@ -3834,6 +3853,7 @@ pub fn run() {
             team_config_write,
             projects_list,
             projects_write,
+            transcript_write,
             set_active_project,
             project_card_stats,
             discover_repos,
@@ -3875,9 +3895,20 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        can_write_session_with, is_strong_token, member_for_pty, overlap_pairs, parse_left_right,
-        sh_quote, strip_outer_fence, strip_prose_fence, validate_member_id, TeamMember,
+        can_write_session_with, is_markdown_path, is_strong_token, member_for_pty, overlap_pairs,
+        parse_left_right, sh_quote, strip_outer_fence, strip_prose_fence, validate_member_id,
+        TeamMember,
     };
+
+    #[test]
+    fn is_markdown_path_accepts_only_md_files() {
+        assert!(is_markdown_path("/tmp/transcript-mei.md"));
+        assert!(is_markdown_path("/Users/x/Desktop/A.MD")); // case-insensitive
+        assert!(!is_markdown_path("/tmp/notes.txt"));
+        assert!(!is_markdown_path("/tmp/nodot"));
+        assert!(!is_markdown_path(".md")); // needs a name, not just the extension
+        assert!(!is_markdown_path(""));
+    }
 
     #[test]
     fn strip_prose_fence_unwraps_and_passes_through() {
