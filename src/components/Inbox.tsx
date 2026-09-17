@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "../store";
 import type { Message, MessageKind } from "../types";
 import { fmtFullTime, fmtRelTime } from "../lib/format";
+import { EmptyState } from "./EmptyState";
 
 const KIND_STYLE: Record<MessageKind, { label: string; cls: string; card: string }> = {
   blocking: { label: "BLOCKING", cls: "tag danger", card: "border-l-2 border-l-danger bg-raised" },
@@ -113,14 +114,22 @@ export function Inbox() {
         {waiting.length > 0 ? (
           <div className="panel-label mb-1.5">waiting on reply · {waiting.length}</div>
         ) : null}
-        {sorted.map((m) => (
-          <div key={m.id} className="mb-2">
-            <MessageCard m={m} isRoot />
-            {replies(m.id).map((r) => (
-              <MessageCard key={r.id} m={r} isRoot={false} />
-            ))}
-          </div>
-        ))}
+        {sorted.length === 0 ? (
+          <EmptyState
+            icon="mail"
+            title="Inbox is empty"
+            hint="Questions, proposals, and heads-up notes between sessions land here. Send one below — questions wait for a reply, FYIs digest quietly."
+          />
+        ) : (
+          sorted.map((m) => (
+            <div key={m.id} className="mb-2">
+              <MessageCard m={m} isRoot />
+              {replies(m.id).map((r) => (
+                <MessageCard key={r.id} m={r} isRoot={false} />
+              ))}
+            </div>
+          ))
+        )}
       </div>
 
       <div className="border-t border-line p-2.5 flex-none demo-hide">

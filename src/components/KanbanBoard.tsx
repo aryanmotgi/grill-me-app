@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
+import { EmptyState } from "./EmptyState";
 import { FileBadge } from "./TaskBoard";
 import { TickNumber } from "./TickNumber";
 import { useModalA11y } from "../hooks/useModalA11y";
@@ -225,9 +226,11 @@ export function KanbanBoard() {
           <button className="btn ml-auto" onClick={close}>close</button>
         </div>
         {tasks.length === 0 ? (
-          <div className="text-faint text-[11px] leading-relaxed py-10 text-center">
-            No tasks yet. Add tasks from the right rail → tasks, or fan out a checklist.
-          </div>
+          <EmptyState
+            icon="check"
+            title="No tasks yet"
+            hint="This board shows shared tasks as cards you can drag between columns. Add one from the right rail → tasks, or fan out a checklist to seed it."
+          />
         ) : (
           <div className="flex-1 min-h-0 flex gap-3 overflow-x-auto pb-1">
             {COLUMNS.map((col) => (

@@ -10,6 +10,7 @@ import {
   type CiStatus,
 } from "../lib/prStatus";
 import { Icon } from "./Icon";
+import { EmptyState } from "./EmptyState";
 
 type Load =
   | { state: "loading" }
@@ -154,7 +155,12 @@ export function PrDashboard() {
               <button className="btn self-start mt-1" onClick={refresh}>retry</button>
             </div>
           ) : load.rows.length === 0 ? (
-            <div className="text-faint text-[11px]">no open PRs — nothing to merge.</div>
+            <EmptyState
+              icon="merge"
+              title="No open PRs"
+              hint="Nothing is waiting to merge. Open a PR from a session — review & ship on the home screen runs tests, pushes, and opens one for you."
+              action={<button className="btn" onClick={refresh}>refresh</button>}
+            />
           ) : (
             load.rows.map((pr) => (
               <PrItem key={pr.number} pr={pr} repoPath={repoPath!} onMerged={refresh} />

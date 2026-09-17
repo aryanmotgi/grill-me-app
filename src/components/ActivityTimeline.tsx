@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
+import { EmptyState } from "./EmptyState";
 import type { ActivityEvent } from "../types";
 import { fmtFullTime, fmtRelTime } from "../lib/format";
 
@@ -60,18 +61,40 @@ export function ActivityTimeline() {
           </button>
         ))}
       </div>
-      {shown.map((e) => (
-        <div key={e.id} className="flex gap-2 py-1.5 text-[11px]">
-          <span className={e.kind === "merge" ? "text-ok" : e.kind === "status" ? "text-warn" : "text-faint"}>
-            <Icon name={ICON[e.kind]} size={11} />
-          </span>
-          <span className="text-accent">{name(e.actor)}</span>
-          <span className="text-dim flex-1 leading-relaxed">{e.text}</span>
-          <span className="text-faint tabular-nums flex-none" title={e.epochMs ? fmtFullTime(e.epochMs) : undefined}>
-            {e.epochMs ? fmtRelTime(e.epochMs) : e.ts}
-          </span>
-        </div>
-      ))}
+      {shown.length === 0 ? (
+        <EmptyState
+          icon="spark"
+          title={
+            activity.length === 0
+              ? "No activity yet"
+              : `No ${filter} events`
+          }
+          hint={
+            activity.length === 0
+              ? "Commits, merges, and messages across your sessions show up here as work happens."
+              : "Nothing matches this filter yet — switch back to all to see everything."
+          }
+          compact
+          action={
+            filter !== "all" && activity.length > 0 ? (
+              <button className="btn" onClick={() => setFilter("all")}>show all</button>
+            ) : undefined
+          }
+        />
+      ) : (
+        shown.map((e) => (
+          <div key={e.id} className="flex gap-2 py-1.5 text-[11px]">
+            <span className={e.kind === "merge" ? "text-ok" : e.kind === "status" ? "text-warn" : "text-faint"}>
+              <Icon name={ICON[e.kind]} size={11} />
+            </span>
+            <span className="text-accent">{name(e.actor)}</span>
+            <span className="text-dim flex-1 leading-relaxed">{e.text}</span>
+            <span className="text-faint tabular-nums flex-none" title={e.epochMs ? fmtFullTime(e.epochMs) : undefined}>
+              {e.epochMs ? fmtRelTime(e.epochMs) : e.ts}
+            </span>
+          </div>
+        ))
+      )}
     </div>
   );
 }
