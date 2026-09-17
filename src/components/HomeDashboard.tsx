@@ -10,6 +10,7 @@ import type { ConflictPair, ConflictPrediction } from "../data/sources/git";
 import { fmtTokens, fmtFullTime, fmtRelTime } from "../lib/format";
 import { DEFAULT_TOKEN_BUDGET, tokenBudget, tokenBurn } from "../lib/dashboard";
 import type { TokenBurn } from "../lib/dashboard";
+import { budgetLevel, budgetPct, budgetWarning, rateLimitedSessions } from "../lib/ratelimit";
 import type { ActivityEvent, Teammate } from "../types";
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
@@ -174,6 +175,45 @@ function NeedsYouHero() {
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 1b. RATE-LIMIT STRIP — team-wide callout when any session is currently
+// rate-limited (429 / usage limit / overloaded). Danger-toned, names each
+// session and its reset time when the screen shows one. Only rendered when a
+// session is actually limited — reuses the pty feed's per-session flag, no new
+// polling. Sessions ride out the limit on their own; this just surfaces it.
+// ---------------------------------------------------------------------------
+function RateLimitStrip() {
+  const teammates = useApp((s) => s.teammates);
+  const setActive = useApp((s) => s.setActive);
+  const limited = useMemo(() => rateLimitedSessions(teammates), [teammates]);
+  if (limited.length === 0) return null;
+
+  return (
+    <section className="glass rounded-lg p-4 border-l-2 border-l-danger">
+      <div className="flex items-baseline gap-3 mb-2.5">
+        <Icon name="warn" size={14} className="text-danger" />
+        <span className="font-display font-semibold text-[13px]">
+          {limited.length === 1 ? "1 session rate-limited" : `${limited.length} sessions rate-limited`}
+        </span>
+        <span className="text-faint text-[11px]">each waits and resumes on its own — no action needed</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {limited.map((r) => (
+          <button
+            key={r.id}
+            className="tag danger cursor-pointer hover:brightness-110 transition-all"
+            title={`Open ${r.name}'s session`}
+            onClick={() => setActive(r.id)}
+          >
+            {r.name}
+            {r.resetsAt ? <span className="text-dim"> · resets {r.resetsAt}</span> : null}
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -346,21 +386,34 @@ function TokenMeter() {
   if (budget.spent === 0) return null; // no real token data yet — don't fake a meter
 
   const width = Math.min(100, budget.ratio * 100);
+  // 50/80/100 bands: cyan (calm/50), amber (80), danger (100+). The 50% band
+  // is a visual-only nudge — it tints nothing, just names the level.
+  const level = budgetLevel(budget.ratio);
+  const warn = budgetWarning(level);
+  const barColor = level >= 100 ? "bg-danger" : level >= 80 ? "bg-accent" : "bg-data";
+  const amountColor = level >= 100 ? "text-danger" : level >= 80 ? "text-accent" : "text-data";
   return (
     <section>
       <div className="flex items-baseline justify-between mb-2">
         <span className="panel-label">token budget · soft</span>
         <span className="font-mono text-[10px] num text-dim">
-          <span className={budget.near ? "text-accent" : "text-data"}>{fmtTokens(budget.spent)}</span>
+          <span className={amountColor}>{fmtTokens(budget.spent)}</span>
           {" / "}{fmtTokens(budget.cap)}
+          {" · "}<span className={amountColor}>{budgetPct(budget.ratio)}%</span>
         </span>
       </div>
       <div className="h-1.5 rounded-full overflow-hidden bg-line/50">
         <div
-          className={`h-full rounded-full transition-all ${budget.near ? "bg-accent" : "bg-data"}`}
+          className={`h-full rounded-full transition-all ${barColor}`}
           style={{ width: `${width}%` }}
         />
       </div>
+      {warn ? (
+        <div className={`text-[10px] mt-1.5 flex items-center gap-1 ${level >= 80 ? amountColor : "text-dim"}`}>
+          {level >= 80 ? <Icon name="warn" size={10} className="flex-none" /> : null}
+          {warn}
+        </div>
+      ) : null}
       {showTop && budget.top ? (
         <div className="text-faint text-[10px] mt-1.5">
           biggest spender: <span className="text-dim">{budget.top.name}</span>{" "}
@@ -754,6 +807,7 @@ export function HomeDashboard() {
     <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-[1080px] mx-auto flex flex-col gap-5">
         <NeedsYouHero />
+        <RateLimitStrip />
 
         {showPulse ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">

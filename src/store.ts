@@ -23,6 +23,8 @@ import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsage
 import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
 import { needsAttention } from "./lib/attention";
+import { tokenBudget, DEFAULT_TOKEN_BUDGET } from "./lib/dashboard";
+import { budgetAlertOnCross, budgetLevel, type BudgetLevel } from "./lib/ratelimit";
 import { isHelpPending, isHelpRequest } from "./lib/help";
 import { runCheckpoints, summarizeCheckpoints } from "./lib/checkpoint";
 import { fmtClock } from "./lib/format";
@@ -915,6 +917,8 @@ function emptyTeammate(id: string): Teammate {
 // In plain browser dev the fake seed stays so the UI is still browsable.
 let restoreReady = false;
 let persistT: ReturnType<typeof setTimeout> | undefined;
+/** High-water mark for the soft token-budget warning sound (see subscribe). */
+let firedBudgetLevel: BudgetLevel = 0;
 
 (async () => {
   if (!isTauri()) {
@@ -998,6 +1002,20 @@ useApp.subscribe((st, prev) => {
     if (me && st.mergeQueue.length > 1 && st.mergeQueue[0] === me && prev.mergeQueue[0] !== me) {
       import("./data/sounds").then(({ playAlert }) => playAlert("merge-turn", st.appSettings));
     }
+  }
+  // soft token-budget warning: a distinct sound the first time team spend
+  // crosses UP into the 80% / 100% band. firedBudgetLevel is the high-water
+  // mark, so each band chimes once as spend climbs; a genuine drop (project
+  // switch, new day) lowers it so a later re-crossing can chime again.
+  if (st.teammates !== prev.teammates) {
+    const cap =
+      typeof st.appSettings.tokenBudget === "number"
+        ? (st.appSettings.tokenBudget as number)
+        : DEFAULT_TOKEN_BUDGET;
+    const level = budgetLevel(tokenBudget(st.teammates, cap).ratio);
+    const kind = budgetAlertOnCross(firedBudgetLevel, level);
+    if (kind) import("./data/sounds").then(({ playAlert }) => playAlert(kind, st.appSettings));
+    firedBudgetLevel = level < firedBudgetLevel ? level : ((Math.max(firedBudgetLevel, level)) as BudgetLevel);
   }
 });
   startWatchFeed(useApp);

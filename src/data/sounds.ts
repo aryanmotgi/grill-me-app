@@ -8,13 +8,17 @@
  *   needs-input — ascending attention rise (a session is waiting)
  *   conflict    — low dissonant buzz (urgent, two people on one file)
  *   merge-turn  — bright ascending chime (the queue rotated to you)
+ *   budget-warn — two-tone falling warning (team at 80% of the token budget)
+ *   budget-max  — urgent falling triple (team over the token budget)
  */
 export type AlertKind =
   | "message"
   | "mention"
   | "needs-input"
   | "conflict"
-  | "merge-turn";
+  | "merge-turn"
+  | "budget-warn"
+  | "budget-max";
 
 type Step = [freq: number, dur: number];
 type Voice = {
@@ -35,6 +39,10 @@ const VOICES: Record<AlertKind, Voice> = {
   conflict: { steps: [[220, 0.22], [233, 0.3]], wave: "sawtooth", gain: 0.14 },
   // ready chime: C-E-G-C major arpeggio, resolves upward
   "merge-turn": { steps: [[523, 0.09], [659, 0.09], [784, 0.15], [1047, 0.22]], wave: "triangle", gain: 0.12 },
+  // budget warning: two descending tones — a heads-up, not an alarm (80%)
+  "budget-warn": { steps: [[698, 0.1], [523, 0.16]], wave: "triangle", gain: 0.11 },
+  // budget hit: urgent descending triple, lands low (100%+)
+  "budget-max": { steps: [[784, 0.09], [587, 0.09], [415, 0.24]], wave: "sawtooth", gain: 0.13 },
 };
 
 export const DEFAULT_VOLUME = 0.7;

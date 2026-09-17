@@ -46,6 +46,13 @@ export interface Teammate {
    *  the configured threshold; "looping" = recent output keeps repeating.
    *  Distinct from `health` (which the 20-min stuck/disconnect check owns). */
   flag?: "stalled" | "looping";
+  /** true while the pty feed sees a live rate-limit message (429 / usage limit
+   *  reached / overloaded) in this session's tail. Distinct from the derived
+   *  needs-input status so the team-wide rate-limit indicator can count it. */
+  rateLimited?: boolean;
+  /** Reset time parsed off the rate-limit banner when the screen shows one
+   *  (e.g. "3pm"); undefined when none is printed. */
+  rateLimitResetsAt?: string;
   usage: UsageInfo;
   terminal: TerminalLine[];
   changes: FileChange[];
