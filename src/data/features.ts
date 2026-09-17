@@ -27,6 +27,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Task board", what: "Shared tasks grouped by urgency, with blocking chains", where: "right rail → tasks", go: () => { const st = useApp.getState(); st.setRailTab("tasks"); st.setView("session"); } },
     { name: "Kanban board", what: "Tasks as draggable cards across blocked / not-started / in-progress / done", where: "⌘K → kanban board", go: () => useApp.setState({ kanbanOpen: true }) },
     { name: "Fan-out", what: "Paste a checklist → parallel sessions per independent item", where: "tasks tab → fan out", go: () => { const st = useApp.getState(); st.setRailTab("tasks"); st.setView("session"); } },
+    { name: "Broadcast", what: "Send one prompt or command to all sessions at once — pick which, skip view-only, optionally wait for each to be at a prompt", where: "⌘K → broadcast", go: () => useApp.setState({ broadcastOpen: true }) },
     { name: "Inbox + threads", what: "Typed messages (question/fyi/blocking/proposal), @mentions", where: "right rail → inbox", go: () => { const st = useApp.getState(); st.setRailTab("inbox"); st.setView("session"); } },
     { name: "Proposals", what: "Ask 'does this affect you?' — teammates answer in one click", where: "inbox composer → proposal" },
     { name: "File locks & conflicts", what: "Live claimed files; banner when two people touch one file", where: "tasks tab bottom · auto banner" },
