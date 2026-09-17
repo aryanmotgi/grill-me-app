@@ -11,6 +11,8 @@
  *   budget-warn — two-tone falling warning (team at 80% of the token budget)
  *   budget-max  — urgent falling triple (team over the token budget)
  */
+import { inQuietHours } from "../lib/quietHours";
+
 export type AlertKind =
   | "message"
   | "mention"
@@ -70,6 +72,16 @@ export function resolveAlert(
 let ctx: AudioContext | null = null;
 
 export function playAlert(kind: AlertKind, settings: Record<string, unknown>) {
+  // Do-not-disturb schedule: suppress live alerts during the user's quiet
+  // hours. Read here (impure) rather than in resolveAlert so the Settings
+  // "test" button — which passes a settings object without quietHours — always
+  // previews the sound regardless of the clock.
+  const qh = settings.quietHours as
+    | { enabled?: boolean; start?: string; end?: string }
+    | undefined;
+  if (qh?.enabled && typeof qh.start === "string" && typeof qh.end === "string") {
+    if (inQuietHours(new Date(), qh.start, qh.end)) return;
+  }
   const resolved = resolveAlert(kind, settings);
   if (!resolved) return;
   const { voice, vol } = resolved;

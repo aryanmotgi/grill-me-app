@@ -469,6 +469,22 @@ export function SettingsModal() {
                       }} />
                     <span className="text-dim text-[10px]">million tokens</span>
                   </Row>
+                  {(() => {
+                    const qh = (appSettings.quietHours as { enabled?: boolean; start?: string; end?: string }) ?? {};
+                    const start = typeof qh.start === "string" ? qh.start : "22:00";
+                    const end = typeof qh.end === "string" ? qh.end : "07:00";
+                    const set = (patch: Partial<typeof qh>) => setAppSetting("quietHours", { enabled: qh.enabled, start, end, ...patch });
+                    return (
+                      <Row label="Quiet hours" hint="Suppress alert sounds during a nightly window — the test button still previews">
+                        <Toggle checked={Boolean(qh.enabled)} onChange={(v) => set({ enabled: v })} />
+                        <input type="time" className="btn num" value={start} disabled={!qh.enabled}
+                          aria-label="Quiet hours start" onChange={(e) => set({ start: e.target.value })} />
+                        <span className="text-faint text-[10px]">to</span>
+                        <input type="time" className="btn num" value={end} disabled={!qh.enabled}
+                          aria-label="Quiet hours end" onChange={(e) => set({ end: e.target.value })} />
+                      </Row>
+                    );
+                  })()}
                   {!q ? <div className="panel-label mt-4 mb-1">sounds</div> : null}
                   <Row label="Master volume" hint="Scales every notification sound; mute stays independent">
                     <input type="range" min={0} max={1} step={0.05}
