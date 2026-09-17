@@ -1903,6 +1903,168 @@ fn generate_standup() -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Release notes — gather merged PRs / commit subjects since the last tag (or
+// the last N commits when there are no tags) and pipe them to `claude -p` for
+// grouped markdown notes (Features / Fixes / Chores). Mirrors generate_standup
+// exactly: preflight_claude first, brief fed over stdin via standup_claude_pipe
+// (/bin/zsh -lc login PATH, no_prompt env, data never on a command line), a
+// single outer fence stripped, input capped at 60k on a char boundary.
+// ---------------------------------------------------------------------------
+
+const RELEASE_NOTES_PROMPT: &str = "The input is JSON describing changes to a git repository since \
+its last release: a `range` label (e.g. 'since v1.2.0' or 'last 50 commits'), a `commits` list of \
+commit subjects, and a `mergedPRs` list of merged pull requests ('#<n> <title>'). Write concise \
+release notes in GitHub-flavored markdown grouped under exactly these level-2 sections, in this \
+order: '## Features', '## Fixes', '## Chores'. Put each change as a single '- ' bullet under the \
+best-fitting section; omit a section entirely if it would have no items. Base every bullet ONLY on \
+the provided commits and PRs — never invent changes. When a PR and a commit describe the same work, \
+prefer the PR title and list it once. Keep bullets terse and imperative, no trailing periods, no \
+preamble or sign-off. Output only the markdown.";
+
+/// Decide the git-log range + a human label from the most recent reachable tag.
+/// With a tag we take everything after it (`<tag>..HEAD`); with none we fall
+/// back to the last 50 commits. Pure so it's unit-testable without a repo.
+fn release_range(last_tag: Option<&str>) -> (String, Option<String>) {
+    match last_tag.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(tag) => (format!("since {tag}"), Some(format!("{tag}..HEAD"))),
+        None => ("last 50 commits".to_string(), None),
+    }
+}
+
+/// Assemble the grounded brief as JSON for the model. Pure — takes already
+/// collected real data (never fabricated) so it's unit-testable.
+fn release_notes_brief_json(range: &str, commits: &[String], prs: &[String]) -> String {
+    serde_json::json!({
+        "range": range,
+        "commits": commits,
+        "mergedPRs": prs,
+    })
+    .to_string()
+}
+
+/// Best-effort merged-PR list via `gh pr list` (run in the repo dir). gh may be
+/// absent, unauthenticated, or the repo may have no remote — any failure yields
+/// an empty list so release notes still work from commit subjects alone.
+fn merged_prs(repo_path: &str) -> Vec<String> {
+    let out = no_prompt(Command::new("gh").args([
+        "pr",
+        "list",
+        "--state",
+        "merged",
+        "--limit",
+        "30",
+        "--json",
+        "number,title",
+        "--jq",
+        r##".[] | "#\(.number) \(.title)""##,
+    ]))
+    .current_dir(repo_path)
+    .output();
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Release notes: real `git log` subjects (+ best-effort merged PRs) since the
+/// last tag → `claude -p` → grouped Features/Fixes/Chores markdown.
+#[tauri::command]
+fn generate_release_notes(repo_path: String) -> Result<String, String> {
+    // Surface an honest "claude not installed" error before doing any work.
+    preflight_claude()?;
+
+    // Most recent tag reachable from HEAD; empty/err means the repo has none.
+    let last_tag = git(&repo_path, &["describe", "--tags", "--abbrev=0"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let (label, revspec) = release_range(last_tag.as_deref());
+
+    let mut log_args: Vec<String> =
+        vec!["log".into(), "--no-merges".into(), "--pretty=format:%s".into()];
+    match &revspec {
+        Some(rs) => log_args.push(rs.clone()),
+        None => {
+            log_args.push("-n".into());
+            log_args.push("50".into());
+        }
+    }
+    let arg_refs: Vec<&str> = log_args.iter().map(String::as_str).collect();
+    let commits: Vec<String> = git(&repo_path, &arg_refs)
+        .map_err(|e| format!("git log failed: {e}"))?
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    let prs = merged_prs(&repo_path);
+
+    if commits.is_empty() && prs.is_empty() {
+        return Err(format!("no commits found ({label}) — nothing to release"));
+    }
+
+    let mut brief = release_notes_brief_json(&label, &commits, &prs);
+    // Cap input size like generate_standup (60k), trimmed to a char boundary.
+    if brief.len() > 60_000 {
+        let mut end = 60_000;
+        while !brief.is_char_boundary(end) {
+            end -= 1;
+        }
+        brief.truncate(end);
+    }
+
+    let raw = standup_claude_pipe(&brief, RELEASE_NOTES_PROMPT)?;
+    let cleaned = strip_outer_fence(&raw);
+    if cleaned.is_empty() {
+        return Err("claude returned empty release notes".into());
+    }
+    Ok(cleaned)
+}
+
+#[cfg(test)]
+mod release_notes_tests {
+    use super::{release_notes_brief_json, release_range};
+
+    #[test]
+    fn release_range_prefers_tag_then_falls_back() {
+        assert_eq!(
+            release_range(Some("v1.2.0")),
+            ("since v1.2.0".to_string(), Some("v1.2.0..HEAD".to_string()))
+        );
+        // blank/whitespace tag or none → last-50 fallback, no revspec.
+        assert_eq!(
+            release_range(Some("   ")),
+            ("last 50 commits".to_string(), None)
+        );
+        assert_eq!(release_range(None), ("last 50 commits".to_string(), None));
+    }
+
+    #[test]
+    fn release_notes_brief_json_stays_grounded() {
+        let j = release_notes_brief_json(
+            "since v1",
+            &["add release notes".to_string()],
+            &["#7 fix crash".to_string()],
+        );
+        let v: serde_json::Value = serde_json::from_str(&j).unwrap();
+        assert_eq!(v["range"], "since v1");
+        assert_eq!(v["commits"][0], "add release notes");
+        assert_eq!(v["mergedPRs"][0], "#7 fix crash");
+        // empty inputs serialize as empty arrays, never null/fabricated.
+        let empty = release_notes_brief_json("last 50 commits", &[], &[]);
+        let ev: serde_json::Value = serde_json::from_str(&empty).unwrap();
+        assert!(ev["commits"].as_array().unwrap().is_empty());
+        assert!(ev["mergedPRs"].as_array().unwrap().is_empty());
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Session handoff — summarize a live session's recent output into a "here's
 // where I am / what's next" note a teammate can pick up. Mirrors room's
 // claude_pipe pattern: /bin/zsh -lc for login-shell PATH, no_prompt env, input
@@ -3591,6 +3753,7 @@ pub fn run() {
             git_diff_file,
             pr_draft,
             generate_standup,
+            generate_release_notes,
             summarize_session,
             explain_session,
             git_conflict_radar,

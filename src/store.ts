@@ -130,6 +130,8 @@ interface AppState {
   branchGraphOpen: boolean;
   /** Auto-standup summary overlay (AI Done/Doing/Blocked from git + tasks). */
   standupOpen: boolean;
+  /** Release-notes overlay (AI Features/Fixes/Chores from commits + PRs). */
+  releaseNotesOpen: boolean;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -507,6 +509,7 @@ export const useApp = create<AppState>((set, get) => ({
   tokenDashOpen: false,
   branchGraphOpen: false,
   standupOpen: false,
+  releaseNotesOpen: false,
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
