@@ -2,10 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { visibleSessions } from "../lib/sessionNav";
+import { applySessionOrder, moveId, reorderByDrop } from "../lib/sessionOrder";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
+import { EmptyState } from "./EmptyState";
 import type { Teammate } from "../types";
 import { fmtMem } from "../lib/format";
+
+/** Everything a SessionRow needs to be a drag handle + keyboard-movable item.
+ *  Absent (undefined) when there's nothing to reorder (a single visible row). */
+interface RowReorder {
+  isDragging: boolean;
+  isDropTarget: boolean;
+  position: string;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragEnterRow: () => void;
+  onDropRow: () => void;
+  onMove: (dir: 1 | -1) => void;
+}
 
 const SETUP_LABEL: Record<Teammate["setup"], string> = {
   worktree: "worktree ok",
@@ -60,7 +75,7 @@ export function Sparkline({ id }: { id: string }) {
   );
 }
 
-function SessionRow({ mate }: { mate: Teammate }) {
+function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder }) {
   const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members, setWatchOpen, clearCap, patchTeammate } = useApp();
   const navSelId = useApp((s) => s.navSelId);
   // authoritative on the real process state so the button can also resume a
@@ -83,27 +98,51 @@ function SessionRow({ mate }: { mate: Teammate }) {
   return (
     <div
       ref={rowRef}
-      className={`group px-3 py-3 cursor-pointer transition-colors ${
+      className={`group relative px-3 py-3 cursor-pointer transition-colors ${
         isActive
           ? "bg-raised border-l-2 border-l-accent"
           : isCursor
             ? "bg-raised/60 border-l-2 border-l-data"
             : "hover:bg-raised/60 border-l-2 border-l-transparent"
+      } ${reorder?.isDragging ? "opacity-40" : ""} ${
+        reorder?.isDropTarget ? "before:absolute before:inset-x-0 before:-top-px before:h-0.5 before:bg-data" : ""
       }`}
       role="button"
       tabIndex={0}
       aria-current={isActive ? "true" : undefined}
+      {...(reorder ? { "aria-roledescription": "sortable session", "aria-label": `${mate.name}, ${reorder.position}. Alt+ArrowUp or Alt+ArrowDown to reorder.` } : {})}
       onClick={() => setActive(mate.id)}
+      onDragOver={reorder ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; } : undefined}
+      onDragEnter={reorder ? (e) => { e.preventDefault(); reorder.onDragEnterRow(); } : undefined}
+      onDrop={reorder ? (e) => { e.preventDefault(); reorder.onDropRow(); } : undefined}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
+        if (reorder && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          e.preventDefault();
+          reorder.onMove(e.key === "ArrowUp" ? -1 : 1);
+          return;
+        }
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           setActive(mate.id);
         }
       }}
     >
-      {/* primary line: dot (the one status signal) + name + branch */}
+      {/* primary line: optional drag grip + dot (the one status signal) + name + branch */}
       <div className="flex items-center gap-2">
+        {reorder ? (
+          <span
+            draggable
+            onClick={(e) => e.stopPropagation()}
+            onDragStart={(e) => { e.dataTransfer.setData("text/plain", mate.id); e.dataTransfer.effectAllowed = "move"; reorder.onDragStart(); }}
+            onDragEnd={reorder.onDragEnd}
+            className="flex-none text-faint/60 hover:text-data cursor-grab active:cursor-grabbing -ml-1"
+            title="Drag to reorder — or focus this row and press Alt+↑ / Alt+↓"
+            aria-hidden
+          >
+            <Icon name="grip" size={12} />
+          </span>
+        ) : null}
         <span className={`status-dot ${mate.status}`} role="img"
           aria-label={STATUS_LABEL[mate.status]}
           title={`${mate.status}${offline ? ` · no activity ${mate.lastActiveMin}m` : ""}`} />
@@ -219,8 +258,24 @@ export function SessionList() {
   const width = useApp((s) => s.panelSizes.left);
   const appMode = useApp((s) => s.appMode);
   const ownId = useApp((s) => s.members[0]?.id);
+  const sessionOrder = useApp((s) => s.sessionOrder);
+  const setSessionOrder = useApp((s) => s.setSessionOrder);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  // apply the persisted user order first, then the solo/team visibility filter
+  // so the keyboard-nav source (visibleSessions) and this render stay identical.
+  const ordered = applySessionOrder(teammates, sessionOrder);
+  const orderedIds = ordered.map((t) => t.id);
   // solo: only the own session row (members[0]; first fake row in browser dev)
-  const shown = visibleSessions(teammates, appMode, ownId);
+  const shown = visibleSessions(ordered, appMode, ownId);
+  // reorder only makes sense with more than one draggable row on screen
+  const canReorder = shown.length > 1;
+
+  const commitOrder = (ids: string[]) => {
+    if (ids !== orderedIds) setSessionOrder(ids);
+  };
+
   return (
     <aside data-tour="sessions" style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
       <div className="px-3 py-2 flex items-center justify-between">
@@ -229,10 +284,40 @@ export function SessionList() {
           <span className="text-data text-[10px] num">{teammates.length} on vm</span>
         ) : null}
       </div>
-      <div className="overflow-y-auto">
-        {shown.map((mate) => (
-          <SessionRow key={mate.id} mate={mate} />
-        ))}
+      <div className="overflow-y-auto flex-1">
+        {shown.length === 0 ? (
+          <EmptyState
+            icon="terminal"
+            title="No sessions yet"
+            hint="Each session is a claude running in its own git worktree. Spin one up below to get started."
+            compact
+          />
+        ) : (
+          shown.map((mate, i) => (
+            <SessionRow
+              key={mate.id}
+              mate={mate}
+              reorder={
+                canReorder
+                  ? {
+                      isDragging: dragId === mate.id,
+                      isDropTarget: overId === mate.id && dragId !== null && dragId !== mate.id,
+                      position: `${i + 1} of ${shown.length}`,
+                      onDragStart: () => setDragId(mate.id),
+                      onDragEnd: () => { setDragId(null); setOverId(null); },
+                      onDragEnterRow: () => setOverId(mate.id),
+                      onDropRow: () => {
+                        if (dragId) commitOrder(reorderByDrop(orderedIds, dragId, mate.id));
+                        setDragId(null);
+                        setOverId(null);
+                      },
+                      onMove: (dir) => commitOrder(moveId(orderedIds, mate.id, dir)),
+                    }
+                  : undefined
+              }
+            />
+          ))
+        )}
       </div>
       <Spawner />
     </aside>

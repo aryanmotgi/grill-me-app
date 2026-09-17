@@ -94,6 +94,16 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   chevron: <path d="m6 3.5 4.5 4.5L6 12.5" />,
+  grip: (
+    <>
+      <circle cx="6" cy="4" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="4" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="8" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="8" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="12" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="12" r="0.7" fill="currentColor" stroke="none" />
+    </>
+  ),
   record: <circle cx="8" cy="8" r="3.5" fill="currentColor" stroke="none" />,
   download: (
     <>

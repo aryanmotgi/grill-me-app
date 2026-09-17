@@ -82,9 +82,26 @@ function NeedsYouHero() {
       </div>
 
       {count === 0 ? (
-        <div className="text-dim text-[12px] leading-relaxed">
-          When a session needs input, a teammate is blocked, or it's your merge turn,
-          it lands here first.
+        <div className="flex flex-col gap-3">
+          <div className="text-dim text-[12px] leading-relaxed">
+            {solo
+              ? "All quiet — nothing is waiting on you. Spin up a session or open the task board to line up the next thing."
+              : "When a session needs input, a teammate is blocked, or it's your merge turn, it lands here first."}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              className="btn"
+              onClick={() => useApp.setState({ sessionTemplatesOpen: true })}
+            >
+              <Icon name="plus" size={11} /> new session
+            </button>
+            <button
+              className="btn"
+              onClick={() => { setRailTab("tasks"); setView("session"); }}
+            >
+              <Icon name="branch" size={11} /> task board
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">

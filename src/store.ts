@@ -163,6 +163,10 @@ interface AppState {
   /** Panel widths/ratios, persisted. */
   panelSizes: { left: number; right: number; split: number };
   setPanelSize: (key: "left" | "right" | "split", value: number, persist?: boolean) => void;
+  /** User's session-list row order (member ids), persisted in settings.json.
+   *  Advisory — SessionList falls back to natural order for any id not here. */
+  sessionOrder: string[];
+  setSessionOrder: (ids: string[]) => void;
   shipSession: (id: string) => Promise<void>;
   shipApproved: (id: string) => Promise<void>;
   dense: boolean;
@@ -628,6 +632,11 @@ export const useApp = create<AppState>((set, get) => ({
     set({ panelSizes });
     if (persist) get().setAppSetting("panelSizes", panelSizes);
   },
+  sessionOrder: [],
+  setSessionOrder: (ids) => {
+    set({ sessionOrder: ids });
+    get().setAppSetting("sessionOrder", ids);
+  },
 
   /** Opens the pre-merge review; approving there runs /ship in the session. */
   shipSession: async (id) => {
@@ -947,6 +956,7 @@ let firedBudgetLevel: BudgetLevel = 0;
       useApp.setState({ appSettings });
       if (typeof appSettings.theme === "string") useApp.setState({ themeName: appSettings.theme });
       if (appSettings.panelSizes) useApp.setState({ panelSizes: appSettings.panelSizes as { left: number; right: number; split: number } });
+      if (Array.isArray(appSettings.sessionOrder)) useApp.setState({ sessionOrder: (appSettings.sessionOrder as unknown[]).filter((x): x is string => typeof x === "string") });
       if (appSettings.terminal) useApp.setState({ termSettings: { ...DEFAULT_TERM_SETTINGS, ...(appSettings.terminal as Partial<TermSettings>) } });
       if (appSettings.appMode === "solo" || appSettings.appMode === "team") useApp.setState({ appMode: appSettings.appMode });
     } catch (e) {
