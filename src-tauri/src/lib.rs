@@ -2779,6 +2779,209 @@ fn git_conflict_radar() -> Vec<ConflictPair> {
     pairs
 }
 
+// ---------------------------------------------------------------------------
+// Conflict prediction: given two members, feed the diffs of their OVERLAPPING
+// files (per branch, vs merge-base) to `claude -p` and ask whether the two
+// branches will ACTUALLY conflict (edit the same lines/functions) vs merely
+// touch the same files — plus a recommended merge order. Returns strict JSON.
+// Never runs a merge. Diff input is capped so a huge branch can't blow the
+// prompt (mirrors git_review's 120KB cap, tighter here since it's per-file).
+// ---------------------------------------------------------------------------
+
+/// Max bytes of diff kept per file, and the overall input cap fed to claude.
+const PREDICT_PER_FILE_CAP: usize = 8_000;
+const PREDICT_TOTAL_CAP: usize = 40_000;
+/// Never fan out more than this many per-file `git diff` subprocesses.
+const PREDICT_MAX_FILES: usize = 20;
+
+#[derive(Serialize)]
+struct ConflictPrediction {
+    /// "low" | "medium" | "high" — color-coded in the UI.
+    likelihood: String,
+    detail: String,
+    #[serde(rename = "recommendedOrder")]
+    recommended_order: String,
+}
+
+const PREDICT_PROMPT: &str = "You are a senior engineer predicting git MERGE CONFLICTS before a merge is attempted. \
+The input is JSON describing two feature branches and, for each file they BOTH changed, that file's diff on branch A and on branch B (each is `git diff` vs the shared merge-base). \
+Decide whether merging these two branches would produce REAL git conflicts — i.e. they edit the SAME lines, hunks, or closely adjacent regions / the same function bodies — versus merely touching the same files in different places (which git auto-merges cleanly). \
+Then recommend which branch to merge FIRST and why (usually the smaller / more foundational / less-likely-to-be-rebased one). \
+Respond with STRICT JSON and NOTHING else — no markdown fences, no prose before or after. \
+Exactly these keys: {\"likelihood\": \"low\"|\"medium\"|\"high\", \"detail\": \"1-3 sentences citing the specific files/regions that drive the risk\", \"recommendedOrder\": \"one sentence naming which branch to merge first and why\"}.";
+
+/// Strip a leading/trailing markdown fence, then cut to the outermost { … }.
+/// Models occasionally fence or preface JSON despite instructions.
+fn extract_json_object(raw: &str) -> String {
+    let mut s = raw.trim();
+    if s.starts_with("```") {
+        s = s.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
+        if let Some(stripped) = s.trim_end().strip_suffix("```") {
+            s = stripped;
+        }
+        s = s.trim();
+    }
+    if s.starts_with('{') && s.ends_with('}') {
+        return s.to_string();
+    }
+    match (s.find('{'), s.rfind('}')) {
+        (Some(a), Some(b)) if a < b => s[a..=b].to_string(),
+        _ => s.to_string(),
+    }
+}
+
+/// Normalize a model-produced likelihood to one of the three UI buckets.
+fn normalize_likelihood(raw: &str) -> String {
+    let l = raw.trim().to_lowercase();
+    if l.contains("high") {
+        "high".into()
+    } else if l.contains("low") || l.contains("none") {
+        "low".into()
+    } else {
+        "medium".into()
+    }
+}
+
+/// Changed files on this worktree's branch vs the shared merge-base with main.
+fn branch_changed_files(repo: &str) -> Result<Vec<String>, String> {
+    Ok(git(repo, &["diff", "--name-only", "main...HEAD"])?
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect())
+}
+
+#[tauri::command]
+fn predict_conflict(member_a: String, member_b: String) -> Result<ConflictPrediction, String> {
+    // Honest claude-missing handling: same preflight the panes use.
+    preflight_claude()?;
+
+    let cfg = team_config();
+    // Match on name (what ConflictPair carries) OR id, so the chip can pass
+    // either identifier without the caller having to know which.
+    let find = |key: &str| {
+        cfg.teammates
+            .iter()
+            .find(|m| m.name == key || m.id == key)
+    };
+    let a = find(&member_a).ok_or_else(|| format!("unknown member: {member_a}"))?;
+    let b = find(&member_b).ok_or_else(|| format!("unknown member: {member_b}"))?;
+
+    let branch_a = git(&a.repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
+    let branch_b = git(&b.repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
+    if branch_a == branch_b {
+        return Ok(ConflictPrediction {
+            likelihood: "low".into(),
+            detail: format!("Both members are on the same branch ({branch_a}); there is nothing to merge between them."),
+            recommended_order: "Either order is safe — identical branches merge trivially.".into(),
+        });
+    }
+
+    let files_a = branch_changed_files(&a.repo_path)?;
+    let files_b = branch_changed_files(&b.repo_path)?;
+    let set_b: std::collections::HashSet<&str> = files_b.iter().map(String::as_str).collect();
+    let mut overlap: Vec<String> = files_a
+        .iter()
+        .filter(|f| set_b.contains(f.as_str()))
+        .cloned()
+        .collect();
+    overlap.sort();
+    overlap.dedup();
+
+    if overlap.is_empty() {
+        return Ok(ConflictPrediction {
+            likelihood: "low".into(),
+            detail: "The two branches change no files in common — git will auto-merge them cleanly.".into(),
+            recommended_order: "Either order is safe; there is no file overlap.".into(),
+        });
+    }
+    overlap.truncate(PREDICT_MAX_FILES);
+
+    // Per-file diffs from each branch, individually capped, then a total cap.
+    let mut file_entries: Vec<serde_json::Value> = Vec::new();
+    let mut budget = PREDICT_TOTAL_CAP;
+    for f in &overlap {
+        if budget == 0 {
+            break;
+        }
+        let per = PREDICT_PER_FILE_CAP.min(budget);
+        let mut da = git(&a.repo_path, &["diff", "main...HEAD", "--", f]).unwrap_or_default();
+        let mut db = git(&b.repo_path, &["diff", "main...HEAD", "--", f]).unwrap_or_default();
+        truncate_at_char_boundary(&mut da, per);
+        truncate_at_char_boundary(&mut db, per);
+        budget = budget.saturating_sub(da.len() + db.len());
+        file_entries.push(serde_json::json!({
+            "file": f,
+            "diffA": da,
+            "diffB": db,
+        }));
+    }
+
+    let input = serde_json::json!({
+        "memberA": a.name, "branchA": branch_a,
+        "memberB": b.name, "branchB": branch_b,
+        "files": file_entries,
+    })
+    .to_string();
+
+    let raw = room::claude_pipe(&input, PREDICT_PROMPT)?;
+    let cleaned = extract_json_object(&raw);
+    let parsed: serde_json::Value = serde_json::from_str(&cleaned)
+        .map_err(|e| format!("claude did not return valid JSON: {e}"))?;
+
+    let detail = parsed["detail"].as_str().unwrap_or("").trim().to_string();
+    let recommended_order = parsed["recommendedOrder"].as_str().unwrap_or("").trim().to_string();
+    if detail.is_empty() && recommended_order.is_empty() {
+        return Err("claude returned an empty prediction".into());
+    }
+    Ok(ConflictPrediction {
+        likelihood: normalize_likelihood(parsed["likelihood"].as_str().unwrap_or("medium")),
+        detail,
+        recommended_order,
+    })
+}
+
+#[cfg(test)]
+mod predict_conflict_tests {
+    use super::{extract_json_object, normalize_likelihood};
+
+    #[test]
+    fn extract_object_from_fenced_json() {
+        let raw = "```json\n{\"likelihood\":\"high\",\"detail\":\"x\"}\n```";
+        assert_eq!(
+            extract_json_object(raw),
+            "{\"likelihood\":\"high\",\"detail\":\"x\"}"
+        );
+    }
+
+    #[test]
+    fn extract_object_from_prefixed_prose() {
+        let raw = "Here is the JSON: {\"likelihood\":\"low\"} — hope that helps";
+        assert_eq!(extract_json_object(raw), "{\"likelihood\":\"low\"}");
+    }
+
+    #[test]
+    fn extract_object_passthrough_bare() {
+        let raw = "{\"a\":1}";
+        assert_eq!(extract_json_object(raw), "{\"a\":1}");
+    }
+
+    #[test]
+    fn likelihood_buckets_normalize() {
+        assert_eq!(normalize_likelihood("HIGH"), "high");
+        assert_eq!(normalize_likelihood("  Low "), "low");
+        assert_eq!(normalize_likelihood("none"), "low");
+        assert_eq!(normalize_likelihood("medium"), "medium");
+        // anything unrecognized falls back to the safe middle bucket
+        assert_eq!(normalize_likelihood("maybe?"), "medium");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2838,6 +3041,7 @@ pub fn run() {
             pr_draft,
             generate_standup,
             git_conflict_radar,
+            predict_conflict,
             room::room_host_start,
             room::room_host_stop,
             room::room_client,

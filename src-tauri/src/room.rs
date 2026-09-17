@@ -635,7 +635,7 @@ pub fn room_client(host_addr: String, path: String, body_json: String) -> Result
 // pipe so transcripts/plans never touch a command line.
 // ---------------------------------------------------------------------------
 
-fn claude_pipe(input: &str, prompt: &str) -> Result<String, String> {
+pub(crate) fn claude_pipe(input: &str, prompt: &str) -> Result<String, String> {
     let script = format!("claude -p {}", sh_quote(prompt));
     let mut child = no_prompt(Command::new("/bin/zsh").args(["-lc", &script]))
         .stdin(Stdio::piped())
