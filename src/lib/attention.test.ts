@@ -92,6 +92,15 @@ describe("needsAttention", () => {
     expect(needsAttention({ status: "idle", health: "stale" })).toBe(true);
     expect(needsAttention({ status: "working", health: "disconnected" })).toBe(true);
   });
+
+  it("includes a stalled or looping session even when otherwise healthy", () => {
+    expect(needsAttention({ status: "idle", health: "ok", flag: "stalled" })).toBe(true);
+    expect(needsAttention({ status: "working", health: "ok", flag: "looping" })).toBe(true);
+  });
+
+  it("does not include a healthy, unflagged session", () => {
+    expect(needsAttention({ status: "idle", health: "ok" })).toBe(false);
+  });
 });
 
 describe("end-to-end invariant: auto-pause can never hide a session from attention", () => {

@@ -126,6 +126,14 @@ function SessionRow({ mate }: { mate: Teammate }) {
           </span>
         ) : null}
         {mate.paused ? <span className="tag" title="Auto-paused while idle — opens instantly when you view or type">paused</span> : null}
+        {mate.flag ? (
+          <span className="tag warn"
+            title={mate.flag === "looping"
+              ? "Recent output keeps repeating — this session may be stuck in a loop"
+              : "No output for a while — this session may be stalled"}>
+            {mate.flag}
+          </span>
+        ) : null}
         {mate.setup !== "ready" ? <span className="tag">{SETUP_LABEL[mate.setup]}</span> : null}
         {offline ? (
           <span

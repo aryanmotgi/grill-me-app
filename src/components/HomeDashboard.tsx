@@ -17,6 +17,8 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s
 function activitySentence(t: Teammate): string {
   if (t.health === "disconnected") return "worktree not connected";
   if (t.status === "needs-input") return "needs a decision";
+  if (t.flag === "looping") return "looks stuck in a loop";
+  if (t.flag === "stalled") return "stalled — no output for a while";
   if (t.status === "working")
     return t.currentFile !== "—" && t.currentFile
       ? `working in ${t.currentFile.split("/").pop()}`
@@ -126,9 +128,13 @@ function NeedsYouHero() {
                 <b>{t.name}</b>
                 {t.status === "needs-input"
                   ? "'s session is waiting on a decision"
-                  : t.health === "disconnected"
-                    ? "'s session disconnected — restart it"
-                    : "'s session has gone quiet"}
+                  : t.flag === "looping"
+                    ? "'s session looks stuck in a loop"
+                    : t.flag === "stalled"
+                      ? "'s session has stalled — no output for a while"
+                      : t.health === "disconnected"
+                        ? "'s session disconnected — restart it"
+                        : "'s session has gone quiet"}
               </span>
               <span className="ml-auto text-faint text-[10px]">open session</span>
             </button>
