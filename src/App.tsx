@@ -21,6 +21,7 @@ import { SessionScrubber } from "./components/SessionScrubber";
 import { PresenceMap } from "./components/PresenceMap";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TokenDashboard } from "./components/TokenDashboard";
+import { StandupSummary } from "./components/StandupSummary";
 import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
 import { CinemaMode } from "./components/CinemaMode";
@@ -191,6 +192,7 @@ export default function App() {
         else if (s.presenceMapOpen) useApp.setState({ presenceMapOpen: false });
         else if (s.kanbanOpen) useApp.setState({ kanbanOpen: false });
         else if (s.tokenDashOpen) useApp.setState({ tokenDashOpen: false });
+        else if (s.standupOpen) useApp.setState({ standupOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
@@ -296,6 +298,7 @@ export default function App() {
       <PresenceMap />
       <KanbanBoard />
       <TokenDashboard />
+      <StandupSummary />
       <Cheatsheet />
       <Toasts />
     </div>

@@ -121,6 +121,8 @@ interface AppState {
   kanbanOpen: boolean;
   /** Token & cost dashboard overlay. */
   tokenDashOpen: boolean;
+  /** Auto-standup summary overlay (AI Done/Doing/Blocked from git + tasks). */
+  standupOpen: boolean;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -490,6 +492,7 @@ export const useApp = create<AppState>((set, get) => ({
   presenceMapOpen: false,
   kanbanOpen: false,
   tokenDashOpen: false,
+  standupOpen: false,
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
