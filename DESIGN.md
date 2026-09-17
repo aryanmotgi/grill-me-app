@@ -22,6 +22,31 @@ diverge from the app theme by user choice.
 | `ok` / `warn` / `danger` / `idle` | status semantics; warn doubles as needs-input |
 | `termBg` / `termInk` / `termCmd` | terminal defaults (ember palette tracks these) |
 
+### Themes (theme pack)
+
+Four complete `Theme` objects ship in `themes.ts`, each carrying the full token
+set above (including `data` and `lineglow`) and swappable live from the overflow
+menu (`TopBar.tsx`, which maps `Object.keys(themes)`). A theme's map **key must
+equal its `.name`** — the key is the stored setting and menu label; `.name`
+becomes `data-theme` on `<html>`, which drives the per-theme CSS overrides in
+`styles.css`.
+
+| Theme | Feel | Ground | Notes |
+|---|---|---|---|
+| `ember` | warm dark (default) | phosphor green-black | amber action, cyan data |
+| `paperwhite` | light | warm paper | quieter glows (`--glow-a: 5%`) |
+| `cyan-noir` | cool dark | deep blue-black | cyan-forward `data`; amber still reserved for action |
+| `synthwave` | retro-futuristic dark | magenta/purple | purple lives in surfaces + glass rim, cyan is `data`, amber is action; hotter neon ground (`--glow-a: 9%`) |
+
+**Invariants across every theme:** amber = action only, cyan (`data`) = readouts,
+the two-accent rule holds regardless of hue. Purple/magenta in synthwave is a
+*surface* hue (ground, `line`, `lineglow`), never a semantic accent. All text
+tokens clear AA on their surfaces in all four themes; per-theme glow alphas are
+tuned via `:root[data-theme="…"] #root { --glow-a }` so the layered ground and
+glass rim read at the same intensity everywhere. The `term*` fields are each
+theme's terminal colors (used when the terminal follows the app theme); the
+separate ANSI palettes in `termPalettes.ts` remain a user choice.
+
 ## Type scale (4 steps — do not invent sizes)
 
 | Step | Size | Face | Use |
@@ -105,7 +130,8 @@ semantic (e.g. "tasks done"). Never decorate with either accent.
 background: a vertical `panel→bg` gradient, two faint radial glows (amber
 top-right, cyan top-left, ~5-7% alpha), and a barely-there vertical grid, over
 the existing horizontal scanlines. `background-attachment: fixed`, quieter in
-paperwhite. It lives on the shell — never per panel. Content surfaces that
+paperwhite and hotter in synthwave (per-theme `--glow-a`). It lives on the
+shell — never per panel. Content surfaces that
 should reveal it (the home dashboard) stay transparent.
 
 **Glass panels + glow edge.** The `.glass` class is the shared card/modal
@@ -114,7 +140,7 @@ gradient-glow rim from `lineglow` (mask-composite trick on `::before`). Pair it
 with a `rounded-*` utility — the rim inherits the radius. Applied to home stat
 cards, all modals, and dropdown menus. Structural chrome (top bar, session
 list, right rail) stays flat over the ground — glass is for things that float.
-Text must stay AA over the glass in both themes.
+Text must stay AA over the glass in all four themes.
 
 **Modal primitive.** `.scrim` = dark wash + `blur(2px)` behind every overlay;
 the modal panel is `.glass` + `shadow-2xl` + `rise`. All modals inherit this.
