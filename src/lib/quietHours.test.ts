@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inQuietHours, parseHhMm } from "./quietHours";
+import { inQuietHours, notificationsSilenced, parseHhMm } from "./quietHours";
 
 // Fix a date and vary only the clock time so the wall-clock math is exercised
 // without depending on the machine's timezone offset (getHours is local).
@@ -43,5 +43,25 @@ describe("inQuietHours", () => {
   it("fails open (not quiet) on malformed times", () => {
     expect(inQuietHours(at(3, 0), "nonsense", "07:00")).toBe(false);
     expect(inQuietHours(at(3, 0), "22:00", "")).toBe(false);
+  });
+});
+
+describe("notificationsSilenced", () => {
+  const qh = (extra: Record<string, unknown>) => ({ quietHours: extra });
+
+  it("silences (sound AND OS banner) inside an enabled window", () => {
+    const s = qh({ enabled: true, start: "22:00", end: "07:00" });
+    expect(notificationsSilenced(s, at(2, 0))).toBe(true);
+    expect(notificationsSilenced(s, at(12, 0))).toBe(false);
+  });
+
+  it("never silences when quiet hours are disabled or absent", () => {
+    expect(notificationsSilenced(qh({ enabled: false, start: "22:00", end: "07:00" }), at(2, 0))).toBe(false);
+    expect(notificationsSilenced({}, at(2, 0))).toBe(false); // Settings test button
+  });
+
+  it("fails open on a malformed or partial quietHours block", () => {
+    expect(notificationsSilenced(qh({ enabled: true, start: "22:00" }), at(2, 0))).toBe(false);
+    expect(notificationsSilenced(qh({ enabled: true, start: 22, end: 7 }), at(2, 0))).toBe(false);
   });
 });
