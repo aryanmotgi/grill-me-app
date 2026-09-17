@@ -155,12 +155,25 @@ export interface Toast {
 
 export type RoomPhase = "lobby" | "brainstorm" | "plan" | "tasks" | "assign" | "done";
 
+/** Live presence a member pushes on each heartbeat (post-onboarding). */
+export interface RoomPresence {
+  name?: string;
+  /** derived session status: "working" | "idle" | "needs-input" | … */
+  status?: string;
+  /** file the member most recently touched */
+  file?: string;
+  /** title of the task they're on */
+  task?: string;
+}
+
 export interface RoomMember {
   id: string;
   name: string;
   isHost: boolean;
   /** Epoch ms of the member's last heartbeat — status is derived client-side. */
   lastSeen: number;
+  /** Live presence, absent until the member's first heartbeat carries one. */
+  presence?: RoomPresence;
 }
 
 export interface RoomChatMsg {
@@ -188,4 +201,12 @@ export interface RoomState {
   plan: string;
   tasks: RoomTask[];
   startedAt: number;
+  /**
+   * Live shared docs carried over the room after onboarding (phase "done"):
+   * file name → id-keyed array (tasks.json / messages.json / decisions.json).
+   * Host-authoritative; empty during the lobby/setup phases.
+   */
+  shared?: Record<string, unknown[]>;
+  /** Removed-id tombstones per file (prevents offline-peer resurrection). */
+  tombstones?: Record<string, string[]>;
 }

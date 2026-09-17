@@ -1054,7 +1054,7 @@ fn acquire_sidecar_lock(target: &std::path::Path) -> Result<SidecarLock, String>
 /// front (`prepend_new`, messages.json shows newest-first) or the back
 /// (tasks.json appends). Incoming items without a string "id" are dropped —
 /// there is nothing to merge them by.
-fn merge_by_id(
+pub(crate) fn merge_by_id(
     current: &str,
     incoming: Vec<serde_json::Value>,
     removed: &[String],

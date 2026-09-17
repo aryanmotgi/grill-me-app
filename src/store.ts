@@ -231,6 +231,13 @@ interface AppState {
   /** Set when Team is picked this session — routes to the TeamFlow screens
    *  (create/join → lobby → setup) until the flow completes. */
   teamFlowNeeded: boolean;
+  /** True once onboarding reached phase "done" — the room stays ALIVE after
+   *  this (it now carries live shared state), so this flag (not room === null)
+   *  is what makes finishTeamSetup idempotent. Reset by leaveRoom. */
+  teamSetupDone: boolean;
+  /** Live presence of remote room members, keyed by member id (from their
+   *  heartbeats). Populated only in a live room; empty in solo/local mode. */
+  roomPresence: Record<string, import("./types").RoomPresence>;
   /** Team-mode room state (host-owned, polled live by startRoomFeed). */
   room: RoomState | null;
   roomRole: "host" | "guest" | null;
@@ -777,6 +784,8 @@ export const useApp = create<AppState>((set, get) => ({
 
   appMode: null,
   teamFlowNeeded: false,
+  teamSetupDone: false,
+  roomPresence: {},
   setAppMode: (m) => {
     set({ appMode: m, teamFlowNeeded: m === "team" });
     get().setAppSetting("appMode", m);
@@ -791,20 +800,27 @@ export const useApp = create<AppState>((set, get) => ({
   roomHostIp: null,
   roomOffline: false,
   setRoom: (room) =>
-    set((s) =>
+    set((s) => {
       // no-op guard: the room feed calls this every 1.5s with mostly-identical
       // state — skipping identical JSON avoids re-rendering every subscriber
-      JSON.stringify(s.room) === JSON.stringify(room) ? s : { room },
-    ),
+      if (JSON.stringify(s.room) === JSON.stringify(room)) return s;
+      // lift remote members' presence into a flat map for PresenceMap/Lobby
+      const roomPresence: Record<string, import("./types").RoomPresence> = {};
+      for (const m of room?.members ?? []) {
+        if (m.presence) roomPresence[m.id] = { name: m.name, ...m.presence };
+      }
+      return { room, roomPresence };
+    }),
 
   finishTeamSetup: async () => {
-    // snapshot + clear synchronously: a second call (direct host call racing
-    // the feed-driven subscription) sees room === null and no-ops.
-    const { room, roomRole, roomSelf } = get();
-    if (!room) return;
-    // clear teamFlowNeeded too — App routes to TeamFlow while it is true, so
-    // the workspace only renders once setup is done
-    set({ room: null, roomRole: null, roomSelf: null, teamFlowNeeded: false, view: "home" });
+    // idempotent via teamSetupDone (NOT room===null): the room now stays ALIVE
+    // after onboarding to carry live shared state, so a second call (direct
+    // host call racing the feed-driven subscription) is guarded by the flag.
+    const { room, roomRole, roomSelf, teamSetupDone } = get();
+    if (!room || teamSetupDone) return;
+    // Leave the flow (App routes to TeamFlow only while teamFlowNeeded), but
+    // KEEP room/roomSelf/roomRole so startRoomFeed keeps polling + syncing.
+    set({ teamSetupDone: true, teamFlowNeeded: false, view: "home" });
 
     const teamMembers = get().members;
     const boardTasks = roomTasksToAppTasks(room.tasks, room.members, teamMembers, room.code);
@@ -855,7 +871,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   leaveRoom: async () => {
     const wasHost = get().roomRole === "host";
-    set({ room: null, roomRole: null, roomSelf: null, roomOffline: false });
+    set({ room: null, roomRole: null, roomSelf: null, roomOffline: false, teamSetupDone: false, roomPresence: {} });
     if (wasHost && isTauri()) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -893,9 +909,10 @@ export const useApp = create<AppState>((set, get) => ({
 }));
 
 
-// Team setup completion: fires exactly once on the room-feed transition to
-// phase "done" (host AND guests). finishTeamSetup clears room synchronously,
-// so later feed reads of the done room (prev.room === null) can never refire.
+// Team setup completion: fires on the room-feed transition to phase "done"
+// (host AND guests). The room now STAYS alive after this (it carries live
+// shared state), so this edge fires once — the phase stays "done" on later
+// ticks — and finishTeamSetup is additionally guarded by teamSetupDone.
 useApp.subscribe((st, prev) => {
   if (st.room?.phase === "done" && prev.room && prev.room.phase !== "done") {
     void st.finishTeamSetup();
@@ -1072,7 +1089,13 @@ async function persistShared(name: string, data: unknown) {
 }
 
 /** Delta upsert into an id-keyed shared array file: `items` overwrite/insert
- *  by id, `removedIds` delete, everything else on disk is preserved. */
+ *  by id, `removedIds` delete, everything else on disk is preserved.
+ *
+ *  Writes local ~/.grillme first (unchanged — solo/local mode is exactly as
+ *  before), THEN, if a live room exists (post-onboarding), mirrors the same
+ *  delta to the host so remote teammates converge. The room push is
+ *  fire-and-forget: a failed push (host down) leaves the local write intact
+ *  and the room feed re-pushes the unsynced entry on reconnect. */
 export async function upsertShared(
   name: "tasks.json" | "messages.json" | "decisions.json",
   items: unknown[],
@@ -1081,6 +1104,12 @@ export async function upsertShared(
   if (!isTauri()) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("shared_upsert", { name, itemsJson: JSON.stringify(items), removedIds }).catch(console.error);
+  // live room? push the delta to the team. Guard keeps solo/local a pure no-op.
+  const { room, roomSelf } = useApp.getState();
+  if (room && roomSelf && room.phase === "done") {
+    const { roomSync } = await import("./components/teamflow/roomApi");
+    void roomSync(name, items, removedIds);
+  }
 }
 
 /** Field-level merge into team.json — only the fields provided overwrite. */

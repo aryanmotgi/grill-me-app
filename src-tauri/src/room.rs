@@ -17,6 +17,7 @@
 //! code path.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -25,9 +26,24 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use crate::{grillme_root, lock_or_recover, no_prompt, sh_quote};
+use crate::{grillme_root, lock_or_recover, merge_by_id, no_prompt, sh_quote};
 
 pub const ROOM_PORT: u16 = 4518;
+
+/// Shared documents carried live over the room AFTER onboarding (phase
+/// "done"). Same id-keyed arrays the local ~/.grillme merge writer uses.
+pub const SYNC_FILES: &[&str] = &["tasks.json", "messages.json", "decisions.json"];
+
+/// Per-file tombstone cap — a bounded ring so a long session can't grow the
+/// removed-id set without limit. Deletions older than this many removals may
+/// be resurrected by a peer that was offline the whole time (documented).
+const TOMBSTONE_CAP: usize = 2000;
+
+/// messages/decisions render newest-first, so genuinely new entries prepend;
+/// tasks append. Mirrors the local shared_upsert ordering.
+fn prepend_for(file: &str) -> bool {
+    file == "messages.json" || file == "decisions.json"
+}
 
 /// Room-code alphabet from the contract: no 0/O/1/I/L lookalikes.
 pub const CODE_ALPHABET: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -46,6 +62,11 @@ pub struct RoomMember {
     /// epoch ms of the last heartbeat — status is DERIVED client-side.
     #[serde(rename = "lastSeen")]
     pub last_seen: u64,
+    /// Live presence pushed on each heartbeat: {status, file, task, name}.
+    /// Opaque JSON so the shape can evolve without a Rust change; absent until
+    /// the member's first heartbeat carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -80,6 +101,14 @@ pub struct RoomState {
     pub tasks: Vec<RoomTask>,
     #[serde(rename = "startedAt")]
     pub started_at: u64,
+    /// Live shared docs (file name → id-keyed array), host-authoritative. Only
+    /// populated once the room reaches phase "done" and members start syncing.
+    #[serde(default)]
+    pub shared: BTreeMap<String, Vec<serde_json::Value>>,
+    /// Removed-id tombstones per file so a reconnecting peer can't resurrect
+    /// something deleted while it was offline. Bounded (TOMBSTONE_CAP).
+    #[serde(default)]
+    pub tombstones: BTreeMap<String, Vec<String>>,
 }
 
 const PHASES: &[&str] = &["lobby", "brainstorm", "plan", "tasks", "assign", "done"];
@@ -252,11 +281,14 @@ pub(crate) fn room_handle(
                     name: name.trim().to_string(),
                     is_host: true,
                     last_seen: now,
+                    presence: None,
                 }],
                 chat: vec![],
                 plan: String::new(),
                 tasks: vec![],
                 started_at: now,
+                shared: BTreeMap::new(),
+                tombstones: BTreeMap::new(),
             });
             (200, format!("{{\"code\":\"{code}\",\"memberId\":\"m1\"}}"))
         }
@@ -286,11 +318,14 @@ pub(crate) fn room_handle(
                 name,
                 is_host: false,
                 last_seen: now,
+                presence: None,
             });
             (200, format!("{{\"memberId\":\"{id}\"}}"))
         }
         ("POST", "/room/heartbeat") => {
             let member_id = field("memberId");
+            // optional live presence blob ({status, file, task, name})
+            let presence = v.get("presence").filter(|p| !p.is_null()).cloned();
             let state = match check_code(room, &field("code")) {
                 Ok(s) => s,
                 Err(e) => return e,
@@ -298,10 +333,43 @@ pub(crate) fn room_handle(
             match state.members.iter_mut().find(|m| m.id == member_id) {
                 Some(m) => {
                     m.last_seen = now;
+                    if presence.is_some() {
+                        m.presence = presence;
+                    }
                     (200, "{\"ok\":true}".into())
                 }
                 None => err_body(403, "unknown member"),
             }
+        }
+        ("POST", "/room/sync") => {
+            let member_id = field("memberId");
+            let file = field("file");
+            let items = v.get("items").and_then(|i| i.as_array()).cloned().unwrap_or_default();
+            let removed: Vec<String> = v
+                .get("removed")
+                .and_then(|r| r.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let state = match check_code(room, &field("code")) {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            if !state.members.iter().any(|m| m.id == member_id) {
+                return err_body(403, "unknown member");
+            }
+            if !SYNC_FILES.contains(&file.as_str()) {
+                return err_body(400, "unknown sync file");
+            }
+            // syncing IS liveness — a member pushing state is alive.
+            if let Some(m) = state.members.iter_mut().find(|m| m.id == member_id) {
+                m.last_seen = now;
+            }
+            let merged = apply_sync(state, &file, items, &removed);
+            let tombs = state.tombstones.get(&file).cloned().unwrap_or_default();
+            (
+                200,
+                serde_json::json!({ "ok": true, "items": merged, "tombstones": tombs }).to_string(),
+            )
         }
         ("POST", "/room/chat") => {
             let member_id = field("memberId");
@@ -438,6 +506,65 @@ fn normalize_tasks(items: &[serde_json::Value]) -> Vec<RoomTask> {
         });
     }
     out
+}
+
+/// id of a shared-doc entry, if it has a string "id".
+fn value_id(v: &serde_json::Value) -> Option<String> {
+    v.get("id").and_then(|i| i.as_str()).map(str::to_string)
+}
+
+/// Merge an incoming delta into the host-authoritative `shared[file]`, honoring
+/// tombstones so a peer that was offline during a delete can't resurrect the
+/// removed entry when it reconnects and re-pushes its stale copy.
+///
+/// Steps: (1) record `removed` ids as tombstones (bounded ring); (2) drop any
+/// tombstoned id from the incoming items BEFORE merge; (3) run the same
+/// id-keyed merge the local writer uses; (4) sweep tombstoned ids out of the
+/// result. Returns the merged array (also stored back into `shared[file]`).
+fn apply_sync(
+    state: &mut RoomState,
+    file: &str,
+    items: Vec<serde_json::Value>,
+    removed: &[String],
+) -> Vec<serde_json::Value> {
+    // (1) grow the tombstone ring
+    {
+        let tombs = state.tombstones.entry(file.to_string()).or_default();
+        for id in removed {
+            if !tombs.contains(id) {
+                tombs.push(id.clone());
+            }
+        }
+        if tombs.len() > TOMBSTONE_CAP {
+            let overflow = tombs.len() - TOMBSTONE_CAP;
+            tombs.drain(0..overflow);
+        }
+    }
+    let tomb_set: std::collections::HashSet<String> = state
+        .tombstones
+        .get(file)
+        .map(|t| t.iter().cloned().collect())
+        .unwrap_or_default();
+
+    // (2) never let a tombstoned id back in via incoming
+    let incoming: Vec<serde_json::Value> = items
+        .into_iter()
+        .filter(|it| value_id(it).map(|id| !tomb_set.contains(&id)).unwrap_or(false))
+        .collect();
+
+    // (3) merge against the current authoritative array
+    let current = state
+        .shared
+        .get(file)
+        .map(|arr| serde_json::to_string(arr).unwrap_or_else(|_| "[]".into()))
+        .unwrap_or_else(|| "[]".into());
+    let mut merged = merge_by_id(&current, incoming, removed, prepend_for(file));
+
+    // (4) final sweep — drop anything tombstoned (covers ids removed this call)
+    merged.retain(|it| value_id(it).map(|id| !tomb_set.contains(&id)).unwrap_or(true));
+
+    state.shared.insert(file.to_string(), merged.clone());
+    merged
 }
 
 // ---------------------------------------------------------------------------
@@ -779,8 +906,8 @@ mod tests {
             code: "K7M2P".into(),
             phase: "brainstorm".into(),
             members: vec![
-                RoomMember { id: "m1".into(), name: "Aryan".into(), is_host: true, last_seen: 1758040000000 },
-                RoomMember { id: "m2".into(), name: "Sam".into(), is_host: false, last_seen: 1758040001000 },
+                RoomMember { id: "m1".into(), name: "Aryan".into(), is_host: true, last_seen: 1758040000000, presence: None },
+                RoomMember { id: "m2".into(), name: "Sam".into(), is_host: false, last_seen: 1758040001000, presence: None },
             ],
             chat: vec![RoomChatMsg {
                 from: "m2".into(),
@@ -792,6 +919,8 @@ mod tests {
             plan: "# Plan".into(),
             tasks: vec![RoomTask { id: "t1".into(), title: "scaffold".into(), detail: "vite app".into(), assignee: Some("m2".into()) }],
             started_at: 1758040000000,
+            shared: BTreeMap::new(),
+            tombstones: BTreeMap::new(),
         }
     }
 
@@ -1068,6 +1197,118 @@ mod tests {
         assert_eq!(tasks[2].id, "t10"); // continues past the explicit t9
     }
 
+    // -- handler: live shared sync (post-onboarding) --------------------------
+
+    fn ids(arr: &serde_json::Value) -> Vec<String> {
+        arr.as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["id"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn sync_merges_deltas_from_multiple_members_by_id() {
+        let (mut room, code) = hosted_room();
+        post(&mut room, "/room/join", serde_json::json!({"code": code, "name": "Sam"}), 2_000);
+        // host pushes a task
+        let (st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "tasks.json",
+            "items": [{"id": "t1", "title": "A", "status": "not-started"}]
+        }), 3_000);
+        assert_eq!(st, 200);
+        assert_eq!(ids(&serde_json::from_str::<serde_json::Value>(&body).unwrap()["items"]), vec!["t1"]);
+        // guest pushes a different task — must NOT clobber t1
+        let (_st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m2", "file": "tasks.json",
+            "items": [{"id": "t2", "title": "B", "status": "not-started"}]
+        }), 3_100);
+        let merged = &serde_json::from_str::<serde_json::Value>(&body).unwrap()["items"];
+        assert_eq!(ids(merged), vec!["t1", "t2"], "tasks append and both survive");
+        // host updates t1 in place (status change) — overwrite by id, order kept
+        let (_st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "tasks.json",
+            "items": [{"id": "t1", "title": "A", "status": "done"}]
+        }), 3_200);
+        let merged = &serde_json::from_str::<serde_json::Value>(&body).unwrap()["items"];
+        assert_eq!(ids(merged), vec!["t1", "t2"]);
+        assert_eq!(merged.as_array().unwrap()[0]["status"], "done");
+    }
+
+    #[test]
+    fn sync_messages_prepend_newest_first() {
+        let (mut room, code) = hosted_room();
+        post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "messages.json", "items": [{"id": "a", "text": "1"}]
+        }), 1_000);
+        let (_st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "messages.json", "items": [{"id": "b", "text": "2"}]
+        }), 1_100);
+        let merged = &serde_json::from_str::<serde_json::Value>(&body).unwrap()["items"];
+        assert_eq!(ids(merged), vec!["b", "a"], "messages newest-first");
+    }
+
+    #[test]
+    fn sync_tombstone_prevents_offline_peer_resurrection() {
+        let (mut room, code) = hosted_room();
+        post(&mut room, "/room/join", serde_json::json!({"code": code, "name": "Sam"}), 2_000);
+        // both members know t1
+        post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "tasks.json", "items": [{"id": "t1", "title": "A"}]
+        }), 3_000);
+        // host deletes t1 (removed) — tombstoned + dropped from authority
+        let (_st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "tasks.json", "items": [], "removed": ["t1"]
+        }), 3_100);
+        let merged = &serde_json::from_str::<serde_json::Value>(&body).unwrap()["items"];
+        assert!(merged.as_array().unwrap().is_empty(), "t1 gone from authority");
+        // a reconnecting guest re-pushes its stale copy of t1 — MUST be rejected
+        let (_st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m2", "file": "tasks.json", "items": [{"id": "t1", "title": "A"}]
+        }), 3_200);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert!(v["items"].as_array().unwrap().is_empty(), "tombstoned t1 not resurrected");
+        assert_eq!(v["tombstones"].as_array().unwrap()[0], "t1");
+    }
+
+    #[test]
+    fn sync_rejects_unknown_file_member_and_code() {
+        let (mut room, code) = hosted_room();
+        // unknown file
+        let (st, _) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "secrets.json", "items": []
+        }), 1_000);
+        assert_eq!(st, 400);
+        // unknown member
+        let (st, _) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m9", "file": "tasks.json", "items": []
+        }), 1_000);
+        assert_eq!(st, 403);
+        // wrong code
+        let (st, _) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": "XXXXX", "memberId": "m1", "file": "tasks.json", "items": []
+        }), 1_000);
+        assert_eq!(st, 403);
+    }
+
+    #[test]
+    fn heartbeat_stores_presence_and_state_echoes_it() {
+        let (mut room, code) = hosted_room();
+        let (st, _) = post(&mut room, "/room/heartbeat", serde_json::json!({
+            "code": code, "memberId": "m1", "presence": {"status": "needs-input", "file": "lib.rs"}
+        }), 5_000);
+        assert_eq!(st, 200);
+        let (_st, body) = room_handle("GET", &format!("/room/state?code={code}"), b"", &mut room, 6_000);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["members"][0]["presence"]["status"], "needs-input");
+        assert_eq!(v["members"][0]["presence"]["file"], "lib.rs");
+        // a heartbeat without presence keeps the last one (doesn't wipe it)
+        post(&mut room, "/room/heartbeat", serde_json::json!({"code": code, "memberId": "m1"}), 7_000);
+        let (_st, body) = room_handle("GET", &format!("/room/state?code={code}"), b"", &mut room, 8_000);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["members"][0]["presence"]["status"], "needs-input");
+    }
+
     #[test]
     fn next_id_continues_after_gaps() {
         assert_eq!(next_id("m", vec![].into_iter()), "m1");
@@ -1079,5 +1320,101 @@ mod tests {
             next_id("t", vec!["t2".to_string(), "weird".to_string()].into_iter()),
             "t3"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Over-the-wire integration test: the REAL 0.0.0.0:4518 listener, driven by
+// two independent TCP clients (as two machines would), proving a delta pushed
+// by one client converges into the other's GET /room/state. Skips gracefully
+// if :4518 is already bound (e.g. the app is running a room) so it never
+// fails a dev machine.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+    use std::net::TcpStream;
+
+    /// One raw HTTP round-trip to the local room server; returns (status, body).
+    fn req(method: &str, path: &str, body: &str) -> Option<(u16, String)> {
+        let mut s = TcpStream::connect(("127.0.0.1", ROOM_PORT)).ok()?;
+        s.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
+        let req = if body.is_empty() {
+            format!("{method} {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        } else {
+            format!(
+                "{method} {path} HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+        };
+        s.write_all(req.as_bytes()).ok()?;
+        let mut raw = String::new();
+        s.read_to_string(&mut raw).ok()?;
+        let status: u16 = raw
+            .split_whitespace()
+            .nth(1)
+            .and_then(|c| c.parse().ok())
+            .unwrap_or(0);
+        let body = raw.split_once("\r\n\r\n").map(|(_, b)| b.to_string())?;
+        Some((status, body))
+    }
+
+    #[test]
+    fn two_tcp_clients_converge_through_the_real_listener() {
+        // Isolate from any persisted room and from other tests' global state.
+        *lock_or_recover(&ROOM) = None;
+        if start_room_server().is_err() {
+            eprintln!("skipping wire test — :{ROOM_PORT} already bound");
+            return;
+        }
+        // brief grace for the accept thread to be ready
+        std::thread::sleep(Duration::from_millis(50));
+
+        // client A (host) creates the room
+        let Some((st, body)) = req("POST", "/room/create", r#"{"name":"Host"}"#) else {
+            eprintln!("skipping wire test — server not reachable");
+            return;
+        };
+        assert_eq!(st, 200, "create: {body}");
+        let code = serde_json::from_str::<serde_json::Value>(&body).unwrap()["code"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // client B (guest) joins over its own connection
+        let (st, _) = req("POST", "/room/join", &format!(r#"{{"code":"{code}","name":"Guest"}}"#)).unwrap();
+        assert_eq!(st, 200);
+
+        // advance to the live phase so this mirrors post-onboarding sync
+        let (st, _) = req("POST", "/room/advance", &format!(r#"{{"code":"{code}","memberId":"m1","phase":"done"}}"#)).unwrap();
+        assert_eq!(st, 200);
+
+        // A pushes a task; B pushes a different task — separate connections
+        let (st, _) = req("POST", "/room/sync", &format!(r#"{{"code":"{code}","memberId":"m1","file":"tasks.json","items":[{{"id":"t1","title":"A"}}]}}"#)).unwrap();
+        assert_eq!(st, 200);
+        let (st, _) = req("POST", "/room/sync", &format!(r#"{{"code":"{code}","memberId":"m2","file":"tasks.json","items":[{{"id":"t2","title":"B"}}]}}"#)).unwrap();
+        assert_eq!(st, 200);
+
+        // a THIRD independent reader pulls state — sees BOTH tasks merged
+        let (st, body) = req("GET", &format!("/room/state?code={code}"), "").unwrap();
+        assert_eq!(st, 200);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let ids: Vec<&str> = v["shared"]["tasks.json"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.contains(&"t1") && ids.contains(&"t2"), "both clients' tasks converged: {ids:?}");
+
+        // presence pushed by B over the wire is visible to A's read
+        let (st, _) = req("POST", "/room/heartbeat", &format!(r#"{{"code":"{code}","memberId":"m2","presence":{{"status":"working","file":"api.rs"}}}}"#)).unwrap();
+        assert_eq!(st, 200);
+        let (_st, body) = req("GET", &format!("/room/state?code={code}"), "").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["members"][1]["presence"]["status"], "working");
+
+        // clean the global so we don't leak a room into other test binaries
+        *lock_or_recover(&ROOM) = None;
     }
 }

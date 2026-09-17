@@ -16,8 +16,14 @@ export function PresenceMap() {
   const locks = useApp((s) => s.liveLocks);
   const teammates = useApp((s) => s.teammates);
   const me = useApp((s) => s.members[0]?.id);
+  const roomPresence = useApp((s) => s.roomPresence);
+  const roomSelfId = useApp((s) => s.roomSelf?.memberId);
   const modalA11y = useModalA11y("Presence map", open);
   if (!open) return null;
+
+  // Remote teammates on other machines — their live presence over the room
+  // (excludes my own room member; that's the local view above).
+  const remote = Object.entries(roomPresence).filter(([id]) => id !== roomSelfId);
 
   const close = () => useApp.setState({ presenceMapOpen: false });
   const map = buildPresenceMap(locks);
@@ -146,6 +152,25 @@ export function PresenceMap() {
               </div>
             </section>
           </div>
+        )}
+
+        {remote.length > 0 && (
+          <section className="mt-6 pt-5 border-t border-line/60">
+            <div className="panel-label mb-2">remote teammates · {remote.length} · live over room</div>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+              {remote.map(([id, p]) => (
+                <div key={id} className="rounded-md p-2 border border-line/60">
+                  <div className="flex items-center gap-2">
+                    <span className={`status-dot ${p.status ?? "idle"}`} role="img" aria-hidden />
+                    <span className="text-[12px] font-semibold">{p.name ?? id}</span>
+                    <span className="text-faint text-[9px] ml-auto">{p.status ?? "idle"}</span>
+                  </div>
+                  {p.task ? <div className="text-[10px] text-dim truncate mt-1" title={p.task}>{p.task}</div> : null}
+                  {p.file ? <div className="font-mono text-[10px] text-faint truncate" title={p.file}>{p.file}</div> : null}
+                </div>
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </div>
