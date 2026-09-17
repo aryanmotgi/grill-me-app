@@ -25,6 +25,7 @@ import { isTauri } from "./data/sources/git";
 import { needsAttention } from "./lib/attention";
 import { tokenBudget, DEFAULT_TOKEN_BUDGET } from "./lib/dashboard";
 import { budgetAlertOnCross, budgetLevel, type BudgetLevel } from "./lib/ratelimit";
+import { sessionTokens } from "./lib/cap";
 import { isHelpPending, isHelpRequest } from "./lib/help";
 import { runCheckpoints, summarizeCheckpoints } from "./lib/checkpoint";
 import { fmtClock } from "./lib/format";
@@ -184,6 +185,10 @@ interface AppState {
   spawnFromTemplate: (id: string, name: string, branch: string, startingPrompt: string) => Promise<void>;
   appSettings: Record<string, unknown>;
   setAppSetting: (key: string, value: unknown) => void;
+  /** Clear a session's cost-cap flag on a manual resume and rebaseline its cap
+   *  to its current token count — so a resumed session runs until it burns
+   *  another full cap's worth, then stops again (documented in lib/cap). */
+  clearCap: (id: string) => void;
   /** Manual snapshot: checkpoint-commit every member repo now, always toasting. */
   checkpointNow: () => Promise<void>;
   termSettings: TermSettings;
@@ -734,6 +739,11 @@ export const useApp = create<AppState>((set, get) => ({
     const appSettings = { ...get().appSettings, [key]: value };
     set({ appSettings });
     persistShared("settings.json", appSettings);
+  },
+  clearCap: (id) => {
+    const t = get().teammates.find((x) => x.id === id);
+    if (!t?.capReached) return;
+    get().patchTeammate(id, { capReached: false, capBaseTokens: sessionTokens(t) });
   },
   checkpointNow: async () => {
     const members = get().members;

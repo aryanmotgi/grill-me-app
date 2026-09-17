@@ -53,6 +53,14 @@ export interface Teammate {
   /** Reset time parsed off the rate-limit banner when the screen shows one
    *  (e.g. "3pm"); undefined when none is printed. */
   rateLimitResetsAt?: string;
+  /** Cost cap: true when auto-paused for blowing its token budget. Shows a
+   *  distinct "cap reached" tag, blocks auto-resume-on-view, and is cleared by
+   *  a manual resume (which also rebaselines capBaseTokens). */
+  capReached?: boolean;
+  /** Session token count at the last manual resume. The cap counts tokens
+   *  ABOVE this, so each manual resume grants another full cap's worth of
+   *  budget before the session is stopped again. */
+  capBaseTokens?: number;
   usage: UsageInfo;
   terminal: TerminalLine[];
   changes: FileChange[];

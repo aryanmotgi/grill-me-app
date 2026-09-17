@@ -54,7 +54,7 @@ export function QuickSwitcher() {
     setTheme, themeName, toggleDense, toggleFocus, setMergePilotOpen, setRailTab,
     setView, setDraftReply, patchTeammate, toast, appSettings, setAppSetting,
     setHandoffFor, messages, requestHelp, resolveHelp,
-    setWatchOpen, members,
+    setWatchOpen, members, clearCap,
   } = useApp();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -150,6 +150,8 @@ export function QuickSwitcher() {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("pty_pause", { id: ptyIdFor(mate.id), pause: next });
       patchTeammate(mate.id, { paused: next });
+      // resuming a cap-paused session clears the flag + rebaselines its cap
+      if (!next) clearCap(mate.id);
       toast(next ? `${mate.name} paused — state preserved` : `${mate.name} resumed`);
     } catch (e) {
       toast(`Pause failed: ${e}`, "warn");
@@ -263,7 +265,7 @@ export function QuickSwitcher() {
                   </span>
                   <span className="font-mono text-faint text-[10px]"><Icon name="branch" size={10} /> {mate.branch}</span>
                   <span className="flex-1" />
-                  {mate.paused ? <span className="tag">paused</span> : null}
+                  {mate.capReached ? <span className="tag text-warn" title="Paused — hit its token budget cap">cap reached</span> : mate.paused ? <span className="tag">paused</span> : null}
                   <span className="text-dim text-[11px] truncate max-w-[140px]">{mate.taskLabel}</span>
                   {active && sub < 0 ? <span className="text-faint text-[10px]" title="Reveal quick actions">→</span> : null}
                 </div>

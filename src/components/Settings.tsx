@@ -433,6 +433,16 @@ export function SettingsModal() {
                       <option value="20">after 20 min</option>
                     </select>
                   </Row>
+                  <Row label="Token budget cap" hint="Hard-stop a session that blows its token budget — auto-pauses it (never one waiting on you). Resume grants another cap's worth.">
+                    <select className="btn" value={String(appSettings.sessionTokenCap ?? 0)}
+                      onChange={(e) => setAppSetting("sessionTokenCap", Number(e.target.value))}>
+                      <option value="0">off</option>
+                      <option value="100000">100k tokens</option>
+                      <option value="200000">200k tokens</option>
+                      <option value="500000">500k tokens</option>
+                      <option value="1000000">1M tokens</option>
+                    </select>
+                  </Row>
                   <Row label="Self-healing sessions" hint="Auto-restart crashed sessions (max 3/10min); flag stuck ones; ride out rate limits">
                     <Toggle checked={appSettings.selfHeal !== false} onChange={(v) => setAppSetting("selfHeal", v)} />
                   </Row>
