@@ -436,11 +436,21 @@ export function SettingsModal() {
                     <Toggle checked={Boolean(appSettings.muteAll)} onChange={(v) => setAppSetting("muteAll", v)} />
                   </Row>
                   {!q ? <div className="panel-label mt-4 mb-1">sounds</div> : null}
+                  <Row label="Master volume" hint="Scales every notification sound; mute stays independent">
+                    <input type="range" min={0} max={1} step={0.05}
+                      value={typeof appSettings.soundVolume === "number" ? appSettings.soundVolume : 0.7}
+                      className="w-32 accent-(--accent)"
+                      onChange={(e) => setAppSetting("soundVolume", Number(e.target.value))} />
+                    <span className="text-dim text-[10px] num">
+                      {Math.round((typeof appSettings.soundVolume === "number" ? appSettings.soundVolume : 0.7) * 100)}%
+                    </span>
+                  </Row>
                   {([
-                    ["message", "New message", "soft two-tone"],
+                    ["message", "New message / FYI", "soft rising blip"],
                     ["mention", "@mention", "insistent three-tone"],
-                    ["needs-input", "Needs input", "rising triple"],
-                    ["conflict", "File conflict", "low buzz"],
+                    ["needs-input", "Needs input", "ascending attention rise"],
+                    ["conflict", "File conflict", "urgent low dissonance"],
+                    ["merge-turn", "Your merge turn", "bright ready chime"],
                   ] as const).map(([key, label, hint]) => (
                     <Row key={key} label={label} hint={hint}>
                       <Toggle
@@ -449,7 +459,9 @@ export function SettingsModal() {
                           ...((appSettings.sounds as Record<string, boolean>) ?? {}), [key]: v,
                         })} />
                       <button className="btn" onClick={() =>
-                        import("../data/sounds").then(({ playAlert }) => playAlert(key, { sounds: {} }))
+                        // preview bypasses the per-kind mute but honors master volume
+                        import("../data/sounds").then(({ playAlert }) =>
+                          playAlert(key, { sounds: {}, soundVolume: appSettings.soundVolume }))
                       }>test</button>
                     </Row>
                   ))}

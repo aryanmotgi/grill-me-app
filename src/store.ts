@@ -806,6 +806,13 @@ useApp.subscribe((st, prev) => {
       import("./data/sounds").then(({ playAlert }) => playAlert("conflict", st.appSettings));
     }
   }
+  // ready chime when the merge queue rotates to you (real multi-person queue only)
+  if (st.mergeQueue[0] !== prev.mergeQueue[0]) {
+    const me = st.members[0]?.id;
+    if (me && st.mergeQueue.length > 1 && st.mergeQueue[0] === me && prev.mergeQueue[0] !== me) {
+      import("./data/sounds").then(({ playAlert }) => playAlert("merge-turn", st.appSettings));
+    }
+  }
 });
   startWatchFeed(useApp);
   startPtyFeed(useApp);
