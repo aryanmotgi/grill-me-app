@@ -109,6 +109,8 @@ interface AppState {
   presenceMapOpen: boolean;
   /** Kanban task-board overlay (panel-kanban). */
   kanbanOpen: boolean;
+  /** Token & cost dashboard overlay. */
+  tokenDashOpen: boolean;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -470,6 +472,7 @@ export const useApp = create<AppState>((set, get) => ({
   setScrubberOpen: (scrubberOpen) => set({ scrubberOpen }),
   presenceMapOpen: false,
   kanbanOpen: false,
+  tokenDashOpen: false,
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),

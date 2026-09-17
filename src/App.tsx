@@ -20,6 +20,7 @@ import { CrossSessionSearch } from "./components/CrossSessionSearch";
 import { SessionScrubber } from "./components/SessionScrubber";
 import { PresenceMap } from "./components/PresenceMap";
 import { KanbanBoard } from "./components/KanbanBoard";
+import { TokenDashboard } from "./components/TokenDashboard";
 import { ModeSelect } from "./components/ModeSelect";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -106,6 +107,7 @@ export default function App() {
         else if (s.scrubberOpen) s.setScrubberOpen(false);
         else if (s.presenceMapOpen) useApp.setState({ presenceMapOpen: false });
         else if (s.kanbanOpen) useApp.setState({ kanbanOpen: false });
+        else if (s.tokenDashOpen) useApp.setState({ tokenDashOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
@@ -197,6 +199,7 @@ export default function App() {
       <SessionScrubber />
       <PresenceMap />
       <KanbanBoard />
+      <TokenDashboard />
       <Toasts />
     </div>
   );
