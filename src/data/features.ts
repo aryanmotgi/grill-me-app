@@ -33,6 +33,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Presence map", what: "Who is touching what right now — files → members in them, conflicts flagged", where: "⌘/ → presence map", go: () => useApp.setState({ presenceMapOpen: true }) },
     { name: "Soft heads-ups", what: "Quiet toast when someone changes a file you recently read", where: "automatic" },
     { name: "Merge rotation", what: "Whose turn to merge; run the actual merge in-app", where: "top bar chip → merge pilot" },
+    { name: "Merge conductor", what: "Guided walk of the merge queue: predicts each branch's conflict with the next, then merges one at a time on your confirm", where: "⌘/ → merge conductor · home", go: () => useApp.setState({ mergeConductorOpen: true }) },
     { name: "Standup log", what: "Auto-stitched from finished tasks", where: "right rail → feed", go: () => { const st = useApp.getState(); st.setRailTab("activity"); st.setView("session"); } },
     { name: "Standup", what: "AI per-teammate Done / Doing / Blocked from git log + tasks; post to the standup log", where: "⌘K → standup", go: () => useApp.setState({ standupOpen: true }) },
     { name: "Session handoff", what: "Claude summarizes where you are + what's next, then sends it to a teammate", where: "session pane → hand off · ⌘K", go: () => { const st = useApp.getState(); st.setHandoffFor(st.activeId); } },
