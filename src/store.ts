@@ -102,6 +102,9 @@ interface AppState {
   diffBoardOpen: boolean;
   /** Cross-session search overlay (panel-cross-search). Toggled via setState. */
   crossSearchOpen: boolean;
+  /** Session timeline scrubber overlay — replay recent pty output by line. */
+  scrubberOpen: boolean;
+  setScrubberOpen: (open: boolean) => void;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -459,6 +462,8 @@ export const useApp = create<AppState>((set, get) => ({
   featureIndexOpen: false,
   diffBoardOpen: false,
   crossSearchOpen: false,
+  scrubberOpen: false,
+  setScrubberOpen: (scrubberOpen) => set({ scrubberOpen }),
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
