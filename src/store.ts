@@ -153,6 +153,11 @@ interface AppState {
   mergeConductorOpen: boolean;
   setMergeConductorOpen: (open: boolean) => void;
   spawnSession: (id: string, name: string, branch: string) => Promise<void>;
+  /** "New session from template" overlay (panel-session-templates). */
+  sessionTemplatesOpen: boolean;
+  /** Spawn a session on `branch` (reusing spawnSession), then brief the
+   *  template's starting prompt in once the pty reaches an idle claude prompt. */
+  spawnFromTemplate: (id: string, name: string, branch: string, startingPrompt: string) => Promise<void>;
   appSettings: Record<string, unknown>;
   setAppSetting: (key: string, value: unknown) => void;
   /** Manual snapshot: checkpoint-commit every member repo now, always toasting. */
@@ -587,6 +592,26 @@ export const useApp = create<AppState>((set, get) => ({
     } catch (e) {
       get().toast(`Spawn failed: ${e}`, "warn");
     }
+  },
+  sessionTemplatesOpen: false,
+  spawnFromTemplate: async (id, name, branch, startingPrompt) => {
+    if (!isTauri()) { get().toast("Session templates need the native app to spawn sessions", "warn"); return; }
+    // reuse the one spawn path (worktree + pty + team entry); it toasts on failure
+    await get().spawnSession(id, name, branch);
+    // spawn didn't get far enough to register the member → don't poll for a
+    // session that will never come up (spawnSession already reported why)
+    if (!get().members.some((m) => m.id === id)) return;
+    const prompt = startingPrompt.endsWith("\n") ? startingPrompt : `${startingPrompt}\n`;
+    // brief goes in only once the session is at an idle claude prompt — same
+    // readiness gate fan-out and team setup use, never a blind timer
+    deliverBriefWhenReady(ptyIdFor(id), prompt).then((delivered) => {
+      if (!delivered) {
+        get().toast(
+          `Brief NOT delivered to ${name} — session never became ready. Paste the template prompt into its pane manually.`,
+          "warn",
+        );
+      }
+    });
   },
   appSettings: {},
   termSettings: DEFAULT_TERM_SETTINGS,

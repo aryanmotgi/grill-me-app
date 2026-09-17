@@ -15,6 +15,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Live Claude terminals", what: "A real, typable Claude Code session per teammate", where: "click any session row", go: () => useApp.getState().setView("session") },
     { name: "Shell tab", what: "Plain zsh terminal in the same worktree", where: "session pane → shell" },
     { name: "New session", what: "Creates a git worktree + branch + live session", where: "session list → + new session" },
+    { name: "Session templates", what: "Spawn from a recipe: branch prefix + a starting prompt briefed in once the session is ready", where: "session list → template · ⌘/", go: () => useApp.setState({ sessionTemplatesOpen: true }) },
     { name: "Pause / resume", what: "Freeze your session's process, keep all context", where: "hover your session row" },
     { name: "Record session", what: "Save raw terminal output to a replay file", where: "session pane → rec" },
     { name: "Timeline scrubber", what: "Scroll through a session's recent output with a slider", where: "⌘K → timeline scrubber", go: () => useApp.getState().setScrubberOpen(true) },
