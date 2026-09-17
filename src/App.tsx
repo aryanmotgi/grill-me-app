@@ -31,6 +31,7 @@ import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
 import { CinemaMode } from "./components/CinemaMode";
 import { CheckpointRunner } from "./components/CheckpointRunner";
+import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
@@ -44,7 +45,7 @@ function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
     s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen || s.prDashboardOpen ||
     s.kanbanOpen || s.tokenDashOpen || s.branchGraphOpen || s.featureIndexOpen || s.diffBoardOpen ||
     s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
-    s.cinemaOpen || s.handoffFor !== null
+    s.cinemaOpen || s.handoffFor !== null || s.sessionTemplatesOpen
   );
 }
 
@@ -203,6 +204,7 @@ export default function App() {
         else if (s.standupOpen) useApp.setState({ standupOpen: false });
         else if (s.mergeConductorOpen) useApp.setState({ mergeConductorOpen: false });
         else if (s.releaseNotesOpen) useApp.setState({ releaseNotesOpen: false });
+        else if (s.sessionTemplatesOpen) useApp.setState({ sessionTemplatesOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.prDashboardOpen) useApp.setState({ prDashboardOpen: false });
@@ -316,6 +318,7 @@ export default function App() {
       <StandupSummary />
       <MergeConductor />
       <ReleaseNotes />
+      <SessionTemplates />
       <Cheatsheet />
       <CheckpointRunner />
       <Toasts />

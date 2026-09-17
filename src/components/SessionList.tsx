@@ -220,7 +220,13 @@ function Spawner() {
   const [branch, setBranch] = useState("");
   if (!open) {
     return (
-      <button className="btn m-2 demo-hide" onClick={() => setOpen(true)}>+ new session</button>
+      <div className="m-2 flex gap-1.5 demo-hide">
+        <button className="btn" onClick={() => setOpen(true)}>+ new session</button>
+        <button className="btn" title="Spawn from a template: branch prefix + a starting prompt briefed in"
+          onClick={() => useApp.setState({ sessionTemplatesOpen: true })}>
+          from template
+        </button>
+      </div>
     );
   }
   return (
