@@ -1685,6 +1685,86 @@ fn pr_draft(repo_path: String) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// Strip a leading/trailing markdown code fence a model may wrap prose in,
+/// so a summary never leaks ```…``` into the popover. Mirrors the defensive
+/// fence handling used for JSON in room.rs, but for free text.
+fn strip_prose_fence(raw: &str) -> String {
+    let s = raw.trim();
+    if let Some(rest) = s.strip_prefix("```") {
+        // drop the rest of the opening fence line, then a trailing fence
+        let body = rest.split_once('\n').map(|(_, r)| r).unwrap_or("");
+        return body.trim_end().strip_suffix("```").unwrap_or(body).trim().to_string();
+    }
+    s.to_string()
+}
+
+/// Explain, in 2-3 plain-English sentences, what a running session is doing
+/// right now. Feeds the session's recent terminal output plus its
+/// branch/task/file context to `claude -p` over stdin (never a command line),
+/// mirroring pr_draft / room's claude helpers: zsh -lc for a login-shell PATH
+/// and no_prompt env guards. Preflights the CLI first so a missing claude
+/// surfaces as an actionable error instead of a spawn/fail loop.
+#[tauri::command]
+fn explain_session(
+    pty_id: String,
+    branch: Option<String>,
+    task: Option<String>,
+    file: Option<String>,
+) -> Result<String, String> {
+    preflight_claude()?;
+    // Recent scrollback for this session (same source as pty_screen).
+    let lines = pty_screen(pty_id, Some(40))?;
+    let mut screen = lines.join("\n");
+    // Cap input defensively (matches pr_draft's 60k head budget).
+    if screen.len() > 12_000 {
+        let start = screen.len() - 12_000;
+        screen = screen[start..].to_string();
+    }
+    let mut ctx = String::new();
+    if let Some(b) = branch.as_deref().filter(|s| !s.is_empty() && *s != "—") {
+        ctx.push_str(&format!("Branch: {b}\n"));
+    }
+    if let Some(t) = task.as_deref().filter(|s| !s.is_empty() && *s != "—") {
+        ctx.push_str(&format!("Assigned task: {t}\n"));
+    }
+    if let Some(f) = file.as_deref().filter(|s| !s.is_empty() && *s != "—") {
+        ctx.push_str(&format!("Current file: {f}\n"));
+    }
+    let input = format!(
+        "{ctx}\nRecent terminal output:\n{screen}",
+    );
+    if screen.trim().is_empty() {
+        return Ok("This session has no recent output to summarize yet.".to_string());
+    }
+
+    let prompt = "You are looking at one dev session in a multi-agent coding tool. \
+        The input is that session's recent terminal output plus its branch/task/file context. \
+        In 2-3 plain-English sentences, say what this session is currently doing right now \
+        (what it's working on and where it seems to be). Be concrete and specific to the output. \
+        No preamble, no markdown, no bullet points — just the sentences.";
+
+    let script = format!("claude -p {}", sh_quote(prompt));
+    let mut child = no_prompt(Command::new("/bin/zsh").args(["-lc", &script]))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn claude: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+        // dropping stdin closes the pipe so claude sees EOF
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let text = strip_prose_fence(&String::from_utf8_lossy(&out.stdout));
+    if text.is_empty() {
+        return Err("claude returned an empty explanation".into());
+    }
+    Ok(text)
+}
+
 
 #[derive(Serialize, Default)]
 struct ProjectCardStats {
@@ -2660,6 +2740,7 @@ pub fn run() {
             worktree_add,
             git_diff_file,
             pr_draft,
+            explain_session,
             git_conflict_radar,
             room::room_host_start,
             room::room_host_stop,
@@ -2676,8 +2757,18 @@ pub fn run() {
 mod tests {
     use super::{
         can_write_session_with, is_strong_token, member_for_pty, overlap_pairs, sh_quote,
-        validate_member_id, TeamMember,
+        strip_prose_fence, validate_member_id, TeamMember,
     };
+
+    #[test]
+    fn strip_prose_fence_unwraps_and_passes_through() {
+        // fenced with a language tag
+        assert_eq!(strip_prose_fence("```text\nrunning tests\n```"), "running tests");
+        // bare fence
+        assert_eq!(strip_prose_fence("```\nediting store.ts\n```"), "editing store.ts");
+        // plain prose is untouched (trimmed)
+        assert_eq!(strip_prose_fence("  just building the feature.  "), "just building the feature.");
+    }
 
     fn m(name: &str, branch: &str, files: &[&str]) -> (String, String, Vec<String>) {
         (name.into(), branch.into(), files.iter().map(|s| s.to_string()).collect())

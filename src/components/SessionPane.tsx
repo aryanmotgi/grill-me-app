@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { ptyIdFor, useApp } from "../store";
 
@@ -131,6 +131,127 @@ function useAuditEffect(load: () => void, memberId: string) {
   }, [memberId]);
 }
 
+// Brief in-memory cache of the last explanation per session, so reopening the
+// popover within the TTL is instant and doesn't re-spend a claude call.
+const explainCache = new Map<string, { text: string; at: number }>();
+const EXPLAIN_TTL_MS = 90_000;
+
+// "Explain what this session is doing" — a light, unobtrusive AI affordance in
+// the pane header. Pipes recent terminal output + branch/task/file to claude
+// via the explain_session command and shows a 2-3 sentence summary in a glass
+// popover. Loading, error, and claude-missing states are all honest.
+function ExplainSession({ mate }: { mate: Teammate }) {
+  const claudeMissing = useApp((s) => s.claudeMissing);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const run = async (force = false) => {
+    const key = ptyIdFor(mate.id);
+    if (!force) {
+      const hit = explainCache.get(key);
+      if (hit && Date.now() - hit.at < EXPLAIN_TTL_MS) {
+        setText(hit.text);
+        setError(null);
+        return;
+      }
+    }
+    if (!isTauri()) {
+      setError("Explain runs in the desktop app.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const summary = await invoke<string>("explain_session", {
+        ptyId: key,
+        branch: mate.branch,
+        task: mate.taskLabel,
+        file: mate.currentFile,
+      });
+      setText(summary);
+      explainCache.set(key, { text: summary, at: Date.now() });
+    } catch (e) {
+      const msg = String(e);
+      setError(/not found|not installed|command -v/i.test(msg)
+        ? "claude CLI not found — install it to explain sessions."
+        : `Couldn't explain: ${msg}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !claudeMissing) run();
+  };
+
+  // close on outside click / Escape while open
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        className={`btn ${open ? "active" : ""}`}
+        aria-expanded={open}
+        onClick={toggle}
+        title="Plain-English summary of what this session is doing right now"
+      >
+        <Icon name="spark" size={11} /> explain
+      </button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label="Session explanation"
+          className="absolute right-0 top-full mt-1 z-40 w-72 glass rounded-md shadow-2xl p-3 rise"
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="panel-label">what's happening</span>
+            <span className="flex-1" />
+            {!claudeMissing ? (
+              <button className="btn" disabled={busy} onClick={() => run(true)}
+                title="Re-read the latest terminal output">
+                {busy ? "…" : "refresh"}
+              </button>
+            ) : null}
+          </div>
+          {claudeMissing ? (
+            <p className="text-warn text-[11px] leading-relaxed">
+              claude CLI not found — install it to explain sessions.
+            </p>
+          ) : busy ? (
+            <p className="text-dim text-[11px] leading-relaxed flex items-center gap-2">
+              <span className="status-dot working" /> reading the session…
+            </p>
+          ) : error ? (
+            <p className="text-danger text-[11px] leading-relaxed">{error}</p>
+          ) : text ? (
+            <p className="text-dim text-[12px] leading-relaxed">{text}</p>
+          ) : (
+            <p className="text-faint text-[11px] leading-relaxed">No summary yet.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function SessionPane({ mate }: { mate: Teammate }) {
   const { toggleRecording, revertChange, shipSession, members, themeName } = useApp();
   const [tab, setTab] = useState<PaneTab>("terminal");
@@ -150,8 +271,9 @@ export function SessionPane({ mate }: { mate: Teammate }) {
           </button>
         ) : null}
         <span className="flex-1" />
-        <div className="flex demo-hide">
-          <button className={`btn ${tab === "terminal" ? "active" : ""}`} onClick={() => setTab("terminal")}>
+        <div className="flex demo-hide items-center">
+          <ExplainSession mate={mate} />
+          <button className={`btn ml-1 ${tab === "terminal" ? "active" : ""}`} onClick={() => setTab("terminal")}>
             terminal
           </button>
           <button className={`btn ${tab === "shell" ? "active" : ""} ml-1`} onClick={() => setTab("shell")}>
