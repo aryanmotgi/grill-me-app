@@ -3,6 +3,7 @@ import { Icon } from "./Icon";
 import { TickNumber } from "./TickNumber";
 import { Sparkline } from "./SessionList";
 import { attentionSessions, isSolo, ptyIdFor, useApp } from "../store";
+import { openHelpRequests } from "../lib/help";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { isTauri, predictConflict } from "../data/sources/git";
 import type { ConflictPair, ConflictPrediction } from "../data/sources/git";
@@ -39,20 +40,24 @@ function NeedsYouHero() {
   const setView = useApp((s) => s.setView);
   const setMergePilotOpen = useApp((s) => s.setMergePilotOpen);
   const respondProposal = useApp((s) => s.respondProposal);
+  const resolveHelp = useApp((s) => s.resolveHelp);
   const toast = useApp((s) => s.toast);
 
   const me = members[0]?.id;
   const nameOf = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
 
   const attn = attentionSessions(teammates);
-  const blocking = messages.filter((m) => !m.answered && m.kind === "blocking" && (m.to === me || m.to === "all"));
+  // help requests get their own distinct surface — keep them out of the generic
+  // blocking list so a flagged session shows once, with the "needs help" style.
+  const helpReqs = openHelpRequests(messages);
+  const blocking = messages.filter((m) => !m.answered && m.kind === "blocking" && !m.help && (m.to === me || m.to === "all"));
   const questions = messages.filter((m) => !m.answered && m.kind === "question" && (m.to === me || m.to === "all"));
   const proposals = messages.filter((m) => !m.answered && m.kind === "proposal" && m.from !== me);
   // merge turn only counts with a real multi-person queue — a solo user (or a
   // queue of one) is never nagged that it's their turn.
   const myTurn = !solo && mergeQueue.length > 1 && mergeQueue[0] === me;
 
-  const count = attn.length + blocking.length + questions.length + proposals.length + (myTurn ? 1 : 0);
+  const count = attn.length + helpReqs.length + blocking.length + questions.length + proposals.length + (myTurn ? 1 : 0);
 
   return (
     <section
@@ -90,6 +95,26 @@ function NeedsYouHero() {
               <span className="ml-auto text-faint text-[10px]">opens merge terminal</span>
             </button>
           ) : null}
+          {helpReqs.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-3 px-4 py-2.5 bg-raised rounded-md border-l-2 border-l-warn"
+              title={m.text}
+            >
+              <span className="status-dot needs-input" aria-hidden />
+              <Icon name="help" size={12} className="text-warn flex-none" />
+              <button
+                className="text-[12px] text-left flex-1 min-w-0 truncate cursor-pointer hover:brightness-110"
+                onClick={() => setActive(m.from)}
+              >
+                {clip(m.text, 72)}
+              </button>
+              <button className="btn" title="Clear the flag — a teammate has eyes on it now"
+                onClick={() => resolveHelp(m.from)}>
+                got help
+              </button>
+            </div>
+          ))}
           {attn.map((t) => (
             <button
               key={t.id}

@@ -7,6 +7,7 @@ async function shipRaw(memberId: string, data: string) {
   invoke("pty_write", { id: ptyIdFor(memberId), data }).catch(() => {});
 }
 import type { Teammate } from "../types";
+import { isHelpPending } from "../lib/help";
 import { XtermPane } from "./XtermPane";
 import { useApp as useVitals } from "../store";
 import { fmtFullTime, fmtMem, fmtTokens } from "../lib/format";
@@ -253,7 +254,8 @@ function ExplainSession({ mate }: { mate: Teammate }) {
 }
 
 export function SessionPane({ mate }: { mate: Teammate }) {
-  const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor } = useApp();
+  const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor, requestHelp, resolveHelp } = useApp();
+  const helpPending = useApp((s) => isHelpPending(s.messages, mate.id));
   const [tab, setTab] = useState<PaneTab>("terminal");
   const member = members.find((m) => m.id === mate.id);
 
@@ -264,6 +266,11 @@ export function SessionPane({ mate }: { mate: Teammate }) {
         <span className="font-display font-semibold text-[12px]">{mate.name}</span>
         <span className="font-mono text-faint text-[10px]"><Icon name="branch" size={11} /> {mate.branch}</span>
         {mate.recording ? <span className="tag danger"><Icon name="record" size={9} /> rec</span> : null}
+        {helpPending ? (
+          <span className="tag warn" title="This session is flagged for help — the team can see it needs eyes">
+            <Icon name="help" size={9} /> needs help
+          </span>
+        ) : null}
         {mate.terminal.some((l) => l.text.includes("need authentication")) ? (
           <button className="tag warn cursor-pointer" title="MCP servers need auth — click to run /mcp in this session"
             onClick={() => shipRaw(mate.id, "/mcp\n")}>
@@ -292,6 +299,15 @@ export function SessionPane({ mate }: { mate: Teammate }) {
             title="Record: saves this session's raw terminal output to a file for later replay (~/.grillme/recordings)"
           >
             {mate.recording ? "stop rec" : "rec"}
+          </button>
+          <button
+            className={`btn ml-1 ${helpPending ? "active" : ""}`}
+            onClick={() => (helpPending ? resolveHelp(mate.id) : requestHelp(mate.id))}
+            title={helpPending
+              ? "Clear the help flag — use once a teammate has eyes on this session"
+              : "Flag this session as stuck — pings the team and shows on everyone's home"}
+          >
+            <Icon name="help" size={11} /> {helpPending ? "got help" : "request help"}
           </button>
           <button
             className="btn ml-1"

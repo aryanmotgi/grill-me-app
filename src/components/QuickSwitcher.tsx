@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { useApp, ptyIdFor } from "../store";
+import { isHelpPending } from "../lib/help";
 import { FEATURE_GROUPS } from "../data/features";
 import { fuzzyRank, fuzzySegments } from "../lib/fuzzy";
 import type { Teammate } from "../types";
@@ -52,7 +53,7 @@ export function QuickSwitcher() {
     shipSession, activeId, setPickerOpen, setSettingsOpen,
     setTheme, themeName, toggleDense, toggleFocus, setMergePilotOpen, setRailTab,
     setView, setDraftReply, patchTeammate, toast, appSettings, setAppSetting,
-    setHandoffFor,
+    setHandoffFor, messages, requestHelp, resolveHelp,
   } = useApp();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -158,12 +159,17 @@ export function QuickSwitcher() {
     setRailTab("inbox");
     setView("session");
   };
-  const inlineActionsFor = (mate: Teammate): { id: string; label: string; run: () => void }[] => [
-    { id: "pause", label: mate.paused ? "resume" : "pause", run: () => void togglePause(mate) },
-    { id: "ship", label: "review & ship", run: () => shipSession(mate.id) },
-    { id: "handoff", label: "hand off", run: () => setHandoffFor(mate.id) },
-    { id: "dm", label: "DM", run: () => dmTo(mate) },
-  ];
+  const inlineActionsFor = (mate: Teammate): { id: string; label: string; run: () => void }[] => {
+    const helpPending = isHelpPending(messages, mate.id);
+    return [
+      { id: "pause", label: mate.paused ? "resume" : "pause", run: () => void togglePause(mate) },
+      { id: "ship", label: "review & ship", run: () => shipSession(mate.id) },
+      { id: "help", label: helpPending ? "got help" : "request help",
+        run: () => (helpPending ? resolveHelp(mate.id) : requestHelp(mate.id)) },
+      { id: "handoff", label: "hand off", run: () => setHandoffFor(mate.id) },
+      { id: "dm", label: "DM", run: () => dmTo(mate) },
+    ];
+  };
 
   // ---- activation ----------------------------------------------------------
   const activate = (item: Item, subIdx = -1) => {
