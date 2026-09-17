@@ -13,6 +13,7 @@ import { SettingsModal } from "./components/Settings";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { Onboarding } from "./components/Onboarding";
 import { ReviewModal } from "./components/ReviewModal";
+import { SessionHandoff } from "./components/SessionHandoff";
 import { HomeDashboard } from "./components/HomeDashboard";
 import { FeatureIndex } from "./components/FeatureIndex";
 import { DiffBoard } from "./components/DiffBoard";
@@ -37,7 +38,7 @@ function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
     s.switcherOpen || s.crossSearchOpen || s.scrubberOpen || s.presenceMapOpen ||
     s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen ||
     s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
-    s.cinemaOpen
+    s.cinemaOpen || s.handoffFor !== null
   );
 }
 
@@ -197,6 +198,7 @@ export default function App() {
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
         else if (s.reviewFor) s.setReviewFor(null);
+        else if (s.handoffFor) s.setHandoffFor(null);
         else if (s.mergePilotOpen) setMergePilotOpen(false);
         else if (s.cinemaOpen) setCinemaOpen(false);
       }
@@ -291,6 +293,7 @@ export default function App() {
       <ProjectPicker />
       <Onboarding />
       <ReviewModal />
+      <SessionHandoff />
       <FeatureIndex />
       <DiffBoard />
       <CrossSessionSearch />

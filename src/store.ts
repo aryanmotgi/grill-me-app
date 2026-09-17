@@ -71,6 +71,9 @@ interface AppState {
   /** member id whose work is under pre-merge review, or null */
   reviewFor: string | null;
   setReviewFor: (id: string | null) => void;
+  /** member id whose session is being handed off to a teammate, or null */
+  handoffFor: string | null;
+  setHandoffFor: (id: string | null) => void;
   draftReply: { to: string; threadId: string; mention: string } | null;
   setDraftReply: (r: { to: string; threadId: string; mention: string } | null) => void;
   setTaskStatus: (id: string, status: Task["status"]) => void;
@@ -251,6 +254,8 @@ export const useApp = create<AppState>((set, get) => ({
     set({ resources: Object.fromEntries(list.map((r) => [r.id, { cpu: r.cpu, memMb: r.memMb }])) }),
   reviewFor: null,
   setReviewFor: (reviewFor) => set({ reviewFor }),
+  handoffFor: null,
+  setHandoffFor: (handoffFor) => set({ handoffFor }),
   draftReply: null,
   setDraftReply: (draftReply) => set({ draftReply }),
 

@@ -132,7 +132,7 @@ function useAuditEffect(load: () => void, memberId: string) {
 }
 
 export function SessionPane({ mate }: { mate: Teammate }) {
-  const { toggleRecording, revertChange, shipSession, members, themeName } = useApp();
+  const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor } = useApp();
   const [tab, setTab] = useState<PaneTab>("terminal");
   const member = members.find((m) => m.id === mate.id);
 
@@ -170,6 +170,13 @@ export function SessionPane({ mate }: { mate: Teammate }) {
             title="Record: saves this session's raw terminal output to a file for later replay (~/.grillme/recordings)"
           >
             {mate.recording ? "stop rec" : "rec"}
+          </button>
+          <button
+            className="btn ml-1"
+            onClick={() => setHandoffFor(mate.id)}
+            title="Hand off: summarize this session (Claude) and send a where-I-am / what's-next note to a teammate"
+          >
+            hand off
           </button>
         </div>
       </div>
