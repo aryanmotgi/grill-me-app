@@ -18,6 +18,7 @@ export function Lobby() {
   const roomHostIp = useApp((s) => s.roomHostIp);
   const roomOffline = useApp((s) => s.roomOffline);
   const toast = useApp((s) => s.toast);
+  const leaveRoom = useApp((s) => s.leaveRoom);
   const [busy, setBusy] = useState(false);
 
   // re-derive statuses once a second — lastSeen ages even between polls
@@ -61,7 +62,13 @@ export function Lobby() {
   return (
     <div className="h-full flex items-center justify-center bg-bg">
       <div className="w-[520px] max-w-[92vw] flex flex-col gap-4">
-        <div className="panel-label">lobby</div>
+        <div className="flex items-center justify-between">
+          <div className="panel-label">lobby</div>
+          <button className="btn" onClick={() => leaveRoom()}
+            title={roomRole === "host" ? "Close this room and go back" : "Leave this room and go back"}>
+            ← leave
+          </button>
+        </div>
 
         {/* room code — big, copyable, read it aloud */}
         <div className="bg-panel hairline rounded-md p-4 flex items-center gap-4">
