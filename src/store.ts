@@ -154,6 +154,11 @@ interface AppState {
   /** Guided sequential merge-queue walk overlay. */
   mergeConductorOpen: boolean;
   setMergeConductorOpen: (open: boolean) => void;
+  /** Snippet library overlay — manage reusable prompts + insert into a session. */
+  snippetsOpen: boolean;
+  /** Write a snippet body verbatim (no newline) into the active session's pty
+   *  so the user can edit before sending. Resolves true on a successful write. */
+  insertSnippet: (body: string) => Promise<boolean>;
   spawnSession: (id: string, name: string, branch: string) => Promise<void>;
   /** "New session from template" overlay (panel-session-templates). */
   sessionTemplatesOpen: boolean;
@@ -576,6 +581,23 @@ export const useApp = create<AppState>((set, get) => ({
   setMergePilotOpen: (mergePilotOpen) => set({ mergePilotOpen }),
   mergeConductorOpen: false,
   setMergeConductorOpen: (mergeConductorOpen) => set({ mergeConductorOpen }),
+
+  snippetsOpen: false,
+  insertSnippet: async (body) => {
+    const st = get();
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      // no trailing newline: the snippet lands at the prompt for the user to
+      // edit, then press Enter. pty_write enforces view-only sessions server-side.
+      await invoke("pty_write", { id: ptyIdFor(st.activeId), data: body });
+      if (st.view !== "session") set({ view: "session" });
+      st.toast("Snippet inserted — edit, then press Enter to send");
+      return true;
+    } catch (e) {
+      st.toast(`Insert failed: ${e}`, "warn");
+      return false;
+    }
+  },
 
   spawnSession: async (id, name, branch) => {
     if (!isTauri()) return;

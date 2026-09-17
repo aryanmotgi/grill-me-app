@@ -28,6 +28,7 @@ import { StandupSummary } from "./components/StandupSummary";
 import { MergeConductor } from "./components/MergeConductor";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { Broadcast } from "./components/Broadcast";
+import { SnippetLibrary } from "./components/SnippetLibrary";
 import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
 import { CinemaMode } from "./components/CinemaMode";
@@ -48,6 +49,7 @@ function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
     s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
     s.cinemaOpen || s.handoffFor !== null || s.sessionTemplatesOpen
     s.cinemaOpen || s.handoffFor !== null || s.broadcastOpen
+    s.cinemaOpen || s.handoffFor !== null || s.snippetsOpen
   );
 }
 
@@ -208,6 +210,7 @@ export default function App() {
         else if (s.releaseNotesOpen) useApp.setState({ releaseNotesOpen: false });
         else if (s.sessionTemplatesOpen) useApp.setState({ sessionTemplatesOpen: false });
         else if (s.broadcastOpen) useApp.setState({ broadcastOpen: false });
+        else if (s.snippetsOpen) useApp.setState({ snippetsOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.prDashboardOpen) useApp.setState({ prDashboardOpen: false });
@@ -323,6 +326,7 @@ export default function App() {
       <ReleaseNotes />
       <SessionTemplates />
       <Broadcast />
+      <SnippetLibrary />
       <Cheatsheet />
       <CheckpointRunner />
       <Toasts />
