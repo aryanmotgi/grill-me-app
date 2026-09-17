@@ -119,6 +119,45 @@ const PATHS: Record<string, React.ReactNode> = {
       <circle cx="8" cy="8" r="1.8" />
     </>
   ),
+  team: (
+    <>
+      <circle cx="5.8" cy="6" r="2.1" />
+      <path d="M2.3 13c0-2.1 1.6-3.4 3.5-3.4S9.3 10.9 9.3 13" />
+      <circle cx="11.3" cy="6.6" r="1.7" />
+      <path d="M10.4 8.5c2 0 3.3 1.3 3.3 3.1" />
+    </>
+  ),
+  palette: (
+    <>
+      <path d="M8 2.2a5.8 5.8 0 0 0 0 11.6c1 0 1.6-.8 1.6-1.7 0-.9-.7-1.3-.7-2 0-.6.5-1 1.1-1H12a2 2 0 0 0 2-2C14 4.4 11.3 2.2 8 2.2Z" />
+      <circle cx="5.4" cy="7" r="0.5" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="5" r="0.5" fill="currentColor" stroke="none" />
+      <circle cx="10.6" cy="7" r="0.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  terminal: (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1" />
+      <path d="m4.6 6.4 2 2-2 2M8.4 10.6h3" />
+    </>
+  ),
+  layout: (
+    <>
+      <rect x="2.3" y="3" width="11.4" height="10" rx="1" />
+      <path d="M6.4 3v10" />
+    </>
+  ),
+  keyboard: (
+    <>
+      <rect x="1.8" y="4.4" width="12.4" height="7.2" rx="1" />
+      <path d="M4.4 7h.01M6.6 7h.01M8.8 7h.01M11 7h.01M5 9.4h6" />
+    </>
+  ),
+  folder: (
+    <>
+      <path d="M2 4.4h3.8L7 6h6.5a.5.5 0 0 1 .5.5v5.6a.4.4 0 0 1-.4.4H2.4a.4.4 0 0 1-.4-.4Z" />
+    </>
+  ),
 };
 
 export function Icon({
