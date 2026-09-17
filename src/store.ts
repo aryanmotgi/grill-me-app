@@ -133,6 +133,8 @@ interface AppState {
   standupOpen: boolean;
   /** Release-notes overlay (AI Features/Fixes/Chores from commits + PRs). */
   releaseNotesOpen: boolean;
+  /** Broadcast overlay — send one prompt/command to all sessions at once. */
+  broadcastOpen: boolean;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -518,6 +520,7 @@ export const useApp = create<AppState>((set, get) => ({
   branchGraphOpen: false,
   standupOpen: false,
   releaseNotesOpen: false,
+  broadcastOpen: false,
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
