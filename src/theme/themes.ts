@@ -11,6 +11,7 @@ export interface Theme {
   raised: string; // cards, rows, inputs
   overlay: string; // modals, quick switcher
   line: string; // hairline borders
+  lineglow: string; // accent-tinted glow edge for glass panels
   /** text */
   ink: string; // primary text
   dim: string; // secondary text
@@ -18,6 +19,7 @@ export interface Theme {
   /** brand + semantics */
   accent: string; // phosphor amber — primary action / attention
   accentInk: string; // text on accent
+  data: string; // cyan — metrics, counts, timestamps, links, secondary state
   ok: string; // working / pass / done
   warn: string; // needs-input / conflict
   danger: string; // fail / disconnected
@@ -37,11 +39,13 @@ export const ember: Theme = {
   raised: "#161b18",
   overlay: "#131816",
   line: "#242b27",
+  lineglow: "#4a5a52",
   ink: "#e8e6df",
   dim: "#9aa39c",
   faint: "#7d877f",
   accent: "#ffb454",
   accentInk: "#1a1205",
+  data: "#5fd3d0",
   ok: "#7fd962",
   warn: "#ffb454",
   danger: "#f07178",
@@ -60,11 +64,13 @@ export const paperwhite: Theme = {
   raised: "#ffffff",
   overlay: "#fffdf8",
   line: "#ddd7cb",
+  lineglow: "#c7bda6",
   ink: "#1f231f",
   dim: "#5d655d",
   faint: "#6b7263",
   accent: "#c25e00",
   accentInk: "#fff7ec",
+  data: "#187370",
   ok: "#3d8b37",
   warn: "#c25e00",
   danger: "#c33c3c",

@@ -31,7 +31,7 @@ function MoreMenu({ tabs, active, onPick }: {
       {open ? (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-40 w-56 bg-overlay hairline rounded-md shadow-2xl py-1 rise">
+          <div className="absolute right-0 top-full z-40 w-56 glass rounded-md shadow-2xl py-1 rise">
             {tabs.map((t) => (
               <button key={t.id}
                 className="flex flex-col w-full px-3 py-2 text-left hover:bg-raised cursor-pointer transition-colors"

@@ -17,8 +17,8 @@ export function Onboarding() {
   const done = () => setAppSetting("onboarded", true);
   const [title, body] = STEPS[step];
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center">
-      <div className="w-[440px] bg-overlay hairline rounded-md shadow-2xl p-5 rise">
+    <div className="fixed inset-0 z-50 scrim flex items-center justify-center">
+      <div className="w-[440px] glass rounded-md shadow-2xl p-5 rise">
         <div className="panel-label mb-1">welcome — {step + 1} / {STEPS.length}</div>
         <div className="font-display font-bold text-[16px] mb-2">{title}</div>
         <p className="text-dim text-[12px] leading-relaxed">{body}</p>

@@ -35,7 +35,7 @@ function OverflowMenu() {
       {open ? (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-40 w-52 bg-overlay hairline rounded-md shadow-2xl py-1 rise">
+          <div className="absolute right-0 top-full mt-1 z-40 w-52 glass rounded-md shadow-2xl py-1 rise">
             <div className="panel-label px-3 pt-1.5 pb-0.5">open</div>
             <button className={item} onClick={() => { openPanel("github", "https://github.com"); setOpen(false); }}>
               GitHub window

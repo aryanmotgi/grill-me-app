@@ -33,13 +33,28 @@ function Sparkline({ id }: { id: string }) {
     return () => { live = false; clearInterval(t); };
   }, [id]);
   const max = Math.max(1, ...buckets);
-  if (buckets.every((b) => b === 0)) return null;
+  if (buckets.length === 0 || buckets.every((b) => b === 0)) return null;
+  const W = 60, H = 10, pad = 1;
+  const n = buckets.length;
+  const stepX = n > 1 ? W / (n - 1) : 0;
+  const yOf = (b: number) => H - pad - (b / max) * (H - pad * 2);
+  const pts = buckets.map((b, i) => [i * stepX, yOf(b)] as const);
+  const line = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const area = `${line} L${((n - 1) * stepX).toFixed(1)},${H} L0,${H} Z`;
+  const [lastX, lastY] = pts[pts.length - 1];
+  const gid = `spark-${id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
-    <svg width="60" height="10" className="opacity-70" aria-hidden>
-      {buckets.map((b, i) => (
-        <rect key={i} x={i * 2} y={10 - (b / max) * 9 - 1} width="1.4" height={(b / max) * 9 + 1}
-          fill="currentColor" className={b > 0 ? "text-ok" : "text-line"} />
-      ))}
+    <svg width={W} height={H} className="text-data overflow-visible" aria-hidden>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.32" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gid})`} />
+      <path d={line} fill="none" stroke="currentColor" strokeWidth="1"
+        strokeLinejoin="round" strokeLinecap="round" opacity="0.85" />
+      <circle cx={lastX} cy={lastY} r="1.5" fill="currentColor" />
     </svg>
   );
 }
@@ -91,7 +106,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
         </span>
         <span className="flex-1" />
         {res && res.cpu >= 3 ? (
-          <span className={`font-mono text-[9px] tabular-nums ${res.cpu > 80 ? "text-danger" : "text-faint"}`}
+          <span className={`font-mono text-[9px] num ${res.cpu > 80 ? "text-danger" : "text-data"}`}
             title="Live CPU / memory for this session's process tree">
             {res.cpu.toFixed(0)}% · {fmtMem(res.memMb)}
           </span>
@@ -108,7 +123,7 @@ function SessionRow({ mate }: { mate: Teammate }) {
         ) : null}
       </div>
 
-      <div className="mt-0.5 pl-4 text-ok"><Sparkline id={mate.id} /></div>
+      <div className="mt-0.5 pl-4"><Sparkline id={mate.id} /></div>
 
       {/* live presence — only when we actually know the file */}
       {mate.currentFile && mate.currentFile !== "—" ? (
@@ -173,7 +188,7 @@ export function SessionList() {
       <div className="px-3 py-2 flex items-center justify-between">
         <span className="panel-label">sessions</span>
         {surfaceVisible(appMode, "session-count") ? (
-          <span className="text-faint text-[10px]">{teammates.length} on vm</span>
+          <span className="text-data text-[10px] num">{teammates.length} on vm</span>
         ) : null}
       </div>
       <div className="overflow-y-auto">

@@ -46,9 +46,9 @@ export function ReviewModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/60 flex items-start justify-center pt-[5vh]" onClick={() => setReviewFor(null)}>
+    <div className="fixed inset-0 z-40 scrim flex items-start justify-center pt-[5vh]" onClick={() => setReviewFor(null)}>
       <div {...modalA11y}
-        className="w-[760px] max-h-[86vh] bg-overlay hairline rounded-md shadow-2xl rise flex flex-col overflow-hidden outline-none"
+        className="w-[760px] max-h-[86vh] glass rounded-md shadow-2xl rise flex flex-col overflow-hidden outline-none"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
           <span className="font-display font-bold text-[14px]">PRE-MERGE REVIEW</span>

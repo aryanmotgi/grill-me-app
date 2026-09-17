@@ -11,9 +11,9 @@ export function FeatureIndex() {
   const go = (fn: () => void) => { fn(); close(); };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/55 flex items-start justify-center pt-[5vh]" onClick={close}>
+    <div className="fixed inset-0 z-40 scrim flex items-start justify-center pt-[5vh]" onClick={close}>
       <div {...modalA11y}
-        className="w-[760px] max-h-[86vh] overflow-y-auto bg-overlay hairline rounded-md shadow-2xl rise p-6 outline-none"
+        className="w-[760px] max-h-[86vh] overflow-y-auto glass rounded-md shadow-2xl rise p-6 outline-none"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-baseline gap-3 mb-4">
           <span className="font-display font-bold text-[15px]">EVERYTHING GRILL ME CAN DO</span>
