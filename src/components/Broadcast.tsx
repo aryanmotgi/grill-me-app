@@ -27,11 +27,16 @@ export function Broadcast() {
   const open = useApp((s) => s.broadcastOpen);
   const members = useApp((s) => s.members);
   const toast = useApp((s) => s.toast);
+  const sendMessage = useApp((s) => s.sendMessage);
+  // live room? terminal fan-out only reaches LOCAL sessions — offer to also
+  // post to the team inbox, which syncs to remote teammates' machines.
+  const liveRoom = useApp((s) => s.room?.phase === "done");
   const modalA11y = useModalA11y("Broadcast to all sessions", open);
 
   const [text, setText] = useState("");
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [waitReady, setWaitReady] = useState(false);
+  const [toInbox, setToInbox] = useState(true);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<Result[] | null>(null);
 
@@ -52,7 +57,10 @@ export function Broadcast() {
 
   const selectedWritable = targets.filter((t) => sel.has(t.id) && t.writable);
   const selectedSkipped = targets.filter((t) => sel.has(t.id) && !t.writable);
-  const canSend = text.trim().length > 0 && selectedWritable.length > 0 && !busy;
+  // sendable if there's at least one local target OR we're posting to the
+  // team inbox (so a broadcast still works with no local writable sessions)
+  const canSend =
+    text.trim().length > 0 && !busy && (selectedWritable.length > 0 || (liveRoom && toInbox));
 
   const send = async () => {
     if (!isTauri()) {
@@ -90,12 +98,18 @@ export function Broadcast() {
       }
     }
 
+    // cross-machine reach: also drop it in the team inbox (syncs to remote
+    // teammates) so a broadcast isn't limited to locally-spawned sessions.
+    if (liveRoom && toInbox) {
+      sendMessage("all", `📣 ${text.trim()}`, "fyi");
+    }
+
     setResults(out);
     const delivered = out.filter((r) => r.outcome === "delivered").length;
     const failed = out.filter((r) => r.outcome === "failed").length;
     const skipped = out.filter((r) => r.outcome === "skipped").length;
     toast(
-      `Broadcast: ${delivered} delivered${failed ? `, ${failed} failed` : ""}${skipped ? `, ${skipped} skipped` : ""}`,
+      `Broadcast: ${delivered} delivered${failed ? `, ${failed} failed` : ""}${skipped ? `, ${skipped} skipped` : ""}${liveRoom && toInbox ? " · posted to team inbox" : ""}`,
       failed ? "warn" : "info",
     );
     setBusy(false);
@@ -147,10 +161,16 @@ export function Broadcast() {
           ))}
         </div>
 
-        <label className="flex items-center gap-2 mb-4 text-[11px] text-dim cursor-pointer">
+        <label className="flex items-center gap-2 mb-2 text-[11px] text-dim cursor-pointer">
           <input type="checkbox" checked={waitReady} onChange={(e) => setWaitReady(e.target.checked)} className="accent-[var(--data)]" />
           wait for each session to reach an idle prompt (up to 30s), then deliver
         </label>
+        {liveRoom ? (
+          <label className="flex items-center gap-2 mb-4 text-[11px] text-dim cursor-pointer">
+            <input type="checkbox" checked={toInbox} onChange={(e) => setToInbox(e.target.checked)} className="accent-[var(--data)]" />
+            also post to the team inbox — reaches remote teammates (terminal fan-out is local only)
+          </label>
+        ) : null}
 
         <div className="flex items-center gap-2">
           <button className="btn primary" disabled={!canSend} onClick={send}>

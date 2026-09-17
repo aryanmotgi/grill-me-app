@@ -8,6 +8,7 @@ import { sessionTokens, shouldCapPause } from "../../lib/cap";
 import { fmtTokens } from "../../lib/format";
 import { playAlert } from "../sounds";
 import { notificationsSilenced } from "../../lib/quietHours";
+import { reconcileShared } from "../../lib/roomSync";
 import {
   fetchConflictRadar,
   fetchGitState,
@@ -150,9 +151,60 @@ let roomFeedStarted = false;
  * free. Poll failures never crash: after 3 in a row the store's roomOffline
  * flag raises the host-offline banner, and the next success clears it.
  */
+/** Files carried live over the room after onboarding — mirrors room.rs. */
+const ROOM_SYNC_FILES = ["tasks.json", "messages.json", "decisions.json"] as const;
+
 export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   if (roomFeedStarted || !isTauri()) return;
   roomFeedStarted = true;
+
+  // My own live presence, derived from my session's status — sent on each
+  // heartbeat so teammates see what I'm doing.
+  const selfPresence = () => {
+    const st = store.getState();
+    const meId = st.members[0]?.id;
+    const mate = st.teammates.find((t) => t.id === meId);
+    if (!mate) return undefined;
+    return { status: mate.status, file: mate.currentFile || undefined, task: mate.taskLabel || undefined };
+  };
+
+  // Authority JSON last written to local disk, per file — skip the disk write
+  // (and the render churn it triggers) when the host's copy hasn't changed.
+  const lastAuth: Record<string, string> = {};
+
+  /**
+   * Converge local ~/.grillme with the host's authoritative shared docs:
+   *  - pull authority DOWN into local disk (merge by id), deleting anything
+   *    the host tombstoned;
+   *  - push local-only entries UP (heals a peer that edited while offline).
+   * Runs through the SAME merge-safe shared_upsert used everywhere; the down
+   * path invokes it directly (not the store helper) so it never re-pushes to
+   * the room in a loop.
+   */
+  const reconcile = async (state: import("../../types").RoomState) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { roomSync } = await import("../../components/teamflow/roomApi");
+    for (const file of ROOM_SYNC_FILES) {
+      const authority = (state.shared?.[file] ?? []) as Array<Record<string, unknown>>;
+      let local: Array<Record<string, unknown>> = [];
+      try {
+        const raw = await invoke<string>("shared_read", { name: file });
+        local = raw.trim() ? JSON.parse(raw) : [];
+      } catch { local = []; }
+
+      const { removeDown, pushUp } = reconcileShared(authority, local, state.tombstones?.[file] ?? []);
+
+      const authJson = JSON.stringify(authority);
+      if (authJson !== lastAuth[file] || removeDown.length > 0) {
+        // mirror authority down (merge-safe shared_upsert, no room re-push)
+        await invoke("shared_upsert", {
+          name: file, itemsJson: authJson, removedIds: removeDown,
+        }).catch(() => {});
+        lastAuth[file] = authJson;
+      }
+      if (pushUp.length > 0) void roomSync(file, pushUp, []);
+    }
+  };
 
   let busy = false;
   let fails = 0;
@@ -164,14 +216,18 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       const self = st.roomSelf;
       const code = st.room?.code;
       if (!self || !code) return; // not in a room yet
-      // heartbeat first so the host counts us alive even if state parse fails
+      // heartbeat first (with my presence) so the host counts us alive even if
+      // state parse fails
       await roomClient(self.hostAddr, "/room/heartbeat", {
         code,
         memberId: self.memberId,
+        presence: selfPresence() ?? null,
       });
       const raw = await roomClient(self.hostAddr, `/room/state?code=${code}`);
       const state = JSON.parse(raw) as import("../../types").RoomState;
       store.getState().setRoom(state); // no-op guard on identical JSON inside
+      // once past onboarding, keep local shared docs converged with the team
+      if (state.phase === "done") await reconcile(state);
       fails = 0;
       if (store.getState().roomOffline) store.setState({ roomOffline: false });
     } catch (e) {
