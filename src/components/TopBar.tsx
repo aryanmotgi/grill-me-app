@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
 import { attentionSessions, useApp } from "../store";
+import { helpRequestedIds } from "../lib/help";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { themes } from "../theme/themes";
 import { isTauri } from "../data/sources/git";
@@ -86,7 +87,10 @@ export function TopBar() {
 
   const attention = attentionSessions(teammates);
   const working = teammates.filter((t) => t.status === "working").length;
-  const waiting = messages.filter((m) => !m.answered && (m.kind === "blocking" || m.kind === "question"));
+  // help requests get their own badge — keep them out of the generic unanswered
+  // counter so a flagged session is counted once, under the "need help" style.
+  const helpIds = [...helpRequestedIds(messages)];
+  const waiting = messages.filter((m) => !m.answered && !m.help && (m.kind === "blocking" || m.kind === "question"));
   const blocking = waiting.filter((m) => m.kind === "blocking").length;
   const myTurn = mergeQueue[0] === members[0]?.id;
   const mergerName = teammates.find((t) => t.id === mergeQueue[0])?.name ?? mergeQueue[0] ?? "—";
@@ -122,6 +126,19 @@ export function TopBar() {
               else st.setView("home");
             }}>
             <span className="status-dot needs-input" aria-hidden />{attention.length} need you
+          </button>
+        ) : null}
+        {helpIds.length > 0 ? (
+          <button className="flex items-center gap-1.5 text-warn cursor-pointer hover:brightness-110"
+            title={helpIds.length === 1
+              ? `${teammates.find((t) => t.id === helpIds[0])?.name ?? helpIds[0]} needs help — click to jump into their session`
+              : "Sessions asking for help — click to see them on home"}
+            onClick={() => {
+              const st = useApp.getState();
+              if (helpIds.length === 1) st.setActive(helpIds[0]);
+              else st.setView("home");
+            }}>
+            <Icon name="help" size={11} /> {helpIds.length} need help
           </button>
         ) : null}
         {surfaceVisible(appMode, "team-waiting") && waiting.length > 0 ? (

@@ -79,6 +79,10 @@ export interface Message {
   threadId?: string;
   /** One-click answer on proposals. */
   response?: "yes" | "no" | "unsure";
+  /** Tags a blocking message as a "request help / need eyes" flag on `from`'s
+   *  session. An open (unanswered) one surfaces the requester everywhere with a
+   *  distinct "needs help" style; clearing it resolves the flag. */
+  help?: boolean;
 }
 
 /** One entry in the shared, append-only team decisions log — what we decided

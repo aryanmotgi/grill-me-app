@@ -23,6 +23,7 @@ import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsage
 import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
 import { needsAttention } from "./lib/attention";
+import { isHelpPending, isHelpRequest } from "./lib/help";
 import { runCheckpoints, summarizeCheckpoints } from "./lib/checkpoint";
 import { fmtClock } from "./lib/format";
 import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type PtyStatus } from "./lib/ptyReady";
@@ -68,6 +69,12 @@ interface AppState {
   toggleRecording: (id: string) => void;
   toggleAnswered: (id: string) => void;
   sendMessage: (to: string | "all", text: string, kind?: import("./types").MessageKind, threadId?: string) => void;
+  /** Flag a session as "stuck, need eyes": posts a blocking help-tagged message
+   *  from `memberId` to the whole team (reusing the messages transport) so the
+   *  requester surfaces in everyone's Needs-you hero + attention badge. */
+  requestHelp: (memberId: string, note?: string) => void;
+  /** Clear a session's help flag by marking its open help request(s) answered. */
+  resolveHelp: (memberId: string) => void;
   respondProposal: (id: string, response: "yes" | "no" | "unsure") => void;
   resources: Record<string, { cpu: number; memMb: number }>;
   setResources: (r: { id: string; cpu: number; memMb: number }[]) => void;
@@ -337,6 +344,48 @@ export const useApp = create<AppState>((set, get) => ({
     set((s) => ({ messages: [msg, ...s.messages] }));
     upsertShared("messages.json", [msg]);
     get().toast(to === "all" ? "Broadcast sent to every session" : `Queued for ${to} — delivered at next check-in`);
+  },
+
+  requestHelp: (memberId, note) => {
+    // already flagged → don't stack a second identical request
+    if (isHelpPending(get().messages, memberId)) return;
+    const mate = get().teammates.find((t) => t.id === memberId);
+    const name = mate?.name ?? memberId;
+    const branch = mate?.branch && mate.branch !== "—" ? mate.branch : "their branch";
+    const trimmed = (note ?? "").trim();
+    const now = Date.now();
+    const msg: Message = {
+      id: `m${now}`,
+      // from = the flagged session so the flag derives per-member (isHelpPending)
+      from: memberId,
+      to: "all",
+      text: `${name} needs eyes on ${branch}${trimmed ? `: ${trimmed}` : ""}`,
+      answered: false,
+      ts: fmtClock(now),
+      epochMs: now,
+      kind: "blocking",
+      help: true,
+      context: mate
+        ? { task: mate.taskLabel, file: mate.currentFile, branch: mate.branch }
+        : undefined,
+    };
+    set((s) => ({ messages: [msg, ...s.messages] }));
+    upsertShared("messages.json", [msg]);
+    get().toast(`Flagged for help — the team can see ${name} needs eyes`);
+  },
+
+  resolveHelp: (memberId) => {
+    const open = get().messages.filter(
+      (m) => isHelpRequest(m) && !m.answered && m.from === memberId,
+    );
+    if (open.length === 0) return;
+    const openIds = new Set(open.map((m) => m.id));
+    set((s) => ({
+      messages: s.messages.map((m) => (openIds.has(m.id) ? { ...m, answered: true } : m)),
+    }));
+    const changed = get().messages.filter((m) => openIds.has(m.id));
+    upsertShared("messages.json", changed);
+    get().toast("Help flag cleared");
   },
 
   setTaskStatus: (id, status) => {
