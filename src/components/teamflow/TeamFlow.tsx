@@ -22,10 +22,14 @@ export function StepShell({
   children: ReactNode;
 }) {
   const room = useApp((s) => s.room);
+  const leaveRoom = useApp((s) => s.leaveRoom);
   const phase = room?.phase;
   return (
     <div className="h-full flex flex-col bg-bg">
       <div className="flex items-center gap-3 px-4 h-10 border-b border-line flex-none">
+        <button className="btn" onClick={() => leaveRoom()} title="Leave the room and go back">
+          ← leave
+        </button>
         <span className="font-display text-[15px] font-semibold">team setup</span>
         <span className="font-mono text-[11px] text-faint">room {room?.code}</span>
         <span className="flex-1" />

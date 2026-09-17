@@ -29,6 +29,7 @@ const normalizeAddr = (addr: string) =>
  */
 export function TeamStart() {
   const toast = useApp((s) => s.toast);
+  const setAppMode = useApp((s) => s.setAppMode);
   const [name, setName] = useState("");
   const [joinName, setJoinName] = useState("");
   const [code, setCode] = useState("");
@@ -86,7 +87,12 @@ export function TeamStart() {
   return (
     <div className="h-full flex items-center justify-center bg-bg">
       <div className="w-[680px] max-w-[92vw]">
-        <div className="panel-label mb-3">team session — same network</div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="panel-label">team session — same network</div>
+          <button className="btn" onClick={() => setAppMode(null)} title="Back to Solo / Team select">
+            ← back to menu
+          </button>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           {/* create */}
           <div className="bg-panel hairline rounded-md p-4 flex flex-col gap-3">

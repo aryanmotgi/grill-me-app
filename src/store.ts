@@ -157,6 +157,9 @@ interface AppState {
   /** Phase "done": host persists plan + tasks, everyone leaves the flow and
    *  gets their first assigned task briefed into their own session. */
   finishTeamSetup: () => Promise<void>;
+  /** Back out of a room from any team screen: host stops its listener, then
+   *  everyone's room state clears → TeamFlow routes back to create/join. */
+  leaveRoom: () => Promise<void>;
 }
 
 let toastSeq = 0;
@@ -620,6 +623,19 @@ export const useApp = create<AppState>((set, get) => ({
           );
         }
       });
+    }
+  },
+
+  leaveRoom: async () => {
+    const wasHost = get().roomRole === "host";
+    set({ room: null, roomRole: null, roomSelf: null, roomOffline: false });
+    if (wasHost && isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("room_host_stop");
+      } catch {
+        /* listener already down — nothing to stop */
+      }
     }
   },
 
