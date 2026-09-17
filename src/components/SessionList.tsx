@@ -184,7 +184,7 @@ export function SessionList() {
     ? teammates
     : teammates.filter((t, i) => (ownId ? t.id === ownId : i === 0));
   return (
-    <aside style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
+    <aside data-tour="sessions" style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
       <div className="px-3 py-2 flex items-center justify-between">
         <span className="panel-label">sessions</span>
         {surfaceVisible(appMode, "session-count") ? (
