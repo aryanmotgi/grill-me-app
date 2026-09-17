@@ -3008,6 +3008,38 @@ fn extract_json_object(raw: &str) -> String {
     }
 }
 
+/// Strip a leading/trailing markdown fence, then cut to the outermost [ … ].
+/// Array sibling of extract_json_object — models occasionally fence or preface
+/// a JSON array despite instructions. (lib.rs keeps its own copy for the same
+/// reason it keeps extract_json_object rather than reaching into room.)
+fn extract_json_array(raw: &str) -> String {
+    let mut s = raw.trim();
+    if s.starts_with("```") {
+        s = s.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
+        if let Some(stripped) = s.trim_end().strip_suffix("```") {
+            s = stripped;
+        }
+        s = s.trim();
+    }
+    if s.starts_with('[') && s.ends_with(']') {
+        return s.to_string();
+    }
+    match (s.find('['), s.rfind(']')) {
+        (Some(a), Some(b)) if a < b => s[a..=b].to_string(),
+        _ => s.to_string(),
+    }
+}
+
+/// Coerce a model-produced score to the 0-100 integer bucket the UI renders.
+/// Accepts numbers or numeric strings; anything unparseable becomes 0.
+fn normalize_score(v: &serde_json::Value) -> u32 {
+    let n = v
+        .as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse::<f64>().ok()))
+        .unwrap_or(0.0);
+    n.round().clamp(0.0, 100.0) as u32
+}
+
 /// Normalize a model-produced likelihood to one of the three UI buckets.
 fn normalize_likelihood(raw: &str) -> String {
     let l = raw.trim().to_lowercase();
@@ -3160,6 +3192,198 @@ mod predict_conflict_tests {
     }
 }
 
+#[cfg(test)]
+mod suggest_assignee_tests {
+    use super::{extract_json_array, normalize_score};
+    use serde_json::json;
+
+    #[test]
+    fn extract_array_from_fenced_json() {
+        let raw = "```json\n[{\"member\":\"a\",\"score\":90}]\n```";
+        assert_eq!(extract_json_array(raw), "[{\"member\":\"a\",\"score\":90}]");
+    }
+
+    #[test]
+    fn extract_array_from_prefixed_prose() {
+        let raw = "Here you go: [{\"member\":\"a\"}] — hope that helps";
+        assert_eq!(extract_json_array(raw), "[{\"member\":\"a\"}]");
+    }
+
+    #[test]
+    fn extract_array_passthrough_bare() {
+        let raw = "[{\"member\":\"a\"}]";
+        assert_eq!(extract_json_array(raw), "[{\"member\":\"a\"}]");
+    }
+
+    #[test]
+    fn score_normalizes_and_clamps() {
+        assert_eq!(normalize_score(&json!(87)), 87);
+        assert_eq!(normalize_score(&json!(87.6)), 88); // rounds
+        assert_eq!(normalize_score(&json!(140)), 100); // clamps high
+        assert_eq!(normalize_score(&json!(-5)), 0); // clamps low
+        assert_eq!(normalize_score(&json!("72")), 72); // numeric string
+        assert_eq!(normalize_score(&json!("nope")), 0); // unparseable → 0
+        assert_eq!(normalize_score(&json!(null)), 0); // missing → 0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Smart task routing — suggest the best-fit teammate for a task. Gathers, per
+// member, their current open-task load (in-progress / not-started tasks they
+// own, from the active project's tasks.json) and the files they've recently
+// touched (last commits' paths + uncommitted changes on their worktree), then
+// pipes a compact JSON payload to `claude -p` for a ranked suggestion. Mirrors
+// predict_conflict's claude path exactly: preflight first, room::claude_pipe
+// over stdin (member data never touches a command line), strict-JSON out via
+// extract_json_array + defensive normalization, input size capped.
+// ---------------------------------------------------------------------------
+
+const SUGGEST_PROMPT: &str = "You are assigning a coding task to the best-fit member of a small dev team. \
+The input is JSON with a `task` ({title, files}) and `members`, where each member has an `id`, a `name`, \
+their current open-task `load` (integer count of tasks already assigned to them), and `recentFiles` \
+(files they have recently worked in). \
+Rank EVERY member for this task, best first. Favor members whose recentFiles overlap the task's files or \
+whose recent work relates to the task title, and prefer a lighter load to keep work balanced. \
+Respond with STRICT JSON and NOTHING else — no markdown fences, no prose before or after: \
+a JSON array, best first, of objects with exactly these keys: \
+[{\"member\": \"<the member's id, copied verbatim from the input>\", \"score\": <integer 0-100>, \"reason\": \"<one short line, under 12 words>\"}]. \
+Use the member `id` (not the name) for \"member\". Include one entry per member.";
+
+/// Per-member caps for the routing payload.
+const SUGGEST_MAX_FILES: usize = 25;
+const SUGGEST_INPUT_CAP: usize = 40_000;
+
+#[derive(Serialize)]
+struct AssigneeSuggestion {
+    /// team member id (never a name — normalized back to id below)
+    member: String,
+    score: u32,
+    reason: String,
+}
+
+/// Files a member has recently worked in: the paths from their last commits
+/// plus any currently-uncommitted changes on their worktree. Deduped in first-
+/// seen order and capped. Uses the same real git signals as standup_brief_json.
+fn member_recent_files(repo: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |f: &str| {
+        let f = f.trim();
+        if !f.is_empty() && seen.insert(f.to_string()) {
+            out.push(f.to_string());
+        }
+    };
+    // paths touched by recent commits (empty --pretty leaves only name-only lines)
+    if let Ok(log) = git(repo, &["log", "-n", "15", "--name-only", "--pretty=format:"]) {
+        for line in log.lines() {
+            push(line);
+        }
+    }
+    // plus uncommitted changes (porcelain "XY path")
+    if let Ok(status) = git(repo, &["status", "--porcelain"]) {
+        for line in status.lines() {
+            if line.len() > 3 {
+                push(&line[3..]);
+            }
+        }
+    }
+    out.truncate(SUGGEST_MAX_FILES);
+    out
+}
+
+/// Rank team members for a task via `claude -p`. Real per-member signals
+/// (open-task load + recently-touched files) go in; a scored, reasoned ranking
+/// comes back as `[{member, score, reason}]`.
+#[tauri::command]
+fn suggest_assignee(
+    task_title: String,
+    task_files: Vec<String>,
+) -> Result<Vec<AssigneeSuggestion>, String> {
+    // Honest claude-missing handling: same preflight the panes use.
+    preflight_claude()?;
+
+    let cfg = team_config();
+    if cfg.teammates.is_empty() {
+        return Err("no team members to route this task to".into());
+    }
+    let title = task_title.trim();
+    if title.is_empty() {
+        return Err("give the task a title first, then suggest an assignee".into());
+    }
+
+    // Open-task load per member id, from the active project's tasks.json.
+    let tasks: Vec<serde_json::Value> = std::fs::read_to_string(grillme_dir().join("tasks.json"))
+        .ok()
+        .and_then(|r| serde_json::from_str::<serde_json::Value>(&r).ok())
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+    let mut load: HashMap<String, u32> = HashMap::new();
+    for t in &tasks {
+        let open = matches!(t["status"].as_str(), Some("in-progress") | Some("not-started"));
+        if open {
+            if let Some(owner) = t["owner"].as_str() {
+                *load.entry(owner.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let members: Vec<serde_json::Value> = cfg
+        .teammates
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "name": m.name,
+                "load": load.get(&m.id).copied().unwrap_or(0),
+                "recentFiles": member_recent_files(&m.repo_path),
+            })
+        })
+        .collect();
+
+    let mut input = serde_json::json!({
+        "task": { "title": title, "files": task_files },
+        "members": members,
+    })
+    .to_string();
+    // Cap defensively, landing on a char boundary (mirrors predict_conflict).
+    truncate_at_char_boundary(&mut input, SUGGEST_INPUT_CAP);
+
+    let raw = room::claude_pipe(&input, SUGGEST_PROMPT)?;
+    let cleaned = extract_json_array(&raw);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&cleaned)
+        .map_err(|e| format!("claude did not return a JSON suggestion array: {e}"))?;
+
+    // Map any returned key (id OR name) back to a real member id, so the
+    // frontend can always assign against a known member.
+    let id_for = |key: &str| -> Option<String> {
+        cfg.teammates
+            .iter()
+            .find(|m| m.id == key || m.name == key)
+            .map(|m| m.id.clone())
+    };
+
+    let mut out: Vec<AssigneeSuggestion> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for item in &parsed {
+        let Some(key) = item["member"].as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let Some(member) = id_for(key) else { continue };
+        if !seen.insert(member.clone()) {
+            continue; // one entry per member — drop dupes
+        }
+        out.push(AssigneeSuggestion {
+            member,
+            score: normalize_score(&item["score"]),
+            reason: item["reason"].as_str().unwrap_or("").trim().to_string(),
+        });
+    }
+    if out.is_empty() {
+        return Err("claude returned no usable suggestions".into());
+    }
+    Ok(out)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -3222,6 +3446,7 @@ pub fn run() {
             explain_session,
             git_conflict_radar,
             predict_conflict,
+            suggest_assignee,
             room::room_host_start,
             room::room_host_stop,
             room::room_client,

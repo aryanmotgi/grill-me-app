@@ -147,6 +147,143 @@ function taskWords(text: string): Set<string> {
   return new Set(text.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
 }
 
+type Suggestion = { member: string; score: number; reason: string };
+
+/** Amber "suggest who" affordance for the add-task flow: asks the Rust
+ *  `suggest_assignee` command (real per-member load + recently-touched files →
+ *  `claude -p`) for a ranked list, shown in a small glass popover. Picking a
+ *  member calls `onPick` with their id — the caller routes the task. */
+function SuggestAssignee({
+  title,
+  files,
+  onPick,
+}: {
+  title: string;
+  files: string[];
+  onPick: (memberId: string) => void;
+}) {
+  const teammates = useApp((s) => s.teammates);
+  const claudeMissing = useApp((s) => s.claudeMissing);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ranked, setRanked] = useState<Suggestion[] | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const name = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
+
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    setRanked(null);
+    if (!isTauri()) {
+      setError("Suggestions run in the desktop app.");
+      setBusy(false);
+      return;
+    }
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const out = await invoke<Suggestion[]>("suggest_assignee", {
+        taskTitle: title,
+        taskFiles: files,
+      });
+      setRanked(out);
+    } catch (e) {
+      const msg = String(e);
+      setError(/not found|not installed|command -v/i.test(msg)
+        ? "claude CLI not found — install it to suggest assignees."
+        : `Couldn't suggest: ${msg}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !claudeMissing && title.trim()) run();
+  };
+
+  // close on outside click / Escape while open (mirrors SessionPane's popover)
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        className={`btn primary ${open ? "active" : ""}`}
+        aria-expanded={open}
+        disabled={!title.trim()}
+        onClick={toggle}
+        title={title.trim() ? "Rank teammates for this task by load + recent files" : "Enter a title first"}
+      >
+        <Icon name="spark" size={11} /> suggest who
+      </button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label="Assignee suggestions"
+          className="absolute left-0 top-full mt-1 z-40 w-72 glass rounded-md shadow-2xl p-3 rise"
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="panel-label">best fit</span>
+            <span className="flex-1" />
+            {!claudeMissing && isTauri() ? (
+              <button className="btn" disabled={busy} onClick={run} title="Re-rank with the latest signals">
+                {busy ? "…" : "refresh"}
+              </button>
+            ) : null}
+          </div>
+          {claudeMissing ? (
+            <p className="text-warn text-[11px] leading-relaxed">
+              claude CLI not found — install it to suggest assignees.
+            </p>
+          ) : busy ? (
+            <p className="text-dim text-[11px] leading-relaxed flex items-center gap-2">
+              <span className="status-dot working" /> weighing load &amp; recent files…
+            </p>
+          ) : error ? (
+            <p className="text-danger text-[11px] leading-relaxed">{error}</p>
+          ) : ranked && ranked.length > 0 ? (
+            <ul className="flex flex-col gap-1">
+              {ranked.map((s) => (
+                <li key={s.member}>
+                  <button
+                    className="w-full text-left px-2 py-1.5 rounded-sm hover:bg-raised transition-colors"
+                    title={`Assign to ${name(s.member)}`}
+                    onClick={() => { onPick(s.member); setOpen(false); }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-ink truncate">{name(s.member)}</span>
+                      <span className="flex-1" />
+                      <span className="text-data num text-[11px] tabular-nums">{s.score}</span>
+                    </div>
+                    {s.reason ? (
+                      <div className="text-faint text-[10px] leading-snug mt-0.5">{s.reason}</div>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-faint text-[11px] leading-relaxed">No suggestions yet.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function TaskCreate() {
   const { tasks, teammates, setShared, toast } = useApp();
   const [open, setOpen] = useState(false);
@@ -190,10 +327,19 @@ function TaskCreate() {
           <Icon name="warn" size={9} /> possible duplicate of “{dupe.title}” ({dupe.owner}) — same wording
         </div>
       ) : null}
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 items-center flex-wrap">
         <select className="btn" value={owner} onChange={(e) => setOwner(e.target.value)}>
           {teammates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
+        <SuggestAssignee
+          title={title}
+          files={[]}
+          onPick={(id) => {
+            setOwner(id);
+            toast(`Assignee set to ${teammates.find((t) => t.id === id)?.name ?? id}`);
+          }}
+        />
+        <span className="flex-1" />
         <button className="btn primary" onClick={create}>add</button>
         <button className="btn" onClick={() => setOpen(false)}>cancel</button>
       </div>
