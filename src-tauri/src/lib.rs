@@ -1862,6 +1862,104 @@ fn generate_standup() -> Result<String, String> {
     Ok(cleaned)
 }
 
+// ---------------------------------------------------------------------------
+// Session handoff — summarize a live session's recent output into a "here's
+// where I am / what's next" note a teammate can pick up. Mirrors room's
+// claude_pipe pattern: /bin/zsh -lc for login-shell PATH, no_prompt env, input
+// fed over stdin (transcript text never touches a command line).
+// ---------------------------------------------------------------------------
+
+/// Recent visible output of a session, ANSI-stripped, capped to `max_lines`.
+/// Reuses the same live-screen read as pty_screen (TUIs repaint without
+/// newlines, so the ring is the source of truth, not committed history).
+fn session_recent_text(pty_id: &str, max_lines: usize) -> String {
+    let map = lock_or_recover(ptys());
+    let Some(sess) = map.get(pty_id) else {
+        return String::new();
+    };
+    let bytes: Vec<u8> = sess.ring.iter().copied().collect();
+    let start = tail_slice_start(&bytes, bytes.len().saturating_sub(48_000));
+    let mut all = strip_ansi_stateless(&bytes[start..]);
+    let skip = all.len().saturating_sub(max_lines);
+    all.drain(..skip);
+    all.join("\n")
+}
+
+/// Drop a wrapping markdown code fence (```lang … ```), if the whole output is
+/// fenced. Models occasionally fence prose despite instructions.
+fn strip_md_fence(raw: &str) -> String {
+    let s = raw.trim();
+    if let Some(rest) = s.strip_prefix("```") {
+        // drop the opening fence line (``` or ```lang) and a trailing fence
+        let body = rest.split_once('\n').map(|(_, r)| r).unwrap_or("");
+        return body
+            .trim_end()
+            .strip_suffix("```")
+            .unwrap_or(body)
+            .trim()
+            .to_string();
+    }
+    s.to_string()
+}
+
+/// One-shot `claude -p` over stdin. Mirrors room::claude_pipe. Runs
+/// preflight_claude first so a missing CLI surfaces as an honest error rather
+/// than a spawn failure.
+fn claude_pipe_stdin(input: &str, prompt: &str) -> Result<String, String> {
+    use std::process::Stdio;
+    preflight_claude()?; // "claude CLI not found on PATH" when not installed
+    let script = format!("claude -p {}", sh_quote(prompt));
+    let mut child = no_prompt(Command::new("/bin/zsh").args(["-lc", &script]))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn claude: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+        // dropping stdin closes the pipe so claude sees EOF
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+const HANDOFF_PROMPT: &str = "You are writing a session-handoff note for a teammate taking over this Claude Code coding session. \
+The input is the branch, the task, and the session's recent terminal output. \
+Write a concise handoff in markdown with exactly these sections: \
+'## Where I am' (2-4 bullets on current state — what's done, what's mid-flight), \
+'## What's next' (2-4 bullets of concrete next steps), and \
+'## Watch out for' (0-2 bullets on gotchas, only if the output actually shows one). \
+Ground every point in the real output; never invent progress or results. \
+Under 180 words. Output only the markdown note — no preamble, no fences.";
+
+/// Summarize a session's recent output + branch/task into a handoff note.
+#[tauri::command]
+fn summarize_session(pty_id: String, branch: String, task: String) -> Result<String, String> {
+    let recent = session_recent_text(&pty_id, 140);
+    if recent.trim().is_empty() {
+        return Err("no session output to summarize yet".into());
+    }
+    // Cap defensively (mirror pr_draft's head-cap) — keep the most recent tail,
+    // landing on a char boundary so the slice is valid UTF-8.
+    let capped: &str = if recent.len() > 16_000 {
+        let mut cut = recent.len() - 16_000;
+        while cut < recent.len() && !recent.is_char_boundary(cut) {
+            cut += 1;
+        }
+        &recent[cut..]
+    } else {
+        &recent
+    };
+    let input = format!(
+        "BRANCH: {branch}\nTASK: {task}\n\nRECENT SESSION OUTPUT (oldest line first):\n{capped}"
+    );
+    let raw = claude_pipe_stdin(&input, HANDOFF_PROMPT)?;
+    Ok(strip_md_fence(&raw))
+}
+
 #[derive(Serialize, Default)]
 struct ProjectCardStats {
     #[serde(rename = "tasksInProgress")]
@@ -3040,6 +3138,7 @@ pub fn run() {
             git_diff_file,
             pr_draft,
             generate_standup,
+            summarize_session,
             git_conflict_radar,
             predict_conflict,
             room::room_host_start,
@@ -3642,6 +3741,20 @@ mod pure_fn_tests {
         let start = tail_slice_start(bytes, 3); // mid-✓
         assert_eq!(start, 5);
         assert_eq!(&bytes[start..], b"cdef");
+    }
+
+    #[test]
+    fn strip_md_fence_unwraps_fenced_output_and_leaves_bare_text() {
+        assert_eq!(
+            strip_md_fence("```markdown\n## Where I am\n- did a thing\n```"),
+            "## Where I am\n- did a thing"
+        );
+        // language-less fence
+        assert_eq!(strip_md_fence("```\nhello\n```"), "hello");
+        // no fence: only trimmed
+        assert_eq!(strip_md_fence("  ## plain\n- x  "), "## plain\n- x");
+        // opening fence but no closing one: still drops the fence line
+        assert_eq!(strip_md_fence("```\nno close"), "no close");
     }
 
     // -- LineStripper (stateful pty line history + bell/notify signals) ------

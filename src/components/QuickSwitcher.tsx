@@ -52,6 +52,7 @@ export function QuickSwitcher() {
     shipSession, activeId, setPickerOpen, setSettingsOpen,
     setTheme, themeName, toggleDense, toggleFocus, setMergePilotOpen, setRailTab,
     setView, setDraftReply, patchTeammate, toast, appSettings, setAppSetting,
+    setHandoffFor,
   } = useApp();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -160,6 +161,7 @@ export function QuickSwitcher() {
   const inlineActionsFor = (mate: Teammate): { id: string; label: string; run: () => void }[] => [
     { id: "pause", label: mate.paused ? "resume" : "pause", run: () => void togglePause(mate) },
     { id: "ship", label: "review & ship", run: () => shipSession(mate.id) },
+    { id: "handoff", label: "hand off", run: () => setHandoffFor(mate.id) },
     { id: "dm", label: "DM", run: () => dmTo(mate) },
   ];
 
