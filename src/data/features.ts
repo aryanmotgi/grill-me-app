@@ -49,6 +49,8 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
   ]],
   ["Safety & insight", [
     { name: "Safety blocklist", what: "Destructive commands always require explicit confirmation", where: "settings → safety", go: () => useApp.getState().setSettingsOpen(true, "safety") },
+    { name: "Auto-checkpoint", what: "Periodic local snapshot commits per session (current branch, never pushed) so work is never lost", where: "settings → checkpoints", go: () => useApp.getState().setSettingsOpen(true, "checkpoints") },
+    { name: "Checkpoint now", what: "Snapshot-commit every session's uncommitted work right now — local only", where: "⌘K · settings → checkpoints", go: () => { void useApp.getState().checkpointNow(); } },
     { name: "Audit log", what: "Every command a session ran, timestamped", where: "session pane → audit", go: () => useApp.getState().setView("session") },
     { name: "Usage per session", what: "Real token counts since each session started", where: "right rail → more → team", go: () => { const st = useApp.getState(); st.setRailTab("team"); st.setView("session"); } },
     { name: "Token & cost dashboard", what: "Per-session token totals, burn chart, biggest spender, and an estimated $", where: "⌘/ → token & cost", go: () => useApp.setState({ tokenDashOpen: true }) },

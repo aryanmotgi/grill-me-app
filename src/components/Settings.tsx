@@ -6,6 +6,7 @@ import { themes, ember } from "../theme/themes";
 import { TERM_FONTS, TERM_PALETTES, hexWithOpacity } from "../theme/termPalettes";
 import { isTauri, fetchGitState, type TeamMemberConfig } from "../data/sources/git";
 import { SHORTCUT_GROUPS } from "../data/shortcuts";
+import { CHECKPOINT_MIN_MINUTES, checkpointIntervalMinutes, clampCheckpointInterval } from "../lib/checkpoint";
 
 // ---------------------------------------------------------------------------
 // Settings — icon-rail modal, centered + glass. Plain-language, preset-first;
@@ -13,7 +14,7 @@ import { SHORTCUT_GROUPS } from "../data/shortcuts";
 // Phase 2 Settings redesign; every prior toggle/action is preserved.
 // ---------------------------------------------------------------------------
 
-type Tab = "team" | "appearance" | "terminal" | "notifications" | "safety" | "panels" | "shortcuts";
+type Tab = "team" | "appearance" | "terminal" | "notifications" | "safety" | "checkpoints" | "panels" | "shortcuts";
 
 const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
   { id: "team", label: "Team", blurb: "Who's on this project and where their code lives", icon: "team" },
@@ -21,6 +22,7 @@ const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
   { id: "terminal", label: "Terminal", blurb: "How the embedded Claude terminals look", icon: "terminal" },
   { id: "notifications", label: "Notifications", blurb: "What interrupts you, and how", icon: "bell" },
   { id: "safety", label: "Safety", blurb: "Commands that always require confirmation", icon: "lock" },
+  { id: "checkpoints", label: "Checkpoints", blurb: "Periodic local snapshot commits so work is never lost", icon: "commit" },
   { id: "panels", label: "Panels", blurb: "Show or hide parts of the app", icon: "layout" },
   { id: "shortcuts", label: "Shortcuts", blurb: "Keyboard reference", icon: "keyboard" },
 ];
@@ -33,6 +35,7 @@ const SEARCH_INDEX: Record<Tab, string[]> = {
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
   notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
+  checkpoints: ["checkpoint", "snapshot", "auto", "commit", "backup", "interval", "minutes", "periodic", "save", "recover", "lost work"],
   panels: ["preview", "dev", "tour", "onboarding", "inbox", "clear"],
   shortcuts: ["command palette", "home", "ship", "focus", "shortcut", "keyboard", "esc", "cheatsheet", "navigation", "jump", "session", "search"],
 };
@@ -478,6 +481,8 @@ export function SettingsModal() {
 
               {tab === "safety" ? <SafetyTab toast={toast} query={q} /> : null}
 
+              {tab === "checkpoints" ? <CheckpointsTab query={q} /> : null}
+
               {tab === "panels" ? (
                 <>
                   <Row label="Dev preview tab" hint="Live dev server of the project being built — hide if this project has no web UI">
@@ -771,6 +776,68 @@ function SafetyPreview({ patterns }: { patterns: string[] }) {
         })}
       </div>
     </div>
+  );
+}
+
+function CheckpointsTab({ query }: { query: string }) {
+  const { appSettings, setAppSetting, checkpointNow, members } = useApp();
+  const enabled = appSettings.autoCheckpoint === true;
+  const stored = checkpointIntervalMinutes(appSettings);
+  const [draft, setDraft] = useState(String(stored));
+  const [running, setRunning] = useState(false);
+
+  // keep the input in sync if the stored value changes elsewhere
+  useEffect(() => setDraft(String(stored)), [stored]);
+
+  const commitInterval = () => {
+    const next = clampCheckpointInterval(draft);
+    setAppSetting("autoCheckpointMinutes", next);
+    setDraft(String(next));
+  };
+
+  const doNow = async () => {
+    setRunning(true);
+    try {
+      await checkpointNow();
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <>
+      {!query ? (
+        <div className="text-faint text-[10px] mb-3 leading-relaxed">
+          A checkpoint stages everything and commits it on each session's current branch with a
+          timestamped message — a local snapshot only, never pushed and never on main or master.
+          A clean tree is a no-op.
+        </div>
+      ) : null}
+      <Row label="Auto-checkpoint" hint="Periodically snapshot every session so work is never lost">
+        <Toggle checked={enabled} onChange={(v) => setAppSetting("autoCheckpoint", v)} />
+      </Row>
+      <Row label="Interval" hint="Minutes between snapshots — 5 minute minimum">
+        <input
+          type="number"
+          min={CHECKPOINT_MIN_MINUTES}
+          className="w-16 bg-raised hairline rounded-sm px-2 py-1 num text-[11px] outline-none focus:border-accent disabled:opacity-50"
+          value={draft}
+          disabled={!enabled}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitInterval}
+          onKeyDown={(e) => { if (e.key === "Enter") commitInterval(); }}
+        />
+        <span className="text-faint text-[10px]">minutes</span>
+      </Row>
+      <Row
+        label="Checkpoint now"
+        hint={members.length ? `Snapshot all ${members.length} session${members.length === 1 ? "" : "s"} immediately` : "Add a session first"}
+      >
+        <button className="btn" onClick={doNow} disabled={running || members.length === 0}>
+          {running ? "checkpointing…" : "checkpoint now"}
+        </button>
+      </Row>
+    </>
   );
 }
 

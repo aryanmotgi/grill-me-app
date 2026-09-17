@@ -21,6 +21,7 @@ import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsage
 import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
 import { isTauri } from "./data/sources/git";
 import { needsAttention } from "./lib/attention";
+import { runCheckpoints, summarizeCheckpoints } from "./lib/checkpoint";
 import { fmtClock } from "./lib/format";
 import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type PtyStatus } from "./lib/ptyReady";
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
@@ -154,6 +155,8 @@ interface AppState {
   spawnSession: (id: string, name: string, branch: string) => Promise<void>;
   appSettings: Record<string, unknown>;
   setAppSetting: (key: string, value: unknown) => void;
+  /** Manual snapshot: checkpoint-commit every member repo now, always toasting. */
+  checkpointNow: () => Promise<void>;
   termSettings: TermSettings;
   setTermSetting: <K extends keyof TermSettings>(key: K, value: TermSettings[K]) => void;
   setShared: (p: {
@@ -596,6 +599,17 @@ export const useApp = create<AppState>((set, get) => ({
     const appSettings = { ...get().appSettings, [key]: value };
     set({ appSettings });
     persistShared("settings.json", appSettings);
+  },
+  checkpointNow: async () => {
+    const members = get().members;
+    if (!isTauri()) return;
+    if (members.length === 0) {
+      get().toast("No sessions to checkpoint", "warn");
+      return;
+    }
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { text, kind } = summarizeCheckpoints(await runCheckpoints(members, invoke));
+    get().toast(text, kind);
   },
 
   highlightFiles: [],

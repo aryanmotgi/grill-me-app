@@ -30,6 +30,7 @@ import { ReleaseNotes } from "./components/ReleaseNotes";
 import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
 import { CinemaMode } from "./components/CinemaMode";
+import { CheckpointRunner } from "./components/CheckpointRunner";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
@@ -316,6 +317,7 @@ export default function App() {
       <MergeConductor />
       <ReleaseNotes />
       <Cheatsheet />
+      <CheckpointRunner />
       <Toasts />
     </div>
   );
