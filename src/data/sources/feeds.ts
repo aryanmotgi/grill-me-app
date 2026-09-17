@@ -7,6 +7,7 @@ import { parseResetHint } from "../../lib/ratelimit";
 import { sessionTokens, shouldCapPause } from "../../lib/cap";
 import { fmtTokens } from "../../lib/format";
 import { playAlert } from "../sounds";
+import { notificationsSilenced } from "../../lib/quietHours";
 import {
   fetchConflictRadar,
   fetchGitState,
@@ -551,7 +552,9 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
     if ((kind === "msg" || kind === "mention") && st.notifyMessages === false) return;
     if (kind === "input" && st.notifyNeedsInput === false) return;
     playAlert(kind === "msg" ? "message" : kind === "mention" ? "mention" : "needs-input", st);
-    if (canNotify) notif.sendNotification({ title, body });
+    // Quiet hours must silence the OS banner too, not just the sound — gate on
+    // the same helper playAlert uses so both suppress together.
+    if (canNotify && !notificationsSilenced(st)) notif.sendNotification({ title, body });
   };
 
   const rawCache: Record<string, string> = {};

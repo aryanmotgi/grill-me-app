@@ -33,3 +33,23 @@ export function inQuietHours(now: Date, start: string, end: string): boolean {
     // wraps midnight, e.g. 22:00–07:00
     : cur >= s || cur < e;
 }
+
+/**
+ * Should alerts (sound AND OS notification) be suppressed right now for this
+ * settings object? Reads the same `quietHours` shape playAlert reads. A
+ * settings object without a valid enabled quietHours block (e.g. the Settings
+ * "test" button) is never silenced, so previews always fire. `at` is injected
+ * for testability; defaults to the wall clock.
+ */
+export function notificationsSilenced(
+  settings: Record<string, unknown>,
+  at: Date = new Date(),
+): boolean {
+  const qh = settings.quietHours as
+    | { enabled?: boolean; start?: string; end?: string }
+    | undefined;
+  if (!qh?.enabled || typeof qh.start !== "string" || typeof qh.end !== "string") {
+    return false;
+  }
+  return inQuietHours(at, qh.start, qh.end);
+}
