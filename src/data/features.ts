@@ -23,6 +23,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
   ]],
   ["Coordination", [
     { name: "Task board", what: "Shared tasks grouped by urgency, with blocking chains", where: "right rail → tasks", go: () => { const st = useApp.getState(); st.setRailTab("tasks"); st.setView("session"); } },
+    { name: "Kanban board", what: "Tasks as draggable cards across blocked / not-started / in-progress / done", where: "⌘K → kanban board", go: () => useApp.setState({ kanbanOpen: true }) },
     { name: "Fan-out", what: "Paste a checklist → parallel sessions per independent item", where: "tasks tab → fan out", go: () => { const st = useApp.getState(); st.setRailTab("tasks"); st.setView("session"); } },
     { name: "Inbox + threads", what: "Typed messages (question/fyi/blocking/proposal), @mentions", where: "right rail → inbox", go: () => { const st = useApp.getState(); st.setRailTab("inbox"); st.setView("session"); } },
     { name: "Proposals", what: "Ask 'does this affect you?' — teammates answer in one click", where: "inbox composer → proposal" },
