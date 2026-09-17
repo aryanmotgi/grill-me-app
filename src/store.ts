@@ -98,6 +98,11 @@ interface AppState {
   view: "home" | "session";
   setView: (v: "home" | "session") => void;
   featureIndexOpen: boolean;
+  /** Keyboard cheatsheet overlay (opened with "?"). Toggled via setState. */
+  cheatsheetOpen: boolean;
+  /** Keyboard-nav cursor in the session list (j/k). null = follow activeId.
+   *  Cleared on any setActive so the cursor snaps back to the open session. */
+  navSelId: string | null;
   /** Diff review board overlay — every member's branch-vs-main diff. */
   diffBoardOpen: boolean;
   /** Cross-session search overlay (panel-cross-search). Toggled via setState. */
@@ -196,7 +201,7 @@ export const useApp = create<AppState>((set, get) => ({
   themeName: "ember",
   toasts: [],
 
-  setActive: (id) => set({ activeId: id, switcherOpen: false, view: "session" }),
+  setActive: (id) => set({ activeId: id, switcherOpen: false, view: "session", navSelId: null }),
   setSplit: (id) => set({ splitId: id }),
   setRailTab: (railTab) => set({ railTab }),
   toggleFocus: () => set((s) => ({ focusMode: !s.focusMode, splitId: null })),
@@ -466,6 +471,8 @@ export const useApp = create<AppState>((set, get) => ({
   view: "home",
   setView: (view) => set({ view }),
   featureIndexOpen: false,
+  cheatsheetOpen: false,
+  navSelId: null,
   diffBoardOpen: false,
   crossSearchOpen: false,
   scrubberOpen: false,

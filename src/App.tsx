@@ -21,10 +21,22 @@ import { SessionScrubber } from "./components/SessionScrubber";
 import { PresenceMap } from "./components/PresenceMap";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TokenDashboard } from "./components/TokenDashboard";
+import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
+import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
 import type { RailTab } from "./store";
+
+/** Overlays that own the screen — bare-key session nav is suspended while any
+ *  is open so a "?" or "j" behind a modal can't move the list underneath. */
+function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
+  return (
+    s.switcherOpen || s.crossSearchOpen || s.scrubberOpen || s.presenceMapOpen ||
+    s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen ||
+    s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen
+  );
+}
 
 function DragHandle({ onDrag, onDone }: { onDrag: (dx: number) => void; onDone: () => void }) {
   return (
@@ -95,6 +107,60 @@ export default function App() {
           setRailTab(tab as RailTab);
         }
       }
+
+      // ---- keyboard-first navigation (bare keys; never while typing) ----
+      const typing = isTypingTarget(e.target);
+      // "?" toggles the cheatsheet — the single source of truth for shortcuts
+      if (!mod && !typing && e.key === "?") {
+        const s = useApp.getState();
+        if (s.cheatsheetOpen) {
+          e.preventDefault();
+          useApp.setState({ cheatsheetOpen: false });
+        } else if (s.activeProject && !blockingOverlayOpen(s)) {
+          e.preventDefault();
+          useApp.setState({ cheatsheetOpen: true });
+        }
+      }
+      // "/" jumps to the search-across-sessions box
+      if (!mod && !typing && e.key === "/") {
+        const s = useApp.getState();
+        if (s.activeProject && !blockingOverlayOpen(s)) {
+          e.preventDefault();
+          if (s.view === "home") setView("session");
+          requestAnimationFrame(() => document.getElementById("global-search")?.focus());
+        }
+      }
+      // j/k + ↑/↓ move the list cursor, 1-9 jump, Enter opens — only in the
+      // normal workspace (a project loaded, no modal up)
+      if (!mod && !typing && useApp.getState().activeProject !== null && !blockingOverlayOpen(useApp.getState())) {
+        const s = useApp.getState();
+        const ids = visibleSessions(s.teammates, s.appMode, s.members[0]?.id).map((t) => t.id);
+        const cur = s.navSelId ?? s.activeId;
+        if (e.key === "j" || e.key === "ArrowDown") {
+          e.preventDefault();
+          useApp.setState({ navSelId: stepSelection(ids, cur, 1) });
+        } else if (e.key === "k" || e.key === "ArrowUp") {
+          e.preventDefault();
+          useApp.setState({ navSelId: stepSelection(ids, cur, -1) });
+        } else if (e.key === "Enter") {
+          // don't steal Enter from a focused button/row/link — only act when
+          // focus is loose (on <body>), where keyboard-only nav leaves it
+          const ae = document.activeElement as HTMLElement | null;
+          const onControl = !!ae && typeof ae.matches === "function" &&
+            ae.matches('button, a[href], summary, [role="button"], [tabindex]');
+          if (!onControl && ids.includes(cur)) {
+            e.preventDefault();
+            setActive(cur);
+          }
+        } else if (e.key >= "1" && e.key <= "9") {
+          const id = ids[Number(e.key) - 1];
+          if (id) {
+            e.preventDefault();
+            setActive(id);
+          }
+        }
+      }
+
       if (e.key === "Escape") {
         // close exactly one overlay, topmost first
         const s = useApp.getState();
@@ -102,6 +168,7 @@ export default function App() {
           // picker renders z-50 above everything; Esc inside its inputs is a no-op
           if ((e.target as HTMLElement)?.tagName !== "INPUT") setPickerOpen(false);
         }
+        else if (s.cheatsheetOpen) useApp.setState({ cheatsheetOpen: false });
         else if (s.switcherOpen) setSwitcherOpen(false);
         else if (s.crossSearchOpen) useApp.setState({ crossSearchOpen: false });
         else if (s.scrubberOpen) s.setScrubberOpen(false);
@@ -117,7 +184,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen, setView, setMergePilotOpen]);
+  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen, setView, setMergePilotOpen, setActive]);
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
@@ -200,6 +267,7 @@ export default function App() {
       <PresenceMap />
       <KanbanBoard />
       <TokenDashboard />
+      <Cheatsheet />
       <Toasts />
     </div>
   );

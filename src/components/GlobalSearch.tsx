@@ -21,8 +21,9 @@ export function GlobalSearch() {
       <div className="flex items-center gap-2 px-3 h-8">
         <span className="text-faint"><Icon name="search" size={11} /></span>
         <input
+          id="global-search"
           className="flex-1 bg-transparent text-[11px] outline-none placeholder:text-faint"
-          placeholder="Search across all sessions…"
+          placeholder="Search across all sessions… ( / )"
           value={searchQuery}
           onChange={(e) => setSearch(e.target.value)}
         />
