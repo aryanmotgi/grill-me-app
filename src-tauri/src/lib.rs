@@ -2998,6 +2998,113 @@ fn git_conflict_radar() -> Vec<ConflictPair> {
 }
 
 // ---------------------------------------------------------------------------
+// Branch graph: one member's branch vs main — ahead/behind commit counts, last
+// commit subject + time, and changed-file count. The read-only sibling of the
+// conflict radar (radar shows pairwise OVERLAP; this shows each branch's
+// DIVERGENCE from main). Per-repo like git_review — the frontend calls it once
+// per member — subprocess-cheap, and never runs a merge.
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct BranchOverview {
+    ok: bool,
+    error: Option<String>,
+    branch: String,
+    #[serde(rename = "onMain")]
+    on_main: bool,
+    /// Commits on the branch not yet in main.
+    ahead: u32,
+    /// Commits on main not yet in the branch.
+    behind: u32,
+    #[serde(rename = "lastSubject")]
+    last_subject: String,
+    /// Committer time of the last commit, epoch seconds (0 if unknown).
+    #[serde(rename = "lastTs")]
+    last_ts: i64,
+    #[serde(rename = "changedFiles")]
+    changed_files: u32,
+}
+
+/// Parse `git rev-list --left-right --count main...HEAD` → (behind, ahead).
+/// The output is two whitespace-separated integers: LEFT (commits reachable
+/// from main but not the branch = behind) then RIGHT (commits on the branch
+/// but not main = ahead). Missing/garbled fields degrade to 0.
+fn parse_left_right(raw: &str) -> (u32, u32) {
+    let mut it = raw.split_whitespace();
+    let behind = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let ahead = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    (behind, ahead)
+}
+
+#[tauri::command]
+fn branch_overview(repo_path: String) -> BranchOverview {
+    let err = |e: String| BranchOverview {
+        ok: false,
+        error: Some(e),
+        branch: String::new(),
+        on_main: false,
+        ahead: 0,
+        behind: 0,
+        last_subject: String::new(),
+        last_ts: 0,
+        changed_files: 0,
+    };
+
+    let branch = match git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]) {
+        Ok(b) => b.trim().to_string(),
+        Err(e) => return err(e),
+    };
+    let on_main = branch == "main";
+
+    // Last commit subject + committer time — same %x1f-separated shape as
+    // git_state's log parsing, so a subject with pipes/tabs is still safe.
+    let (last_subject, last_ts) = git(&repo_path, &["log", "-1", "--pretty=format:%s%x1f%ct"])
+        .ok()
+        .and_then(|out| {
+            let (s, t) = out.split_once('\u{1f}')?;
+            Some((s.to_string(), t.trim().parse::<i64>().unwrap_or(0)))
+        })
+        .unwrap_or_default();
+
+    // Divergence + changed files vs main. On main itself there is nothing to
+    // compare, so report a clean in-sync lane rather than shelling out.
+    let (behind, ahead) = if on_main {
+        (0, 0)
+    } else {
+        git(
+            &repo_path,
+            &["rev-list", "--left-right", "--count", "main...HEAD"],
+        )
+        .map(|out| parse_left_right(&out))
+        .unwrap_or((0, 0))
+    };
+    let changed_files = if on_main {
+        0
+    } else {
+        git(&repo_path, &["diff", "--name-only", "main...HEAD"])
+            .map(|out| {
+                out.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .count() as u32
+            })
+            .unwrap_or(0)
+    };
+
+    BranchOverview {
+        ok: true,
+        error: None,
+        branch,
+        on_main,
+        ahead,
+        behind,
+        last_subject,
+        last_ts,
+        changed_files,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Conflict prediction: given two members, feed the diffs of their OVERLAPPING
 // files (per branch, vs merge-base) to `claude -p` and ask whether the two
 // branches will ACTUALLY conflict (edit the same lines/functions) vs merely
@@ -3487,6 +3594,7 @@ pub fn run() {
             summarize_session,
             explain_session,
             git_conflict_radar,
+            branch_overview,
             predict_conflict,
             suggest_assignee,
             room::room_host_start,
@@ -3503,8 +3611,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        can_write_session_with, is_strong_token, member_for_pty, overlap_pairs, sh_quote,
-        strip_outer_fence, strip_prose_fence, validate_member_id, TeamMember,
+        can_write_session_with, is_strong_token, member_for_pty, overlap_pairs, parse_left_right,
+        sh_quote, strip_outer_fence, strip_prose_fence, validate_member_id, TeamMember,
     };
 
     #[test]
@@ -3565,6 +3673,21 @@ mod tests {
             m("Sam", "feat/a", &["a.ts"]),
         ]);
         assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn left_right_parses_behind_then_ahead() {
+        // `git rev-list --left-right --count main...HEAD` → "<behind>\t<ahead>"
+        assert_eq!(parse_left_right("3\t7"), (3, 7));
+        assert_eq!(parse_left_right("0 0"), (0, 0));
+        assert_eq!(parse_left_right("12   4\n"), (12, 4));
+    }
+
+    #[test]
+    fn left_right_degrades_on_garbage() {
+        assert_eq!(parse_left_right(""), (0, 0));
+        assert_eq!(parse_left_right("oops"), (0, 0));
+        assert_eq!(parse_left_right("5"), (5, 0));
     }
 
     #[test]
