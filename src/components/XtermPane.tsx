@@ -19,8 +19,14 @@ function b64ToU8(b64: string) {
  * process behind it (Rust side). Typing goes straight to the process;
  * output streams back live. Scrollback replays from the Rust ring buffer
  * so remounts and reloads lose nothing.
+ *
+ * `readOnly` makes the pane a pure viewer: it still attaches to the pty and
+ * streams live output + scrollback, but keystrokes are NEVER forwarded (no
+ * pty_write, no autorun) and the terminal never grabs focus. Used by the watch
+ * overlay to shoulder-surf a teammate's session — view-only regardless of the
+ * member's permission.
  */
-export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: string; cwd: string; themeName: string; shell?: boolean; autorun?: string }) {
+export function XtermPane({ id, cwd, themeName, shell = false, autorun, readOnly = false }: { id: string; cwd: string; themeName: string; shell?: boolean; autorun?: string; readOnly?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const latRef = useRef<HTMLSpanElement>(null);
   const ts = useApp((s) => s.termSettings);
@@ -46,7 +52,10 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       fontSize: ts.fontSize,
       lineHeight: ts.lineHeight,
       scrollback: 8000,
-      cursorBlink: ts.cursorBlink,
+      // view-only: reject stdin at the xterm layer too, so no keystroke can
+      // ever reach the pty even if onData were somehow wired up
+      disableStdin: readOnly,
+      cursorBlink: readOnly ? false : ts.cursorBlink,
       cursorStyle: ts.cursorStyle,
       theme: {
         background: bg,
@@ -67,7 +76,9 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       term.loadAddon(new WebglAddon());
     } catch { /* WebGL unavailable — DOM fallback */ }
     fit.fit();
-    term.focus();
+    // a view-only pane must not steal focus from its host (e.g. the watch
+    // modal), so Esc keeps closing the overlay instead of being eaten by xterm
+    if (!readOnly) term.focus();
 
     (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -98,7 +109,7 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
           remote: (!shell && member?.remote) || null,
           tmux: (!shell && member?.tmuxSession) || null,
         });
-        if (autorun) {
+        if (autorun && !readOnly) {
           const sb0 = await invoke<string>("pty_scrollback", { id });
           if (!sb0) await invoke("pty_write", { id, data: autorun + "\n" });
         }
@@ -151,7 +162,9 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       unlisten = () => { prevU2?.(); unlistenOut(); };
       const sb2 = await invoke<string>("pty_scrollback", { id });
       if (sb2) setPhase("live");
-      term.onData((data) => {
+      // read-only panes never forward keystrokes — no onData handler is wired,
+      // so pty_write is unreachable here regardless of the member's permission
+      if (!readOnly) term.onData((data) => {
         const st = useApp.getState();
         // exact parsing, mirroring the backend gate in pty_write — the
         // backend is the enforcement point; this just gives a friendly toast
@@ -180,7 +193,7 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun }: { id: 
       ro?.disconnect();
       term.dispose();
     };
-  }, [id, cwd, themeName, shell, autorun, ts, respawnTick]);
+  }, [id, cwd, themeName, shell, autorun, readOnly, ts, respawnTick]);
 
   if (!isTauri()) {
     return (

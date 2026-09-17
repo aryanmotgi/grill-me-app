@@ -54,6 +54,7 @@ export function QuickSwitcher() {
     setTheme, themeName, toggleDense, toggleFocus, setMergePilotOpen, setRailTab,
     setView, setDraftReply, patchTeammate, toast, appSettings, setAppSetting,
     setHandoffFor, messages, requestHelp, resolveHelp,
+    setWatchOpen, members,
   } = useApp();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -168,6 +169,8 @@ export function QuickSwitcher() {
         run: () => (helpPending ? resolveHelp(mate.id) : requestHelp(mate.id)) },
       { id: "handoff", label: "hand off", run: () => setHandoffFor(mate.id) },
       { id: "dm", label: "DM", run: () => dmTo(mate) },
+      // watching is shoulder-surfing a teammate — never your own session
+      ...(members[0]?.id === mate.id ? [] : [{ id: "watch", label: "watch", run: () => setWatchOpen(true, mate.id) }]),
     ];
   };
 
