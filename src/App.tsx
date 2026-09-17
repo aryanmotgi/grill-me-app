@@ -18,6 +18,7 @@ import { FeatureIndex } from "./components/FeatureIndex";
 import { DiffBoard } from "./components/DiffBoard";
 import { CrossSessionSearch } from "./components/CrossSessionSearch";
 import { SessionScrubber } from "./components/SessionScrubber";
+import { PresenceMap } from "./components/PresenceMap";
 import { ModeSelect } from "./components/ModeSelect";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -102,6 +103,7 @@ export default function App() {
         else if (s.switcherOpen) setSwitcherOpen(false);
         else if (s.crossSearchOpen) useApp.setState({ crossSearchOpen: false });
         else if (s.scrubberOpen) s.setScrubberOpen(false);
+        else if (s.presenceMapOpen) useApp.setState({ presenceMapOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
@@ -191,6 +193,7 @@ export default function App() {
       <DiffBoard />
       <CrossSessionSearch />
       <SessionScrubber />
+      <PresenceMap />
       <Toasts />
     </div>
   );

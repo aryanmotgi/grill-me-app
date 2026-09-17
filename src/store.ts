@@ -105,6 +105,8 @@ interface AppState {
   /** Session timeline scrubber overlay — replay recent pty output by line. */
   scrubberOpen: boolean;
   setScrubberOpen: (open: boolean) => void;
+  /** Presence map overlay: live file locks grouped by file & member. */
+  presenceMapOpen: boolean;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -464,6 +466,7 @@ export const useApp = create<AppState>((set, get) => ({
   crossSearchOpen: false,
   scrubberOpen: false,
   setScrubberOpen: (scrubberOpen) => set({ scrubberOpen }),
+  presenceMapOpen: false,
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
