@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ptyIdFor, useApp } from "../store";
 import type { Teammate } from "../types";
 import { XtermPane } from "./XtermPane";
@@ -16,6 +17,21 @@ import { XtermPane } from "./XtermPane";
 export function CinemaMode({ mate, themeName }: { mate: Teammate; themeName: string }) {
   const member = useApp((s) => s.members.find((m) => m.id === mate.id));
   const setCinemaOpen = useApp((s) => s.setCinemaOpen);
+
+  // xterm captures Escape (for TUIs), so the global App handler never sees it
+  // in cinema. Listen in the CAPTURE phase to beat the terminal and guarantee
+  // Esc always leaves cinema mode.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setCinemaOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [setCinemaOpen]);
 
   return (
     <div className="fixed inset-0 z-30 bg-term-bg">
@@ -37,9 +53,9 @@ export function CinemaMode({ mate, themeName }: { mate: Teammate; themeName: str
       <button
         className="cinema-exit"
         onClick={() => setCinemaOpen(false)}
-        title="Leave cinema mode"
+        title="Leave cinema mode (or press Esc)"
       >
-        <span className="cinema-kbd">esc</span> to exit cinema
+        <span aria-hidden>✕</span> exit cinema <span className="cinema-kbd">esc</span>
       </button>
     </div>
   );

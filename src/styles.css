@@ -469,11 +469,11 @@ select.btn, .btn[type] {
   gap: 6px;
   font-family: var(--font-sans);
   font-size: 11px;
-  color: var(--dim);
-  padding: 5px 12px;
+  color: var(--ink);
+  padding: 6px 13px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   cursor: pointer;
@@ -505,7 +505,8 @@ select.btn, .btn[type] {
     animation: cinemaPillFade 4.5s ease forwards;
   }
   @keyframes cinemaPillFade {
+    /* never fade below a clearly-clickable level — it's the way out */
     0%, 55% { opacity: 1; }
-    100% { opacity: 0.32; }
+    100% { opacity: 0.7; }
   }
 }
