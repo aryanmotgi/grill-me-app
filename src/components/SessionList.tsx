@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
+import { visibleSessions } from "../lib/sessionNav";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
 import type { Teammate } from "../types";
@@ -61,22 +62,35 @@ export function Sparkline({ id }: { id: string }) {
 
 function SessionRow({ mate }: { mate: Teammate }) {
   const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members } = useApp();
+  const navSelId = useApp((s) => s.navSelId);
   const [paused, setPaused] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
   const isOwnSession = members[0]?.id === mate.id;
   const res = useApp((s) => s.resources[mate.id] ?? s.resources[`${s.activeProject}:${mate.id}`]);
   const isActive = activeId === mate.id;
   const inSplit = splitId === mate.id;
   const offline = mate.health !== "ok";
+  // the keyboard cursor (j/k) — a distinct, secondary-state highlight (cyan)
+  // that only shows while it has stepped off the open session
+  const isCursor = navSelId !== null && navSelId === mate.id && !isActive;
+
+  useEffect(() => {
+    if (isCursor) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [isCursor]);
 
   return (
     <div
+      ref={rowRef}
       className={`group px-3 py-3 cursor-pointer transition-colors ${
         isActive
           ? "bg-raised border-l-2 border-l-accent"
-          : "hover:bg-raised/60 border-l-2 border-l-transparent"
+          : isCursor
+            ? "bg-raised/60 border-l-2 border-l-data"
+            : "hover:bg-raised/60 border-l-2 border-l-transparent"
       }`}
       role="button"
       tabIndex={0}
+      aria-current={isActive ? "true" : undefined}
       onClick={() => setActive(mate.id)}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -180,9 +194,7 @@ export function SessionList() {
   const appMode = useApp((s) => s.appMode);
   const ownId = useApp((s) => s.members[0]?.id);
   // solo: only the own session row (members[0]; first fake row in browser dev)
-  const shown = surfaceVisible(appMode, "other-session-rows")
-    ? teammates
-    : teammates.filter((t, i) => (ownId ? t.id === ownId : i === 0));
+  const shown = visibleSessions(teammates, appMode, ownId);
   return (
     <aside data-tour="sessions" style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
       <div className="px-3 py-2 flex items-center justify-between">

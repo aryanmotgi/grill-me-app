@@ -5,6 +5,7 @@ import { useApp } from "../store";
 import { themes, ember } from "../theme/themes";
 import { TERM_FONTS, TERM_PALETTES, hexWithOpacity } from "../theme/termPalettes";
 import { isTauri, fetchGitState, type TeamMemberConfig } from "../data/sources/git";
+import { SHORTCUT_GROUPS } from "../data/shortcuts";
 
 // ---------------------------------------------------------------------------
 // Settings — icon-rail modal, centered + glass. Plain-language, preset-first;
@@ -33,7 +34,7 @@ const SEARCH_INDEX: Record<Tab, string[]> = {
   notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
   panels: ["preview", "dev", "tour", "onboarding", "inbox", "clear"],
-  shortcuts: ["command palette", "home", "ship", "focus", "shortcut", "keyboard", "esc"],
+  shortcuts: ["command palette", "home", "ship", "focus", "shortcut", "keyboard", "esc", "cheatsheet", "navigation", "jump", "session", "search"],
 };
 
 const SAFETY_PRESETS: { key: string; label: string; detail: string; patterns: string[] }[] = [
@@ -505,24 +506,34 @@ export function SettingsModal() {
 
               {tab === "shortcuts" ? (
                 <>
-                  {([
-                    ["⌘K", "Command palette — jump to teammates or run actions"],
-                    ["⌘H", "Home — mission control dashboard"],
-                    ["⌘/", "Everything Grill Me can do — full feature index"],
-                    ["⌘P", "Switch project workspace"],
-                    ["⌘S", "Ship the active session (runs /ship — tests before push)"],
-                    ["⌘.", "Focus mode — collapse to just your pane"],
-                    ["⌘1–5", "Right rail tabs: tasks / inbox / activity / team / preview"],
-                    ["Esc", "Close any overlay"],
-                    ["1–9 / Enter", "On the project screen: quick-open a project"],
-                  ] as const)
-                    .filter(([keys, what]) => !q || `${keys} ${what}`.toLowerCase().includes(q))
-                    .map(([keys, what]) => (
-                      <div key={keys} className="flex gap-3 py-1.5 border-b border-line/50 last:border-0 text-[11px]">
-                        <span className="font-mono text-data w-20 flex-none">{keys}</span>
-                        <span className="text-dim">{what}</span>
+                  {!q ? (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-faint text-[10px] leading-relaxed flex-1">
+                        Press <span className="font-mono text-data">?</span> anywhere to open this cheatsheet as an overlay.
+                      </span>
+                      <button
+                        className="btn flex-none"
+                        onClick={() => { setSettingsOpen(false); useApp.setState({ cheatsheetOpen: true }); }}
+                      >
+                        open cheatsheet
+                      </button>
+                    </div>
+                  ) : null}
+                  {SHORTCUT_GROUPS.map(([group, shortcuts]) => {
+                    const rows = shortcuts.filter((s) => !q || `${s.keys} ${s.what}`.toLowerCase().includes(q));
+                    if (rows.length === 0) return null;
+                    return (
+                      <div key={group} className="mb-3 last:mb-0">
+                        <div className="panel-label mb-1.5">{group}</div>
+                        {rows.map((s) => (
+                          <div key={s.keys} className="flex gap-3 py-1.5 border-b border-line/50 last:border-0 text-[11px]">
+                            <span className="font-mono text-data w-20 flex-none">{s.keys}</span>
+                            <span className="text-dim">{s.what}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    );
+                  })}
                 </>
               ) : null}
             </div>
