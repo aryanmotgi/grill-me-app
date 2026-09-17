@@ -4,7 +4,8 @@ import { TickNumber } from "./TickNumber";
 import { Sparkline } from "./SessionList";
 import { attentionSessions, isSolo, ptyIdFor, useApp } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
-import { isTauri } from "../data/sources/git";
+import { isTauri, predictConflict } from "../data/sources/git";
+import type { ConflictPair, ConflictPrediction } from "../data/sources/git";
 import { fmtTokens } from "../lib/format";
 import {
   activityLine,
@@ -308,7 +309,6 @@ function TokenMeter() {
 function ConflictChips() {
   const conflicts = useApp((s) => s.conflicts);
   const teammates = useApp((s) => s.teammates);
-  const toast = useApp((s) => s.toast);
   if (conflicts.length === 0) return null;
   const nameOf = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
 
@@ -317,17 +317,146 @@ function ConflictChips() {
       <div className="panel-label mb-2">conflict radar</div>
       <div className="flex flex-wrap gap-1.5">
         {conflicts.map((c) => (
-          <button
-            key={`${c.a}∧${c.b}`}
-            className="tag warn cursor-pointer hover:brightness-110 transition-all"
-            title={c.files.join("\n")}
-            onClick={() => toast(`${nameOf(c.a)} ∧ ${nameOf(c.b)} both touch: ${c.files.join(", ")}`, "warn")}
-          >
-            {nameOf(c.a)} ∧ {nameOf(c.b)} · {c.files.length} file{c.files.length === 1 ? "" : "s"}
-          </button>
+          <ConflictChip key={`${c.a}∧${c.b}`} pair={c} nameOf={nameOf} />
         ))}
       </div>
     </section>
+  );
+}
+
+// One radar chip + its AI "predict" popover. Local state so each pair fetches
+// independently; loading / error / claude-missing are all surfaced honestly.
+type PredictState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "error"; message: string; missing: boolean }
+  | { phase: "done"; prediction: ConflictPrediction };
+
+// Likelihood → the two-accent palette. low is a success readout (ok/green),
+// high is danger, medium reads as neutral cyan data. Never amber (not an action).
+const LIKELIHOOD_STYLE: Record<ConflictPrediction["likelihood"], string> = {
+  low: "text-ok border-ok/40",
+  medium: "text-data border-data/40",
+  high: "text-danger border-danger/50",
+};
+
+function ConflictChip({
+  pair,
+  nameOf,
+}: {
+  pair: ConflictPair;
+  nameOf: (id: string) => string;
+}) {
+  const toast = useApp((s) => s.toast);
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<PredictState>({ phase: "idle" });
+  const label = `${nameOf(pair.a)} ∧ ${nameOf(pair.b)}`;
+
+  const runPredict = async () => {
+    setOpen(true);
+    setState({ phase: "loading" });
+    try {
+      const prediction = await predictConflict(pair.a, pair.b);
+      setState({ phase: "done", prediction });
+    } catch (e) {
+      const message = typeof e === "string" ? e : String(e);
+      setState({ phase: "error", missing: /claude cli not found/i.test(message), message });
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1">
+        <button
+          className="tag warn cursor-pointer hover:brightness-110 transition-all"
+          title={pair.files.join("\n")}
+          onClick={() =>
+            toast(`${label} both touch: ${pair.files.join(", ")}`, "warn")
+          }
+        >
+          {label} · {pair.files.length} file{pair.files.length === 1 ? "" : "s"}
+        </button>
+        <button
+          className="tag cursor-pointer hover:text-data transition-colors"
+          title="Ask claude whether these branches will actually conflict"
+          onClick={() => (open ? setOpen(false) : runPredict())}
+        >
+          <Icon name="search" size={9} className="mr-0.5" />
+          predict
+        </button>
+      </div>
+
+      {open ? (
+        <div className="glass rounded-md p-3 mt-1.5 w-72 max-w-[80vw] absolute z-30 rise shadow-2xl">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className="panel-label">conflict prediction</span>
+            <button
+              className="ml-auto text-faint hover:text-dim transition-colors"
+              onClick={() => setOpen(false)}
+              title="Close"
+            >
+              <Icon name="cross" size={9} />
+            </button>
+          </div>
+          <div className="text-[11px] text-dim mb-2">{label}</div>
+
+          {state.phase === "loading" ? (
+            <div className="text-[12px] text-data flex items-center gap-1.5">
+              <span className="status-dot working" />
+              asking claude…
+            </div>
+          ) : null}
+
+          {state.phase === "error" ? (
+            <div className="text-[12px]">
+              {state.missing ? (
+                <p className="text-dim">
+                  claude CLI isn&apos;t installed. Install it and it&apos;ll work
+                  here — no restart needed.
+                </p>
+              ) : (
+                <p className="text-danger break-words">{state.message}</p>
+              )}
+              {!state.missing ? (
+                <button
+                  className="tag mt-2 cursor-pointer hover:text-data"
+                  onClick={runPredict}
+                >
+                  retry
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {state.phase === "done" ? (
+            <div className="flex flex-col gap-2">
+              <span
+                className={`tag self-start uppercase ${LIKELIHOOD_STYLE[state.prediction.likelihood]}`}
+              >
+                {state.prediction.likelihood} likelihood
+              </span>
+              {state.prediction.detail ? (
+                <p className="text-[12px] text-dim leading-snug">
+                  {state.prediction.detail}
+                </p>
+              ) : null}
+              {state.prediction.recommendedOrder ? (
+                <div className="text-[12px] leading-snug flex items-start gap-1.5">
+                  <Icon
+                    name="merge"
+                    size={11}
+                    className="text-data mt-0.5 flex-none"
+                  />
+                  <span className="text-dim">
+                    {state.prediction.recommendedOrder}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

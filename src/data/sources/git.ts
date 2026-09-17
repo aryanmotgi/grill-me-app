@@ -50,6 +50,19 @@ export interface ConflictPair {
 /** Pre-merge conflict radar: pairwise file-name overlap. Rust caches 30s. */
 export const fetchConflictRadar = () => invoke<ConflictPair[]>("git_conflict_radar");
 
+/** AI verdict on whether two branches will ACTUALLY conflict (same lines) vs
+ *  just touch the same files, plus a recommended merge order. */
+export interface ConflictPrediction {
+  likelihood: "low" | "medium" | "high";
+  detail: string;
+  recommendedOrder: string;
+}
+
+/** Ask claude to predict whether two members' branches will really conflict.
+ *  `memberA`/`memberB` are the identifiers carried on a ConflictPair (a/b). */
+export const predictConflict = (memberA: string, memberB: string) =>
+  invoke<ConflictPrediction>("predict_conflict", { memberA, memberB });
+
 const STATUS_LABEL: Record<string, string> = {
   M: "modified",
   A: "added",
