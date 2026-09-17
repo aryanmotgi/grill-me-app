@@ -1251,6 +1251,65 @@ fn git_commit_push(repo_path: String, message: String) -> Result<String, String>
     }
 }
 
+/// Branches a checkpoint may never land on. A checkpoint is a private,
+/// working-branch snapshot — never the shared trunk. Mirrors the /ship and
+/// force-push guards so the whole app agrees on what "protected" means.
+/// Pure (takes the branch name, no git) so the guard logic is unit-testable.
+fn checkpoint_branch_guard(branch: &str) -> Result<(), String> {
+    let b = branch.trim();
+    if b.is_empty() {
+        return Err("no current branch (detached HEAD or not a git repo)".into());
+    }
+    if b == "main" || b == "master" {
+        return Err(format!("refusing to checkpoint on protected branch '{b}'"));
+    }
+    Ok(())
+}
+
+/// Format unix seconds as "YYYY-MM-DD HH:MM:SS" UTC — a readable, sortable
+/// stamp for checkpoint commit messages. Inverse of `chrono_lite_parse`'s
+/// civil-date math (Howard Hinnant's civil_from_days). Pure (no clock) so it
+/// is unit-testable.
+fn fmt_unix_utc(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (h, mi, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let z = days + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if m <= 2 { y + 1 } else { y };
+    format!("{year:04}-{m:02}-{d:02} {h:02}:{mi:02}:{s:02}")
+}
+
+/// Local snapshot commit on the CURRENT branch — stages everything and commits
+/// with a timestamped "checkpoint:" message so an agent's work is never lost.
+/// Deliberately NEVER pushes (a private safety net), hard-refuses main/master,
+/// and no-ops cleanly on a clean tree so a periodic timer can call it blindly.
+#[tauri::command]
+fn checkpoint_commit(repo_path: String) -> Result<String, String> {
+    let branch = git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    checkpoint_branch_guard(branch.trim())?;
+    git(&repo_path, &["add", "-A"])?;
+    let staged = git(&repo_path, &["diff", "--cached", "--name-only"])?;
+    if staged.trim().is_empty() {
+        return Ok("clean — nothing to checkpoint".into());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let msg = format!("checkpoint: {}", fmt_unix_utc(now));
+    git(&repo_path, &["commit", "-m", &msg])?;
+    let n = staged.lines().count();
+    Ok(format!("checkpoint · {n} file{}", if n == 1 { "" } else { "s" }))
+}
+
 #[tauri::command]
 fn git_revert_file(repo_path: String, file: String) -> Result<(), String> {
     // untracked files need clean, tracked need checkout
@@ -1259,6 +1318,45 @@ fn git_revert_file(repo_path: String, file: String) -> Result<(), String> {
         git(&repo_path, &["clean", "-f", "--", &file]).map(|_| ())
     } else {
         git(&repo_path, &["checkout", "--", &file]).map(|_| ())
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use super::{checkpoint_branch_guard, fmt_unix_utc};
+
+    #[test]
+    fn guard_refuses_protected_branches() {
+        assert!(checkpoint_branch_guard("main").is_err());
+        assert!(checkpoint_branch_guard("master").is_err());
+        // trailing newline from `git rev-parse` output must still be caught
+        assert!(checkpoint_branch_guard("main\n").is_err());
+        assert!(checkpoint_branch_guard("  master  ").is_err());
+    }
+
+    #[test]
+    fn guard_refuses_empty_branch() {
+        // detached HEAD / non-repo yields an empty branch name
+        assert!(checkpoint_branch_guard("").is_err());
+        assert!(checkpoint_branch_guard("   ").is_err());
+    }
+
+    #[test]
+    fn guard_allows_feature_branches() {
+        assert!(checkpoint_branch_guard("auto-checkpoint").is_ok());
+        assert!(checkpoint_branch_guard("feature/foo").is_ok());
+        // substrings of protected names are fine — only exact matches refuse
+        assert!(checkpoint_branch_guard("mainline").is_ok());
+        assert!(checkpoint_branch_guard("mastering").is_ok());
+    }
+
+    #[test]
+    fn fmt_unix_utc_known_epochs() {
+        assert_eq!(fmt_unix_utc(0), "1970-01-01 00:00:00");
+        // 1_600_000_000 = 2020-09-13 12:26:40 UTC
+        assert_eq!(fmt_unix_utc(1_600_000_000), "2020-09-13 12:26:40");
+        // leap-year day boundary: 2020-02-29 23:59:59 UTC = 1_583_020_799
+        assert_eq!(fmt_unix_utc(1_583_020_799), "2020-02-29 23:59:59");
     }
 }
 
@@ -3725,6 +3823,7 @@ pub fn run() {
             standup_append,
             standup_tail,
             git_commit_push,
+            checkpoint_commit,
             git_revert_file,
             usage_stats,
             ci_state,
