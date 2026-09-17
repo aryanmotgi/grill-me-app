@@ -63,6 +63,27 @@ export interface ConflictPrediction {
 export const predictConflict = (memberA: string, memberB: string) =>
   invoke<ConflictPrediction>("predict_conflict", { memberA, memberB });
 
+/** One member's branch vs main: divergence + last commit + changed-file count.
+ *  Read-only sibling of the conflict radar — never runs a merge. */
+export interface BranchOverview {
+  ok: boolean;
+  error: string | null;
+  branch: string;
+  onMain: boolean;
+  /** Commits on the branch not yet in main. */
+  ahead: number;
+  /** Commits on main not yet in the branch. */
+  behind: number;
+  lastSubject: string;
+  /** Committer time of the last commit, epoch seconds (0 if unknown). */
+  lastTs: number;
+  changedFiles: number;
+}
+
+/** Branch graph lane for one worktree — ahead/behind vs main. Rust, per-repo. */
+export const fetchBranchOverview = (repoPath: string) =>
+  invoke<BranchOverview>("branch_overview", { repoPath });
+
 const STATUS_LABEL: Record<string, string> = {
   M: "modified",
   A: "added",

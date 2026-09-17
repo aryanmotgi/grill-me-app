@@ -29,6 +29,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Inbox + threads", what: "Typed messages (question/fyi/blocking/proposal), @mentions", where: "right rail → inbox", go: () => { const st = useApp.getState(); st.setRailTab("inbox"); st.setView("session"); } },
     { name: "Proposals", what: "Ask 'does this affect you?' — teammates answer in one click", where: "inbox composer → proposal" },
     { name: "File locks & conflicts", what: "Live claimed files; banner when two people touch one file", where: "tasks tab bottom · auto banner" },
+    { name: "Branch graph", what: "Every teammate's branch as a lane — ahead/behind vs main, last commit, divergence", where: "⌘K → branch graph", go: () => useApp.setState({ branchGraphOpen: true }) },
     { name: "Presence map", what: "Who is touching what right now — files → members in them, conflicts flagged", where: "⌘/ → presence map", go: () => useApp.setState({ presenceMapOpen: true }) },
     { name: "Soft heads-ups", what: "Quiet toast when someone changes a file you recently read", where: "automatic" },
     { name: "Merge rotation", what: "Whose turn to merge; run the actual merge in-app", where: "top bar chip → merge pilot" },

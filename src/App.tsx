@@ -23,6 +23,7 @@ import { SessionScrubber } from "./components/SessionScrubber";
 import { PresenceMap } from "./components/PresenceMap";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TokenDashboard } from "./components/TokenDashboard";
+import { BranchGraph } from "./components/BranchGraph";
 import { StandupSummary } from "./components/StandupSummary";
 import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
@@ -38,6 +39,7 @@ function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
   return (
     s.switcherOpen || s.crossSearchOpen || s.scrubberOpen || s.presenceMapOpen ||
     s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen || s.prDashboardOpen ||
+    s.kanbanOpen || s.tokenDashOpen || s.branchGraphOpen || s.featureIndexOpen || s.diffBoardOpen ||
     s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
     s.cinemaOpen || s.handoffFor !== null
   );
@@ -194,6 +196,7 @@ export default function App() {
         else if (s.presenceMapOpen) useApp.setState({ presenceMapOpen: false });
         else if (s.kanbanOpen) useApp.setState({ kanbanOpen: false });
         else if (s.tokenDashOpen) useApp.setState({ tokenDashOpen: false });
+        else if (s.branchGraphOpen) useApp.setState({ branchGraphOpen: false });
         else if (s.standupOpen) useApp.setState({ standupOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
@@ -304,6 +307,7 @@ export default function App() {
       <PresenceMap />
       <KanbanBoard />
       <TokenDashboard />
+      <BranchGraph />
       <StandupSummary />
       <Cheatsheet />
       <Toasts />

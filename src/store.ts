@@ -126,6 +126,8 @@ interface AppState {
   kanbanOpen: boolean;
   /** Token & cost dashboard overlay. */
   tokenDashOpen: boolean;
+  /** Branch graph overlay — each member's branch vs main (ahead/behind). */
+  branchGraphOpen: boolean;
   /** Auto-standup summary overlay (AI Done/Doing/Blocked from git + tasks). */
   standupOpen: boolean;
   settingsOpen: boolean;
@@ -500,6 +502,7 @@ export const useApp = create<AppState>((set, get) => ({
   presenceMapOpen: false,
   kanbanOpen: false,
   tokenDashOpen: false,
+  branchGraphOpen: false,
   standupOpen: false,
   settingsOpen: false,
   settingsTab: null,
