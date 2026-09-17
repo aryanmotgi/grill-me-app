@@ -15,6 +15,7 @@ import { Onboarding } from "./components/Onboarding";
 import { ReviewModal } from "./components/ReviewModal";
 import { HomeDashboard } from "./components/HomeDashboard";
 import { FeatureIndex } from "./components/FeatureIndex";
+import { DiffBoard } from "./components/DiffBoard";
 import { ModeSelect } from "./components/ModeSelect";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -98,6 +99,7 @@ export default function App() {
         }
         else if (s.switcherOpen) setSwitcherOpen(false);
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
+        else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
         else if (s.reviewFor) s.setReviewFor(null);
         else if (s.mergePilotOpen) setMergePilotOpen(false);
@@ -182,6 +184,7 @@ export default function App() {
       <Onboarding />
       <ReviewModal />
       <FeatureIndex />
+      <DiffBoard />
       <Toasts />
     </div>
   );
