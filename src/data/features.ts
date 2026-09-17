@@ -46,6 +46,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
   ]],
   ["Control", [
     { name: "Command palette", what: "Jump to any session or run any action by name", where: "⌘K", go: () => useApp.getState().setSwitcherOpen(true) },
+    { name: "Cross-session search", what: "Search every session's terminal output at once; jump to any hit", where: "⌘K → cross-session search", go: () => useApp.setState({ crossSearchOpen: true }) },
     { name: "Projects", what: "Fully separate workspaces; stats on the launch screen", where: "⌘P · brand click", go: () => useApp.getState().setPickerOpen(true) },
     { name: "grillme CLI", what: "Script sessions from any terminal: send, read, spawn (~/.grillme/bin/grillme)", where: "terminal: grillme sessions" },
     { name: "Terminal themes", what: "Fonts, palettes (Dracula, Nord…), cursor, per-color overrides", where: "settings → terminal", go: () => useApp.getState().setSettingsOpen(true, "terminal") },
