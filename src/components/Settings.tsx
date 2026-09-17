@@ -166,10 +166,10 @@ export function SettingsModal() {
   const active = TABS.find((t) => t.id === tab)!;
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/50 flex items-start justify-center pt-[6vh]" onClick={() => setSettingsOpen(false)}>
+    <div className="fixed inset-0 z-40 scrim flex items-start justify-center pt-[6vh]" onClick={() => setSettingsOpen(false)}>
       <div
         {...modalA11y}
-        className="w-[720px] max-h-[84vh] bg-overlay hairline rounded-md shadow-2xl rise flex overflow-hidden outline-none"
+        className="w-[720px] max-h-[84vh] glass rounded-md shadow-2xl rise flex overflow-hidden outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* tab rail */}

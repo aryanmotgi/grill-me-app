@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
+import { TickNumber } from "./TickNumber";
 import { ptyIdFor, useApp } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { isTauri } from "../data/sources/git";
@@ -49,7 +50,7 @@ export function HomeDashboard() {
   const doneTasks = tasks.filter((t) => t.status === "done").length;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-bg">
+    <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-[980px] mx-auto grid grid-cols-2 gap-5">
 
         {/* NEEDS YOU — the one queue that matters */}
@@ -130,10 +131,10 @@ export function HomeDashboard() {
                   <div className="ml-auto text-right">
                     <div className="font-mono text-[9px] text-faint">{t.branch !== "—" ? t.branch.split("/").pop() : ""}</div>
                     {t.usage.tokens ? (
-                      <div className="font-mono text-[9px] text-faint">{fmtTokens(t.usage.tokens.output)} out</div>
+                      <div className="font-mono text-[9px] text-data num">{fmtTokens(t.usage.tokens.output)} out</div>
                     ) : null}
                     {res && res.cpu >= 3 ? (
-                      <div className="font-mono text-[9px] text-warn">{res.cpu.toFixed(0)}% cpu</div>
+                      <div className="font-mono text-[9px] text-data num">{res.cpu.toFixed(0)}% cpu</div>
                     ) : null}
                   </div>
                 </button>
@@ -161,16 +162,16 @@ export function HomeDashboard() {
         <section className={showPulse ? "" : "col-span-2"}>
           <div className="panel-label mb-2">today</div>
           <div className="grid grid-cols-3 gap-2 mb-3">
-            <div className="bg-panel rounded-md px-3 py-2.5">
-              <div className="text-[18px] font-display font-bold text-accent">{commitsToday}</div>
+            <div className="glass rounded-md px-3 py-2.5">
+              <TickNumber value={commitsToday} className="block text-[18px] font-display font-bold text-data" />
               <div className="text-[9px] text-faint">commits in feed</div>
             </div>
-            <div className="bg-panel rounded-md px-3 py-2.5">
-              <div className="text-[18px] font-display font-bold text-ok">{doneTasks}</div>
+            <div className="glass rounded-md px-3 py-2.5">
+              <TickNumber value={doneTasks} className="block text-[18px] font-display font-bold text-ok" />
               <div className="text-[9px] text-faint">tasks done</div>
             </div>
-            <div className="bg-panel rounded-md px-3 py-2.5">
-              <div className="text-[18px] font-display font-bold text-ink">{audit.total}</div>
+            <div className="glass rounded-md px-3 py-2.5">
+              <TickNumber value={audit.total} className="block text-[18px] font-display font-bold text-data" />
               <div className="text-[9px] text-faint">tool calls audited</div>
             </div>
           </div>

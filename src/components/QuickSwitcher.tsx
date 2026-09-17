@@ -65,11 +65,11 @@ export function QuickSwitcher() {
 
   return (
     <div
-      className="fixed inset-0 z-40 bg-black/50 flex items-start justify-center pt-[18vh]"
+      className="fixed inset-0 z-40 scrim flex items-start justify-center pt-[18vh]"
       onClick={() => setSwitcherOpen(false)}
     >
       <div
-        className="w-[420px] bg-overlay hairline rounded-md shadow-2xl overflow-hidden rise"
+        className="w-[420px] glass rounded-md shadow-2xl overflow-hidden rise"
         onClick={(e) => e.stopPropagation()}
       >
         <input

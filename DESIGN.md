@@ -15,8 +15,10 @@ diverge from the app theme by user choice.
 |---|---|
 | `bg` / `panel` / `raised` / `overlay` | surface ladder, darkest → lightest |
 | `line` | hairline borders — the only border color |
+| `lineglow` | accent-tinted glow rim for glass panels/modals (see Ember HUD) |
 | `ink` / `dim` / `faint` | text ladder; faint must clear 4.5:1 on `bg` |
 | `accent` | amber. Actions and attention ONLY — never decoration |
+| `data` | cyan. Metrics, counts, timestamps, links, secondary state (see Ember HUD) |
 | `ok` / `warn` / `danger` / `idle` | status semantics; warn doubles as needs-input |
 | `termBg` / `termInk` / `termCmd` | terminal defaults (ember palette tracks these) |
 
@@ -85,3 +87,49 @@ Utility language: orientation, status, action. Buttons say what they do
 - DON'T add a border where whitespace can separate.
 - DON'T introduce new font sizes, radii, or colors outside tokens.
 - DON'T use `text-[9px]`-style one-offs — use the scale.
+
+## Ember HUD (Phase 1 evolution)
+
+The Refined Ember rules above still hold — Ember HUD adds depth and a second
+signal color without turning the dev tool into a game. Everything here is
+subtle, GPU-cheap, and reduced-motion-safe.
+
+**Two-accent rule.** Amber (`accent`) is for **actions & attention only** —
+buttons, the needs-input state, the one thing to click. Cyan (`data`) is for
+**information you read, not act on**: metric numbers, counts, timestamps,
+cpu/mem, token totals, links, secondary state. If a number is a readout, it's
+`text-data`; if it's a decision, it's amber. Green (`ok`) stays a success
+semantic (e.g. "tasks done"). Never decorate with either accent.
+
+**Layered ground.** The app shell (`#root`) carries one fixed, layered
+background: a vertical `panel→bg` gradient, two faint radial glows (amber
+top-right, cyan top-left, ~5-7% alpha), and a barely-there vertical grid, over
+the existing horizontal scanlines. `background-attachment: fixed`, quieter in
+paperwhite. It lives on the shell — never per panel. Content surfaces that
+should reveal it (the home dashboard) stay transparent.
+
+**Glass panels + glow edge.** The `.glass` class is the shared card/modal
+surface: a semi-opaque `panel` fill, `backdrop-filter: blur(10px)`, and a 1px
+gradient-glow rim from `lineglow` (mask-composite trick on `::before`). Pair it
+with a `rounded-*` utility — the rim inherits the radius. Applied to home stat
+cards, all modals, and dropdown menus. Structural chrome (top bar, session
+list, right rail) stays flat over the ground — glass is for things that float.
+Text must stay AA over the glass in both themes.
+
+**Modal primitive.** `.scrim` = dark wash + `blur(2px)` behind every overlay;
+the modal panel is `.glass` + `shadow-2xl` + `rise`. All modals inherit this.
+
+**Pulse = needs-input only.** `.status-dot.needs-input` loops an expanding
+glow-ring (~2s), wrapped in `@media (prefers-reduced-motion: no-preference)`;
+reduced motion collapses it to the static glow. Nothing else loops. `working`
+keeps a static glow, `idle` stays hollow.
+
+**Numbers.** Live figures animate to their new value via `<TickNumber>` (~300ms
+count-up, snaps instantly under reduced motion). The `.num` utility applies
+`tabular-nums` — put it on every digit cluster (stat band, cpu/mem, tokens) so
+columns don't jitter. Sparklines carry a soft `data`-tinted area fill and a lit
+dot on the latest point.
+
+**Motion stays minimal.** The only additions are the needs-input ring and the
+number tick, both behind `prefers-reduced-motion`. Everything else still
+respects the 140-160ms transition budget from Motion above.
