@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import { TickNumber } from "./TickNumber";
 import { Sparkline } from "./SessionList";
@@ -6,20 +6,11 @@ import { attentionSessions, isSolo, ptyIdFor, useApp } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { isTauri, predictConflict } from "../data/sources/git";
 import type { ConflictPair, ConflictPrediction } from "../data/sources/git";
-import { fmtTokens } from "../lib/format";
-import {
-  activityLine,
-  DEFAULT_TOKEN_BUDGET,
-  tokenBudget,
-} from "../lib/dashboard";
-import type { Teammate } from "../types";
+import { fmtTokens, fmtFullTime, fmtRelTime } from "../lib/format";
+import { DEFAULT_TOKEN_BUDGET, tokenBudget } from "../lib/dashboard";
+import type { ActivityEvent, Teammate } from "../types";
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
-
-const prefersReduced = () =>
-  typeof window !== "undefined" &&
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function activitySentence(t: Teammate): string {
   if (t.health === "disconnected") return "worktree not connected";
@@ -507,43 +498,77 @@ function MergePipeline() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. LIVE ACTIVITY TICKER — one subtle line cycling the latest events.
-// Pauses on hover; reduced-motion shows the single latest line, static.
+// 7. ACTIVITY FEED — a scrolling list of recent events (commits, merges,
+// hand-offs, status) filling the empty lower-middle. Newest first, capped,
+// icon + actor + relative time. Reuses store.activity (no extra polling) and
+// works solo — it's just your own feed then. Honest empty state when quiet.
 // ---------------------------------------------------------------------------
-function ActivityTicker() {
+const FEED_LIMIT = 12;
+
+const FEED_ICON: Record<ActivityEvent["kind"], string> = {
+  commit: "commit",
+  merge: "merge",
+  message: "mail",
+  status: "bellOff",
+};
+
+// Tone mirrors the timeline: merge reads as a win (ok), status as a nudge
+// (warn), everything else stays a quiet cyan/faint metric — never amber.
+const FEED_TONE: Record<ActivityEvent["kind"], string> = {
+  commit: "text-faint",
+  merge: "text-ok",
+  message: "text-data",
+  status: "text-warn",
+};
+
+function ActivityFeed() {
   const activity = useApp((s) => s.activity);
   const teammates = useApp((s) => s.teammates);
   const setRailTab = useApp((s) => s.setRailTab);
   const setView = useApp((s) => s.setView);
-  const [idx, setIdx] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const reduced = useRef(prefersReduced()).current;
 
-  const lines = useMemo(() => {
-    const nameOf = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
-    return activity.slice(0, 8).map((e) => activityLine(e, nameOf));
-  }, [activity, teammates]);
-
-  useEffect(() => {
-    if (reduced || paused || lines.length <= 1) return;
-    const t = setInterval(() => setIdx((i) => (i + 1) % lines.length), 4000);
-    return () => clearInterval(t);
-  }, [reduced, paused, lines.length]);
-
-  if (lines.length === 0) return null;
-  const line = reduced ? lines[0] : lines[idx % lines.length];
+  const nameOf = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
+  const recent = activity.slice(0, FEED_LIMIT);
 
   return (
-    <button
-      className="flex items-center gap-2 text-[11px] text-dim overflow-hidden text-left w-full hover:text-ink transition-colors cursor-pointer"
-      title="Open the full activity feed"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onClick={() => { setRailTab("activity"); setView("session"); }}
-    >
-      <Icon name="broadcast" size={12} className="text-faint flex-none" />
-      <span className="truncate">{clip(line, 96)}</span>
-    </button>
+    <section>
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="panel-label">activity</span>
+        {activity.length > FEED_LIMIT ? (
+          <button
+            className="text-faint text-[10px] hover:text-data transition-colors cursor-pointer"
+            onClick={() => { setRailTab("activity"); setView("session"); }}
+          >
+            view all <span className="num">{activity.length}</span>
+          </button>
+        ) : null}
+      </div>
+      <div className="glass rounded-lg">
+        {recent.length === 0 ? (
+          <div className="px-3 py-4 text-dim text-[12px] leading-relaxed">
+            Quiet for now. Commits, merges, and hand-offs land here as work happens.
+          </div>
+        ) : (
+          <div className="max-h-64 overflow-y-auto divide-y divide-line/50">
+            {recent.map((e) => (
+              <div key={e.id} className="flex items-center gap-2.5 px-3 py-2">
+                <span className={`flex-none ${FEED_TONE[e.kind]}`} aria-hidden>
+                  <Icon name={FEED_ICON[e.kind]} size={11} />
+                </span>
+                <span className="text-accent text-[12px] font-semibold flex-none">{nameOf(e.actor)}</span>
+                <span className="text-dim text-[12px] truncate flex-1" title={e.text}>{e.text}</span>
+                <span
+                  className="text-faint text-[10px] tabular-nums flex-none"
+                  title={e.epochMs ? fmtFullTime(e.epochMs) : undefined}
+                >
+                  {e.epochMs ? fmtRelTime(e.epochMs) : e.ts}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -622,7 +647,7 @@ export function HomeDashboard() {
           </div>
         )}
 
-        <ActivityTicker />
+        <ActivityFeed />
         <QuickActions />
       </div>
     </div>
