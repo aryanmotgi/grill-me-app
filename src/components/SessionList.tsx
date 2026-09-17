@@ -18,7 +18,7 @@ const STATUS_LABEL: Record<Teammate["status"], string> = {
   idle: "idle",
 };
 
-function Sparkline({ id }: { id: string }) {
+export function Sparkline({ id }: { id: string }) {
   const [buckets, setBuckets] = useState<number[]>([]);
   useEffect(() => {
     if (!isTauri()) return;
