@@ -16,6 +16,7 @@ import { ReviewModal } from "./components/ReviewModal";
 import { HomeDashboard } from "./components/HomeDashboard";
 import { FeatureIndex } from "./components/FeatureIndex";
 import { DiffBoard } from "./components/DiffBoard";
+import { CrossSessionSearch } from "./components/CrossSessionSearch";
 import { ModeSelect } from "./components/ModeSelect";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -98,6 +99,7 @@ export default function App() {
           if ((e.target as HTMLElement)?.tagName !== "INPUT") setPickerOpen(false);
         }
         else if (s.switcherOpen) setSwitcherOpen(false);
+        else if (s.crossSearchOpen) useApp.setState({ crossSearchOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.settingsOpen) s.setSettingsOpen(false);
@@ -185,6 +187,7 @@ export default function App() {
       <ReviewModal />
       <FeatureIndex />
       <DiffBoard />
+      <CrossSessionSearch />
       <Toasts />
     </div>
   );

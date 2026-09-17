@@ -100,6 +100,8 @@ interface AppState {
   featureIndexOpen: boolean;
   /** Diff review board overlay — every member's branch-vs-main diff. */
   diffBoardOpen: boolean;
+  /** Cross-session search overlay (panel-cross-search). Toggled via setState. */
+  crossSearchOpen: boolean;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -456,6 +458,7 @@ export const useApp = create<AppState>((set, get) => ({
   setView: (view) => set({ view }),
   featureIndexOpen: false,
   diffBoardOpen: false,
+  crossSearchOpen: false,
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
