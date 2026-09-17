@@ -14,10 +14,14 @@ export function TickNumber({
   value,
   className,
   duration = 300,
+  format,
 }: {
   value: number;
   className?: string;
   duration?: number;
+  /** Optional display formatter (e.g. fmtTokens). The count-up runs on the raw
+   *  number; each frame is passed through this before rendering. */
+  format?: (n: number) => string;
 }) {
   const [display, setDisplay] = useState(value);
   const fromRef = useRef(value);
@@ -48,5 +52,9 @@ export function TickNumber({
     };
   }, [value, duration]);
 
-  return <span className={`num${className ? ` ${className}` : ""}`}>{display}</span>;
+  return (
+    <span className={`num${className ? ` ${className}` : ""}`}>
+      {format ? format(display) : display}
+    </span>
+  );
 }

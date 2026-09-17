@@ -7,7 +7,8 @@ import { surfaceVisible } from "../lib/soloVisibility";
 import { isTauri, predictConflict } from "../data/sources/git";
 import type { ConflictPair, ConflictPrediction } from "../data/sources/git";
 import { fmtTokens, fmtFullTime, fmtRelTime } from "../lib/format";
-import { DEFAULT_TOKEN_BUDGET, tokenBudget } from "../lib/dashboard";
+import { DEFAULT_TOKEN_BUDGET, tokenBudget, tokenBurn } from "../lib/dashboard";
+import type { TokenBurn } from "../lib/dashboard";
 import type { ActivityEvent, Teammate } from "../types";
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
@@ -205,6 +206,56 @@ function TeamPulse() {
   );
 }
 
+// A compact bar chart of today's token burn — one bar per session, biggest
+// first, heights scaled to the top spender. Cyan data color, no motion (heights
+// are static). Purely decorative, so it's hidden from the a11y tree; the total
+// TickNumber above it carries the number.
+function BurnBars({ burn }: { burn: TokenBurn }) {
+  const max = burn.max || 1;
+  return (
+    <div className="mt-2 flex items-end gap-0.5 h-6" aria-hidden>
+      {burn.bars.map((b) => (
+        <div
+          key={b.id}
+          className="flex-1 min-w-[3px] rounded-sm bg-data/80"
+          style={{ height: `${Math.max(8, Math.round((b.tokens / max) * 100))}%` }}
+          title={`${b.name} · ${fmtTokens(b.tokens)}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+// The token-burn tile: total input+output across today's sessions as a live
+// TickNumber, with the per-session breakdown charted below. Honest empty state
+// when nothing has real token tallies yet — never a fabricated curve.
+function TokenBurnTile() {
+  const teammates = useApp((s) => s.teammates);
+  const burn = useMemo(() => tokenBurn(teammates), [teammates]);
+
+  if (burn.total === 0) {
+    return (
+      <div className="glass rounded-md px-3 py-3">
+        <span className="block text-[22px] font-display font-bold text-faint num">—</span>
+        <div className="text-faint text-[10px] mt-0.5">no token usage yet</div>
+      </div>
+    );
+  }
+
+  const label = burn.bars.length === 1 ? "1 session" : `${burn.bars.length} sessions`;
+  return (
+    <div className="glass rounded-md px-3 py-3">
+      <TickNumber
+        value={burn.total}
+        format={fmtTokens}
+        className="block text-[22px] font-display font-bold text-data"
+      />
+      <div className="text-faint text-[10px] mt-0.5">tokens spent · {label}</div>
+      <BurnBars burn={burn} />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 3. TODAY — hero stat band. Big tabular numbers; cyan for data, green done.
 // No fabricated trends: there is no historical baseline, so numbers stand alone.
@@ -212,7 +263,6 @@ function TeamPulse() {
 function TodayBand() {
   const commitsToday = useApp((s) => s.activity.filter((a) => a.kind === "commit").length);
   const doneTasks = useApp((s) => s.tasks.filter((t) => t.status === "done").length);
-  const spent = useApp((s) => tokenBudget(s.teammates).spent);
   const [audit, setAudit] = useState(0);
 
   useEffect(() => {
@@ -240,10 +290,7 @@ function TodayBand() {
           <TickNumber value={doneTasks} className="block text-[22px] font-display font-bold text-ok" />
           <div className="text-faint text-[10px] mt-0.5">tasks done</div>
         </div>
-        <div className="glass rounded-md px-3 py-3">
-          <span className="block text-[22px] font-display font-bold text-data num">{fmtTokens(spent)}</span>
-          <div className="text-faint text-[10px] mt-0.5">tokens spent</div>
-        </div>
+        <TokenBurnTile />
         <div className="glass rounded-md px-3 py-3">
           <TickNumber value={audit} className="block text-[22px] font-display font-bold text-data" />
           <div className="text-faint text-[10px] mt-0.5">tool calls audited</div>
