@@ -98,6 +98,8 @@ interface AppState {
   view: "home" | "session";
   setView: (v: "home" | "session") => void;
   featureIndexOpen: boolean;
+  /** Diff review board overlay — every member's branch-vs-main diff. */
+  diffBoardOpen: boolean;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -453,6 +455,7 @@ export const useApp = create<AppState>((set, get) => ({
   view: "home",
   setView: (view) => set({ view }),
   featureIndexOpen: false,
+  diffBoardOpen: false,
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
