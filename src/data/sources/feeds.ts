@@ -2,6 +2,7 @@ import type { StoreApi, UseBoundStore } from "zustand";
 import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
 import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
+import { DEFAULT_STALL_MIN, LOOP_SAMPLES, isStalled, looksLooping } from "../../lib/stall";
 import { playAlert } from "../sounds";
 import {
   fetchConflictRadar,
@@ -332,6 +333,11 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   const restarts: Record<string, number[]> = {};
   const wasAlive: Record<string, boolean> = {};
   const autoPaused = new Set<string>();
+  // stall/loop detection: a rolling window of recent screen tails per session
+  // (for the loop heuristic) + the last flag we alerted on (so the toast/sound
+  // fires exactly once per episode, re-arming when the flag clears).
+  const tailHistory: Record<string, string[]> = {};
+  const lastFlag: Record<string, Teammate["flag"]> = {};
 
   let busy = false;
   const tick = async () => {
@@ -426,13 +432,39 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         const recording = st.recording !== null;
         const lastNew = st.tail[st.tail.length - 1];
         const lastCur = cur?.terminal[cur.terminal.length - 1]?.text;
+
+        // stall/loop detection — pure helpers over the quiet/status/tail the
+        // feed already has (no new polling). Rolling tail window feeds the loop
+        // heuristic; keep it fed every tick even on no-op ticks below.
+        tailHistory[st.id] = [...(tailHistory[st.id] ?? []), st.tail.join("\n")].slice(-LOOP_SAMPLES);
+        const stallOn = stg.appSettings.stallDetect !== false;
+        const stallMin = Math.max(1, Number(stg.appSettings.stallThresholdMin ?? DEFAULT_STALL_MIN));
+        // looping only makes sense while output is actively flowing (working):
+        // identical tails then mean repeats, not an idle frozen screen.
+        const looping = stallOn && st.alive && !rateLimited && !st.paused &&
+          status === "working" && looksLooping(tailHistory[st.id]);
+        const stalled = stallOn && st.alive && !rateLimited &&
+          isStalled(st.quietMs, status, st.paused, stallMin);
+        const flag: Teammate["flag"] = looping ? "looping" : stalled ? "stalled" : undefined;
+        // one-time alert per episode: fire on the flip into a flagged state,
+        // re-arm once it clears (lastFlag back to undefined)
+        if (flag && lastFlag[st.id] !== flag) {
+          stg.toast(
+            `${cur?.name ?? memberId} ${flag === "looping"
+              ? "looks stuck in a loop — recent output keeps repeating"
+              : `has stalled — no output for ${stallMin}m+`}`,
+            "warn",
+          );
+          playAlert("needs-input", stg.appSettings);
+        }
+        lastFlag[st.id] = flag;
         // pause masks working/idle only — a needs-input status (OSC/BEL,
         // hook event, or rate limit) survives pause so every attention
         // surface keeps showing the session until a human answers
         const displayStatus = resolveDisplayStatus(status, st.paused, rateLimited);
         // skip no-op patches — every patch re-renders panes and the list
         if (cur && cur.status === displayStatus && cur.recording === recording &&
-            cur.paused === st.paused &&
+            cur.paused === st.paused && cur.flag === flag &&
             cur.terminal.length === st.tail.length && lastCur === lastNew) {
           continue;
         }
@@ -440,6 +472,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           status: displayStatus,
           paused: st.paused,
           recording,
+          flag,
           health: stuck ? "stale" : cur?.health === "disconnected" ? "disconnected" : "ok",
           terminal: st.tail.map((text) => ({ kind: "out" as const, text })),
         });

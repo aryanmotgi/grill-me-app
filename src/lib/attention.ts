@@ -58,12 +58,14 @@ export function resolveDisplayStatus(
 /**
  * Attention predicate: does this session need a human?
  * Deliberately ignores `paused` — a paused session that needs input still
- * needs you; a paused working/idle session does not.
+ * needs you; a paused working/idle session does not. A stall/loop `flag`
+ * (set by the pty feed) also pulls a session into the attention surfaces.
  */
 export function needsAttention(t: {
   status: SessionStatus;
   health: Health;
   paused?: boolean;
+  flag?: "stalled" | "looping";
 }): boolean {
-  return t.status === "needs-input" || t.health !== "ok";
+  return t.status === "needs-input" || t.health !== "ok" || t.flag != null;
 }

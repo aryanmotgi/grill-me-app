@@ -42,6 +42,10 @@ export interface Teammate {
   dnd: boolean;
   recording: boolean;
   paused?: boolean;
+  /** Stuck-session flag derived by the pty feed: "stalled" = went silent past
+   *  the configured threshold; "looping" = recent output keeps repeating.
+   *  Distinct from `health` (which the 20-min stuck/disconnect check owns). */
+  flag?: "stalled" | "looping";
   usage: UsageInfo;
   terminal: TerminalLine[];
   changes: FileChange[];

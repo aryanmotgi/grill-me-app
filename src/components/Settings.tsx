@@ -33,7 +33,7 @@ const SEARCH_INDEX: Record<Tab, string[]> = {
   team: ["team", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
   appearance: ["theme", "color", "density", "compact", "backup", "restore", "export", "import"],
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
-  notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict"],
+  notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
   checkpoints: ["checkpoint", "snapshot", "auto", "commit", "backup", "interval", "minutes", "periodic", "save", "recover", "lost work"],
   panels: ["preview", "dev", "tour", "onboarding", "inbox", "clear"],
@@ -435,6 +435,16 @@ export function SettingsModal() {
                   </Row>
                   <Row label="Self-healing sessions" hint="Auto-restart crashed sessions (max 3/10min); flag stuck ones; ride out rate limits">
                     <Toggle checked={appSettings.selfHeal !== false} onChange={(v) => setAppSetting("selfHeal", v)} />
+                  </Row>
+                  <Row label="Stall & loop detection" hint="Flag a session that goes silent, or whose output keeps repeating, so it surfaces in Needs-you">
+                    <Toggle checked={appSettings.stallDetect !== false} onChange={(v) => setAppSetting("stallDetect", v)} />
+                    <select className="btn" value={String(appSettings.stallThresholdMin ?? 5)}
+                      onChange={(e) => setAppSetting("stallThresholdMin", Number(e.target.value))}>
+                      <option value="3">silent 3 min</option>
+                      <option value="5">silent 5 min</option>
+                      <option value="10">silent 10 min</option>
+                      <option value="15">silent 15 min</option>
+                    </select>
                   </Row>
                   <Row label="Mute everything" hint="Silences all notifications and sounds">
                     <Toggle checked={Boolean(appSettings.muteAll)} onChange={(v) => setAppSetting("muteAll", v)} />
