@@ -56,6 +56,47 @@ export function totalTokens(teammates: Teammate[]): number {
   return tokenBudget(teammates).spent;
 }
 
+/** One session's real contribution to today's token burn. */
+export interface TokenBurnBar {
+  id: string;
+  name: string;
+  /** input + output for this session (cache reads excluded, matching the budget). */
+  tokens: number;
+}
+
+export interface TokenBurn {
+  /** input + output summed across every session with a real tally. */
+  total: number;
+  /** per-session spend, biggest first — the bars of the burn chart. */
+  bars: TokenBurnBar[];
+  /** largest single-session spend, for scaling bar heights (0 when empty). */
+  max: number;
+}
+
+/**
+ * Break today's token spend down by session for the home burn chart. Uses the
+ * same accounting as {@link tokenBudget} (input + output, cache reads excluded,
+ * zero-tally sessions dropped) so the total here always matches the meter. When
+ * nothing has real tokens the bars are empty and `total` is 0 — the widget then
+ * shows an honest empty state rather than a fabricated curve.
+ */
+export function tokenBurn(teammates: Teammate[]): TokenBurn {
+  const bars: TokenBurnBar[] = [];
+  let total = 0;
+  let max = 0;
+  for (const t of teammates) {
+    const tk = t.usage.tokens;
+    if (!tk) continue;
+    const used = tk.input + tk.output;
+    if (used <= 0) continue;
+    total += used;
+    if (used > max) max = used;
+    bars.push({ id: t.id, name: t.name, tokens: used });
+  }
+  bars.sort((a, b) => b.tokens - a.tokens);
+  return { total, bars, max };
+}
+
 /**
  * One human line for the live activity ticker. `nameOf` resolves an actor id
  * to a display name (falls back to the id). Pure so the ticker component just
