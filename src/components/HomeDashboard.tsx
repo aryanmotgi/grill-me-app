@@ -477,7 +477,14 @@ function MergePipeline() {
 
   return (
     <section>
-      <div className="panel-label mb-2">merge queue</div>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="panel-label">merge queue</div>
+        <button className="tag ml-auto cursor-pointer hover:text-data transition-colors"
+          title="Walk the queue one branch at a time — predict conflicts, then merge each in turn"
+          onClick={() => useApp.setState({ mergeConductorOpen: true })}>
+          <Icon name="merge" size={9} className="mr-0.5" /> conduct
+        </button>
+      </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         {mergeQueue.map((id, i) => (
           <div key={id} className="flex items-center gap-1.5">

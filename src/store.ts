@@ -146,6 +146,9 @@ interface AppState {
   toggleDense: () => void;
   mergePilotOpen: boolean;
   setMergePilotOpen: (open: boolean) => void;
+  /** Guided sequential merge-queue walk overlay. */
+  mergeConductorOpen: boolean;
+  setMergeConductorOpen: (open: boolean) => void;
   spawnSession: (id: string, name: string, branch: string) => Promise<void>;
   appSettings: Record<string, unknown>;
   setAppSetting: (key: string, value: unknown) => void;
@@ -557,6 +560,8 @@ export const useApp = create<AppState>((set, get) => ({
   toggleDense: () => set((s) => ({ dense: !s.dense })),
   mergePilotOpen: false,
   setMergePilotOpen: (mergePilotOpen) => set({ mergePilotOpen }),
+  mergeConductorOpen: false,
+  setMergeConductorOpen: (mergeConductorOpen) => set({ mergeConductorOpen }),
 
   spawnSession: async (id, name, branch) => {
     if (!isTauri()) return;
