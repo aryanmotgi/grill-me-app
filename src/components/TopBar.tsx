@@ -21,7 +21,7 @@ async function openBrowserPanel(label: string, url: string) {
 function OverflowMenu() {
   const {
     focusMode, toggleFocus, demoMode, toggleDemo, dense, toggleDense,
-    themeName, setTheme, setAppSetting, setMergePilotOpen, toast,
+    themeName, setTheme, setAppSetting, setMergePilotOpen, toast, appMode, setAppMode,
   } = useApp();
   const [open, setOpen] = useState(false);
   const openPanel = (label: string, url: string) => {
@@ -48,6 +48,10 @@ function OverflowMenu() {
             </button>
             <button className={item} onClick={() => { useApp.setState({ featureIndexOpen: true }); setOpen(false); }}>
               Everything Grill Me can do <span className="text-faint text-[9px] ml-auto">⌘/</span>
+            </button>
+            <div className="panel-label px-3 pt-2 pb-0.5">mode</div>
+            <button className={item} onClick={() => { setAppMode(null); setOpen(false); }}>
+              Switch mode <span className="text-faint text-[9px] ml-auto">{appMode === "solo" ? "solo" : "team"} → menu</span>
             </button>
             <div className="panel-label px-3 pt-2 pb-0.5">view</div>
             <button className={item} onClick={() => { toggleFocus(); setOpen(false); }}>
