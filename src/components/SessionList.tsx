@@ -61,7 +61,7 @@ export function Sparkline({ id }: { id: string }) {
 }
 
 function SessionRow({ mate }: { mate: Teammate }) {
-  const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members } = useApp();
+  const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members, setWatchOpen } = useApp();
   const navSelId = useApp((s) => s.navSelId);
   const [paused, setPaused] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -162,6 +162,15 @@ function SessionRow({ mate }: { mate: Teammate }) {
         >
           dnd
         </button>
+        {!isOwnSession ? (
+          <button
+            className="btn"
+            onClick={(e) => { e.stopPropagation(); setWatchOpen(true, mate.id); }}
+            title="Watch this session live, read-only — input stays disabled"
+          >
+            watch
+          </button>
+        ) : null}
         {isOwnSession ? <button
           className={`btn ${paused ? "active" : ""}`}
           title={paused ? "Resume: continues exactly where it stopped" : "Pause: freezes the process, preserves all context. Only the session owner can pause."}

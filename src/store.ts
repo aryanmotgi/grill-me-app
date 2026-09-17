@@ -144,6 +144,12 @@ interface AppState {
   releaseNotesOpen: boolean;
   /** Broadcast overlay — send one prompt/command to all sessions at once. */
   broadcastOpen: boolean;
+  /** Watch overlay — open a teammate's live session read-only (view-only). */
+  watchOpen: boolean;
+  /** Member id to preselect when the watch overlay opens (null = first target). */
+  watchFor: string | null;
+  /** Open/close the watch overlay; pass a member id to preselect that session. */
+  setWatchOpen: (open: boolean, memberId?: string | null) => void;
   settingsOpen: boolean;
   /** Tab to deep-link Settings to on open; null = keep default. */
   settingsTab: string | null;
@@ -599,6 +605,10 @@ export const useApp = create<AppState>((set, get) => ({
   standupOpen: false,
   releaseNotesOpen: false,
   broadcastOpen: false,
+  watchOpen: false,
+  watchFor: null,
+  setWatchOpen: (watchOpen, memberId) =>
+    set(watchOpen ? { watchOpen, watchFor: memberId ?? null } : { watchOpen: false, watchFor: null }),
   settingsOpen: false,
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
