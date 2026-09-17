@@ -23,6 +23,7 @@ import { KanbanBoard } from "./components/KanbanBoard";
 import { TokenDashboard } from "./components/TokenDashboard";
 import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
+import { CinemaMode } from "./components/CinemaMode";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
@@ -34,7 +35,8 @@ function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
   return (
     s.switcherOpen || s.crossSearchOpen || s.scrubberOpen || s.presenceMapOpen ||
     s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen ||
-    s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen
+    s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
+    s.cinemaOpen
   );
 }
 
@@ -64,6 +66,7 @@ export default function App() {
     setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen,
     dense, mergePilotOpen, setMergePilotOpen, members, setActive,
     panelSizes, setPanelSize, view, setView, appMode, teamFlowNeeded,
+    cinemaOpen, toggleCinema, setCinemaOpen,
   } = useApp();
 
   useEffect(() => {
@@ -130,6 +133,19 @@ export default function App() {
           requestAnimationFrame(() => document.getElementById("global-search")?.focus());
         }
       }
+      // Shift+C toggles full-bleed cinema mode. Guarded by !typing so it never
+      // fires from inside a terminal/input — enter it from the chrome, exit with
+      // Esc (which is unguarded, so it works from within the focused terminal).
+      if (!mod && !typing && e.shiftKey && (e.key === "C" || e.key === "c")) {
+        const s = useApp.getState();
+        if (s.cinemaOpen) {
+          e.preventDefault();
+          setCinemaOpen(false);
+        } else if (s.activeProject && !blockingOverlayOpen(s)) {
+          e.preventDefault();
+          toggleCinema();
+        }
+      }
       // j/k + ↑/↓ move the list cursor, 1-9 jump, Enter opens — only in the
       // normal workspace (a project loaded, no modal up)
       if (!mod && !typing && useApp.getState().activeProject !== null && !blockingOverlayOpen(useApp.getState())) {
@@ -180,11 +196,12 @@ export default function App() {
         else if (s.settingsOpen) s.setSettingsOpen(false);
         else if (s.reviewFor) s.setReviewFor(null);
         else if (s.mergePilotOpen) setMergePilotOpen(false);
+        else if (s.cinemaOpen) setCinemaOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen, setView, setMergePilotOpen, setActive]);
+  }, [setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen, setView, setMergePilotOpen, setActive, toggleCinema, setCinemaOpen]);
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
@@ -193,6 +210,18 @@ export default function App() {
   // team just picked → TeamFlow screens until the setup flow completes
   if (appMode === null) return <ModeSelect />;
   if (appMode === "team" && teamFlowNeeded) return <TeamFlow />;
+
+  // Cinema mode owns the whole window: render only the active terminal, full
+  // bleed, and unmount the entire normal shell (so no second XtermPane fights
+  // this one over the same pty). Esc / the exit pill / ⇧C leave it.
+  if (cinemaOpen && view === "session" && active) {
+    return (
+      <div className={`h-full ${dense ? "dense" : ""}`}>
+        <CinemaMode mate={active} themeName={themeName} />
+        <Toasts />
+      </div>
+    );
+  }
 
   return (
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>

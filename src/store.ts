@@ -42,6 +42,9 @@ interface AppState {
   railTab: RailTab;
   focusMode: boolean;
   demoMode: boolean;
+  /** Full-bleed "cinema" focus: the active session's terminal fills the window,
+   *  every chrome surface is hidden. Distinct from focusMode (which keeps chrome). */
+  cinemaOpen: boolean;
   switcherOpen: boolean;
   searchQuery: string;
   themeName: string;
@@ -52,6 +55,8 @@ interface AppState {
   setRailTab: (tab: RailTab) => void;
   toggleFocus: () => void;
   toggleDemo: () => void;
+  setCinemaOpen: (open: boolean) => void;
+  toggleCinema: () => void;
   setSwitcherOpen: (open: boolean) => void;
   setSearch: (q: string) => void;
   setTheme: (name: string) => void;
@@ -196,6 +201,7 @@ export const useApp = create<AppState>((set, get) => ({
   railTab: "tasks",
   focusMode: false,
   demoMode: false,
+  cinemaOpen: false,
   switcherOpen: false,
   searchQuery: "",
   themeName: "ember",
@@ -206,6 +212,10 @@ export const useApp = create<AppState>((set, get) => ({
   setRailTab: (railTab) => set({ railTab }),
   toggleFocus: () => set((s) => ({ focusMode: !s.focusMode, splitId: null })),
   toggleDemo: () => set((s) => ({ demoMode: !s.demoMode })),
+  // entering cinema forces the session view — there's no terminal to full-bleed
+  // from the home dashboard, so we land on the active session first.
+  setCinemaOpen: (cinemaOpen) => set(cinemaOpen ? { cinemaOpen, view: "session" } : { cinemaOpen }),
+  toggleCinema: () => set((s) => (s.cinemaOpen ? { cinemaOpen: false } : { cinemaOpen: true, view: "session" })),
   setSwitcherOpen: (switcherOpen) => set({ switcherOpen }),
   setSearch: (searchQuery) => set({ searchQuery }),
   setTheme: (themeName) => set({ themeName }),

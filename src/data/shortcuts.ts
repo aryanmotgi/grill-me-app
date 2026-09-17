@@ -30,6 +30,7 @@ export const SHORTCUT_GROUPS: [string, Shortcut[]][] = [
     { keys: "⌘P", what: "Switch project workspace" },
     { keys: "⌘S", what: "Ship the active session (runs /ship — tests before push)" },
     { keys: "⌘.", what: "Focus mode — collapse to just your pane" },
+    { keys: "⇧C", what: "Cinema mode — full-bleed the active session (Esc exits)" },
     { keys: "⌘1–5", what: "Right rail tabs: tasks / inbox / activity / team / preview" },
   ]],
   ["Project screen", [
