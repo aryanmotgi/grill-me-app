@@ -4,6 +4,8 @@ import { ptyIdFor } from "../../store";
 import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
 import { DEFAULT_STALL_MIN, LOOP_SAMPLES, isStalled, looksLooping } from "../../lib/stall";
 import { parseResetHint } from "../../lib/ratelimit";
+import { sessionTokens, shouldCapPause } from "../../lib/cap";
+import { fmtTokens } from "../../lib/format";
 import { playAlert } from "../sounds";
 import {
   fetchConflictRadar,
@@ -426,7 +428,36 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           autoPaused.add(st.id);
           invoke("pty_pause", { id: st.id, pause: true }).catch(() => {});
         }
-        if (st.paused && isViewed) {
+
+        // cost cap: hard-stop a session that blows its token budget. Unlike CPU
+        // auto-pause this fires even mid-work (it's a money limit, not idleness)
+        // but still never touches a needs-input/rate-limited session. Tokens
+        // count from capBaseTokens (0, or the level at the last manual resume),
+        // so a manually-resumed session gets another full cap before stopping.
+        const capMate = store.getState().teammates.find((t) => t.id === memberId);
+        const cap = Number(stg.appSettings.sessionTokenCap ?? 0);
+        const capTokens = (capMate ? sessionTokens(capMate) : 0) - (capMate?.capBaseTokens ?? 0);
+        if (
+          !capMate?.capReached &&
+          shouldCapPause({
+            status: rateLimited ? "needs-input" : status,
+            alive: st.alive,
+            paused: st.paused,
+            rateLimited,
+            tokens: capTokens,
+            cap,
+          })
+        ) {
+          store.getState().patchTeammate(memberId, { capReached: true });
+          invoke("pty_pause", { id: st.id, pause: true }).catch(() => {});
+          stg.toast(`${capMate?.name ?? memberId} paused — hit ${fmtTokens(cap)} token cap`, "warn");
+          playAlert("needs-input", stg.appSettings);
+        }
+
+        // auto-resume on view — but NOT a cap-paused session: a blown budget is
+        // a deliberate stop that only a manual resume (which clears capReached)
+        // may lift, so merely looking at the pane can't spend past the cap.
+        if (st.paused && isViewed && !capMate?.capReached) {
           autoPaused.delete(st.id);
           invoke("pty_pause", { id: st.id, pause: false }).catch(() => {});
         }

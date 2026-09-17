@@ -61,9 +61,11 @@ export function Sparkline({ id }: { id: string }) {
 }
 
 function SessionRow({ mate }: { mate: Teammate }) {
-  const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members, setWatchOpen } = useApp();
+  const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members, setWatchOpen, clearCap, patchTeammate } = useApp();
   const navSelId = useApp((s) => s.navSelId);
-  const [paused, setPaused] = useState(false);
+  // authoritative on the real process state so the button can also resume a
+  // session the feed paused (idle auto-pause or a cost-cap stop)
+  const paused = mate.paused ?? false;
   const rowRef = useRef<HTMLDivElement>(null);
   const isOwnSession = members[0]?.id === mate.id;
   const res = useApp((s) => s.resources[mate.id] ?? s.resources[`${s.activeProject}:${mate.id}`]);
@@ -125,7 +127,11 @@ function SessionRow({ mate }: { mate: Teammate }) {
             {res.cpu.toFixed(0)}% · {fmtMem(res.memMb)}
           </span>
         ) : null}
-        {mate.paused ? <span className="tag" title="Auto-paused while idle — opens instantly when you view or type">paused</span> : null}
+        {mate.capReached ? (
+          <span className="tag text-warn" title="Paused — hit its token budget cap. Resume to grant another cap's worth.">cap reached</span>
+        ) : mate.paused ? (
+          <span className="tag" title="Auto-paused while idle — opens instantly when you view or type">paused</span>
+        ) : null}
         {mate.flag ? (
           <span className="tag warn"
             title={mate.flag === "looping"
@@ -188,7 +194,10 @@ function SessionRow({ mate }: { mate: Teammate }) {
             const { ptyIdFor } = await import("../store");
             try {
               await invoke("pty_pause", { id: ptyIdFor(mate.id), pause: !paused });
-              setPaused(!paused);
+              patchTeammate(mate.id, { paused: !paused });
+              // resuming a cap-paused session clears the flag and rebaselines
+              // the cap, so it runs until it burns another cap's worth
+              if (paused) clearCap(mate.id);
               toast(paused ? `${mate.name} resumed` : `${mate.name} paused — state preserved`);
             } catch (err) {
               toast(`Pause failed: ${err}`, "warn");
