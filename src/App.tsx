@@ -26,6 +26,7 @@ import { TokenDashboard } from "./components/TokenDashboard";
 import { BranchGraph } from "./components/BranchGraph";
 import { StandupSummary } from "./components/StandupSummary";
 import { MergeConductor } from "./components/MergeConductor";
+import { ReleaseNotes } from "./components/ReleaseNotes";
 import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
 import { CinemaMode } from "./components/CinemaMode";
@@ -200,6 +201,7 @@ export default function App() {
         else if (s.branchGraphOpen) useApp.setState({ branchGraphOpen: false });
         else if (s.standupOpen) useApp.setState({ standupOpen: false });
         else if (s.mergeConductorOpen) useApp.setState({ mergeConductorOpen: false });
+        else if (s.releaseNotesOpen) useApp.setState({ releaseNotesOpen: false });
         else if (s.featureIndexOpen) useApp.setState({ featureIndexOpen: false });
         else if (s.diffBoardOpen) useApp.setState({ diffBoardOpen: false });
         else if (s.prDashboardOpen) useApp.setState({ prDashboardOpen: false });
@@ -312,6 +314,7 @@ export default function App() {
       <BranchGraph />
       <StandupSummary />
       <MergeConductor />
+      <ReleaseNotes />
       <Cheatsheet />
       <Toasts />
     </div>

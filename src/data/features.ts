@@ -43,6 +43,7 @@ export const FEATURE_GROUPS: [string, Feature[]][] = [
     { name: "Diff review board", what: "Every session's branch-vs-main diff in one scrollable, collapsible column", where: "⌘K → diff review board", go: () => useApp.setState({ diffBoardOpen: true }) },
     { name: "PR dashboard", what: "Open PRs with CI status, review state, and one-click squash-merge (via gh)", where: "⌘K → PR dashboard", go: () => useApp.setState({ prDashboardOpen: true }) },
     { name: "PR draft", what: "One-shot Claude writes the PR body from your diff", where: "session pane → changes → draft PR body" },
+    { name: "Release notes", what: "AI groups commits + merged PRs since the last tag into Features / Fixes / Chores markdown", where: "⌘K → release notes", go: () => useApp.setState({ releaseNotesOpen: true }) },
     { name: "Inline diffs", what: "Click any changed file for its diff, right in the app", where: "changes tab · claimed files" },
     { name: "Revert a file", what: "Per-file git checkout from the changes tab", where: "changes tab → revert" },
   ]],
