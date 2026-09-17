@@ -3,6 +3,7 @@ import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
 import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
 import { DEFAULT_STALL_MIN, LOOP_SAMPLES, isStalled, looksLooping } from "../../lib/stall";
+import { parseResetHint } from "../../lib/ratelimit";
 import { playAlert } from "../sounds";
 import {
   fetchConflictRadar,
@@ -378,6 +379,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         const selfHealOn = stg.appSettings.selfHeal !== false;
         const tailText = st.tail.slice(-8).join(" ").toLowerCase();
         const rateLimited = /rate.?limit|usage limit reached|429|overloaded/.test(tailText);
+        // when the limit banner prints a reset time, surface it on the indicator
+        const resetHint = rateLimited ? parseResetHint(tailText) ?? undefined : undefined;
 
         // crashed: was alive, now dead -> bounded auto-restart. Suppressed
         // while the claude CLI is missing (local spawns can only die again;
@@ -465,6 +468,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         // skip no-op patches — every patch re-renders panes and the list
         if (cur && cur.status === displayStatus && cur.recording === recording &&
             cur.paused === st.paused && cur.flag === flag &&
+            cur.paused === st.paused &&
+            cur.rateLimited === rateLimited && cur.rateLimitResetsAt === resetHint &&
             cur.terminal.length === st.tail.length && lastCur === lastNew) {
           continue;
         }
@@ -473,6 +478,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           paused: st.paused,
           recording,
           flag,
+          rateLimited,
+          rateLimitResetsAt: resetHint,
           health: stuck ? "stale" : cur?.health === "disconnected" ? "disconnected" : "ok",
           terminal: st.tail.map((text) => ({ kind: "out" as const, text })),
         });

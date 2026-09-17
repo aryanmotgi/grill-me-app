@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Icon } from "./Icon";
 import { attentionSessions, useApp } from "../store";
 import { helpRequestedIds } from "../lib/help";
+import { rateLimitedSessions } from "../lib/ratelimit";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { themes } from "../theme/themes";
 import { isTauri } from "../data/sources/git";
@@ -86,6 +87,7 @@ export function TopBar() {
   } = useApp();
 
   const attention = attentionSessions(teammates);
+  const rateLimited = rateLimitedSessions(teammates);
   const working = teammates.filter((t) => t.status === "working").length;
   // help requests get their own badge — keep them out of the generic unanswered
   // counter so a flagged session is counted once, under the "need help" style.
@@ -126,6 +128,19 @@ export function TopBar() {
               else st.setView("home");
             }}>
             <span className="status-dot needs-input" aria-hidden />{attention.length} need you
+          </button>
+        ) : null}
+        {rateLimited.length > 0 ? (
+          <button className="flex items-center gap-1.5 text-danger cursor-pointer hover:brightness-110"
+            title={rateLimited
+              .map((r) => `${teammates.find((t) => t.id === r.id)?.name ?? r.id}${r.resetsAt ? ` — resets ${r.resetsAt}` : ""}`)
+              .join("\n")}
+            onClick={() => {
+              const st = useApp.getState();
+              if (rateLimited.length === 1) st.setActive(rateLimited[0].id);
+              else st.setView("home");
+            }}>
+            <Icon name="warn" size={11} /> {rateLimited.length} rate-limited
           </button>
         ) : null}
         {helpIds.length > 0 ? (

@@ -33,7 +33,7 @@ const SEARCH_INDEX: Record<Tab, string[]> = {
   team: ["team", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
   appearance: ["theme", "color", "density", "compact", "backup", "restore", "export", "import"],
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
-  notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat"],
+  notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat", "budget", "token", "rate", "limit", "cap"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
   checkpoints: ["checkpoint", "snapshot", "auto", "commit", "backup", "interval", "minutes", "periodic", "save", "recover", "lost work"],
   panels: ["preview", "dev", "tour", "onboarding", "inbox", "clear"],
@@ -449,6 +449,16 @@ export function SettingsModal() {
                   <Row label="Mute everything" hint="Silences all notifications and sounds">
                     <Toggle checked={Boolean(appSettings.muteAll)} onChange={(v) => setAppSetting("muteAll", v)} />
                   </Row>
+                  <Row label="Team token budget" hint="Soft daily cap across all sessions — the home meter warns at 50/80/100% and chimes at 80/100. Never blocks anything.">
+                    <input type="number" min={0} step={0.5}
+                      value={(typeof appSettings.tokenBudget === "number" ? appSettings.tokenBudget : 5_000_000) / 1_000_000}
+                      className="w-20 bg-raised hairline rounded-md px-2 py-1 text-[11px] num"
+                      onChange={(e) => {
+                        const m = Number(e.target.value);
+                        setAppSetting("tokenBudget", Number.isFinite(m) && m > 0 ? Math.round(m * 1_000_000) : 5_000_000);
+                      }} />
+                    <span className="text-dim text-[10px]">million tokens</span>
+                  </Row>
                   {!q ? <div className="panel-label mt-4 mb-1">sounds</div> : null}
                   <Row label="Master volume" hint="Scales every notification sound; mute stays independent">
                     <input type="range" min={0} max={1} step={0.05}
@@ -465,6 +475,8 @@ export function SettingsModal() {
                     ["needs-input", "Needs input", "ascending attention rise"],
                     ["conflict", "File conflict", "urgent low dissonance"],
                     ["merge-turn", "Your merge turn", "bright ready chime"],
+                    ["budget-warn", "Token budget 80%", "two-tone budget warning"],
+                    ["budget-max", "Token budget hit", "urgent budget alert"],
                   ] as const).map(([key, label, hint]) => (
                     <Row key={key} label={label} hint={hint}>
                       <Toggle
