@@ -3029,6 +3029,49 @@ fn git_review(repo_path: String) -> Result<ReviewData, String> {
     Ok(ReviewData { branch, log, diffstat, diff })
 }
 
+const REVIEW_PROMPT: &str = "You are a senior engineer doing a focused pre-merge code review. \
+The input is a git branch name, its commit log, a diffstat, and the full unified diff vs main. \
+Review ONLY what the diff actually shows — never invent code that isn't there. \
+Reply in markdown with exactly these sections: \
+'## Verdict' (one line: 'looks good to merge', 'merge with nits', or 'needs changes'), \
+'## Risks' (0-4 bullets on real bugs, security, or correctness issues — most severe first; write 'none spotted' if genuinely clean), \
+and '## Nits' (0-3 optional bullets on style/naming/tests). \
+Be specific and cite files/functions from the diff. Under 220 words. Output only the markdown — no preamble, no fences.";
+
+/// Pipe an already-computed review (from `git_review`) through `claude -p` for
+/// an AI pre-merge review. Takes the diff the frontend already holds so we
+/// don't re-shell git; caps the diff so a huge changeset can't blow the prompt.
+#[tauri::command]
+fn review_ai(branch: String, log: String, diffstat: String, diff: String) -> Result<String, String> {
+    if diff.trim().is_empty() && diffstat.trim().is_empty() {
+        return Err("nothing to review — working tree is clean vs main".into());
+    }
+    let mut diff = diff;
+    if diff.len() > 80_000 {
+        truncate_at_char_boundary(&mut diff, 80_000);
+        diff.push_str("\n… diff truncated for review …");
+    }
+    let input = format!(
+        "BRANCH: {branch}\n\nCOMMITS:\n{log}\n\nDIFFSTAT:\n{diffstat}\n\nFULL DIFF:\n{diff}"
+    );
+    let raw = claude_pipe_stdin(&input, REVIEW_PROMPT)?;
+    Ok(strip_md_fence(&raw))
+}
+
+#[cfg(test)]
+mod review_ai_tests {
+    use super::review_ai;
+
+    #[test]
+    fn empty_changeset_errors_before_calling_claude() {
+        // Both diff and diffstat blank → refuse without ever spawning claude
+        // (so this test passes on a box with no claude CLI installed).
+        let r = review_ai("feat/x".into(), "".into(), "   ".into(), "  ".into());
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("clean"));
+    }
+}
+
 #[cfg(test)]
 mod truncate_boundary_tests {
     use super::truncate_at_char_boundary;
@@ -3866,6 +3909,7 @@ pub fn run() {
             pty_screen,
             pty_resources,
             git_review,
+            review_ai,
             project_export,
             activity_series,
             install_hooks,

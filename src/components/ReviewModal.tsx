@@ -14,6 +14,7 @@ interface ReviewData {
 export function ReviewModal() {
   const { reviewFor, setReviewFor, members, teammates, shipApproved, setDraftReply, setRailTab, toast } = useApp();
   const [data, setData] = useState<ReviewData | null>(null);
+  const [ai, setAi] = useState<{ state: "idle" | "loading" | "done" | "error"; text: string }>({ state: "idle", text: "" });
   const member = members.find((m) => m.id === reviewFor);
   const mate = teammates.find((t) => t.id === reviewFor);
   const modalA11y = useModalA11y("Pre-merge review", Boolean(reviewFor));
@@ -21,12 +22,29 @@ export function ReviewModal() {
   useEffect(() => {
     if (!reviewFor || !member || !isTauri()) return;
     setData(null);
+    setAi({ state: "idle", text: "" });
     import("@tauri-apps/api/core").then(({ invoke }) =>
       invoke<ReviewData>("git_review", { repoPath: member.repoPath })
         .then(setData)
         .catch((e) => setData({ branch: "?", log: "", diffstat: `review failed: ${e}`, diff: "" })),
     );
   }, [reviewFor, member]);
+
+  // AI review is on-demand (a button) so opening the modal never burns a
+  // claude -p call — the reviewer asks for it when they want a second opinion.
+  const runAiReview = async () => {
+    if (!data) return;
+    setAi({ state: "loading", text: "" });
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const text = await invoke<string>("review_ai", {
+        branch: data.branch, log: data.log, diffstat: data.diffstat, diff: data.diff,
+      });
+      setAi({ state: "done", text });
+    } catch (e) {
+      setAi({ state: "error", text: String(e) });
+    }
+  };
 
   if (!reviewFor) return null;
 
@@ -55,6 +73,11 @@ export function ReviewModal() {
           <span className="text-dim text-[11px]">{mate?.name}</span>
           <span className="font-mono text-faint text-[10px]">{data?.branch}</span>
           <span className="flex-1" />
+          <button className="btn" disabled={Boolean(unavailable) || !data || ai.state === "loading"}
+            onClick={runAiReview}
+            title={unavailable ?? "Pipe the diff through claude -p for a second opinion"}>
+            {ai.state === "loading" ? "reviewing…" : ai.state === "done" ? "re-run AI review" : "AI review"}
+          </button>
           <button className="btn" onClick={() => setReviewFor(null)}>cancel</button>
           <button className="btn" onClick={requestChanges}>request changes</button>
           <button className="btn primary" disabled={Boolean(unavailable)} onClick={approve}
@@ -69,6 +92,18 @@ export function ReviewModal() {
             <div className="text-faint text-[11px]">loading diff…</div>
           ) : (
             <>
+              {ai.state !== "idle" && (
+                <div>
+                  <div className="panel-label mb-1">AI review · claude -p</div>
+                  {ai.state === "loading" ? (
+                    <div className="text-faint text-[11px]">running claude review over the diff…</div>
+                  ) : ai.state === "error" ? (
+                    <div className="text-warn text-[11px] whitespace-pre-wrap">AI review failed: {ai.text}</div>
+                  ) : (
+                    <pre className="font-mono text-[10px] text-dim whitespace-pre-wrap glass rounded-sm p-3">{ai.text}</pre>
+                  )}
+                </div>
+              )}
               <div>
                 <div className="panel-label mb-1">commits ahead of main</div>
                 <pre className="font-mono text-[10px] text-dim whitespace-pre-wrap">{data.log || "(none — uncommitted changes only)"}</pre>
