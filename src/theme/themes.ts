@@ -82,7 +82,66 @@ export const paperwhite: Theme = {
   selection: "#e5ddc8",
 };
 
-export const themes: Record<string, Theme> = { ember, paperwhite };
+/** Cool dark — cyan-forward over a deep blue-black ground; amber stays
+ *  reserved for action. Full token set, AA text over every surface. */
+export const cyanNoir: Theme = {
+  name: "cyan-noir",
+  bg: "#070b11",
+  panel: "#0c121b",
+  raised: "#131c28",
+  overlay: "#0f1722",
+  line: "#20303f",
+  lineglow: "#3f6475",
+  ink: "#e6edf4",
+  dim: "#9aabbb",
+  faint: "#788b9c",
+  accent: "#ffb454",
+  accentInk: "#06121a",
+  data: "#4fd8e6",
+  ok: "#5ad19a",
+  warn: "#ffb454",
+  danger: "#f0717a",
+  idle: "#56697a",
+  termBg: "#05090e",
+  termInk: "#cdd8e2",
+  termClaude: "#8fe3e0",
+  termCmd: "#ffd580",
+  selection: "#1c3a46",
+};
+
+/** Retro-futuristic dark magenta/purple + cyan. Purple lives in the ground,
+ *  surfaces and glass rim; cyan carries data, amber stays action. AA legible. */
+export const synthwave: Theme = {
+  name: "synthwave",
+  bg: "#0e0818",
+  panel: "#181024",
+  raised: "#221733",
+  overlay: "#1b1229",
+  line: "#352748",
+  lineglow: "#7a4b8f",
+  ink: "#f1e9f6",
+  dim: "#b6a2c6",
+  faint: "#93809f",
+  accent: "#ffb454",
+  accentInk: "#1a1005",
+  data: "#48dcef",
+  ok: "#5ad99a",
+  warn: "#ffb454",
+  danger: "#ff6b81",
+  idle: "#7a698f",
+  termBg: "#0a0513",
+  termInk: "#e7ddef",
+  termClaude: "#7fe6e0",
+  termCmd: "#ffd580",
+  selection: "#382250",
+};
+
+export const themes: Record<string, Theme> = {
+  ember,
+  paperwhite,
+  "cyan-noir": cyanNoir,
+  synthwave,
+};
 
 export function applyTheme(theme: Theme) {
   const root = document.documentElement;

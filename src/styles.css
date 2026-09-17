@@ -67,6 +67,10 @@ body,
   --glow-a: 5%;
   --grid-a: 3%;
 }
+/* synthwave leans into a hotter neon ground; cyan-noir keeps the default 7%. */
+:root[data-theme="synthwave"] #root {
+  --glow-a: 9%;
+}
 
 ::selection {
   background: var(--selection);
