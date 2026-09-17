@@ -45,11 +45,9 @@ function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
   return (
     s.switcherOpen || s.crossSearchOpen || s.scrubberOpen || s.presenceMapOpen ||
     s.kanbanOpen || s.tokenDashOpen || s.featureIndexOpen || s.diffBoardOpen || s.prDashboardOpen ||
-    s.kanbanOpen || s.tokenDashOpen || s.branchGraphOpen || s.featureIndexOpen || s.diffBoardOpen ||
-    s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
-    s.cinemaOpen || s.handoffFor !== null || s.sessionTemplatesOpen
-    s.cinemaOpen || s.handoffFor !== null || s.broadcastOpen
-    s.cinemaOpen || s.handoffFor !== null || s.snippetsOpen
+    s.branchGraphOpen || s.settingsOpen || s.pickerOpen || s.reviewFor !== null || s.cheatsheetOpen ||
+    s.cinemaOpen || s.handoffFor !== null || s.sessionTemplatesOpen ||
+    s.broadcastOpen || s.snippetsOpen
   );
 }
 
