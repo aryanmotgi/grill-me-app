@@ -85,7 +85,10 @@ export const DEFAULT_TERM_SETTINGS: TermSettings = {
   fgOverride: null,
   bgOpacity: 1,
   cursorStyle: "block",
-  cursorBlink: true,
+  // off by default: a blinking cursor repaints the window twice a second even
+  // when idle, and under the vibrancy window each repaint re-blurs the
+  // wallpaper. Toggle back on in Settings → terminal if you miss it.
+  cursorBlink: false,
   skipBanner: false,
   customAnsi: null,
 };

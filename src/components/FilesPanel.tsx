@@ -17,8 +17,9 @@ interface FsEntry {
 }
 
 /** One directory node. Children load on first expand and stay cached until
- *  the tree refreshes (root change or manual refresh). */
-function DirNode({ root, rel, name, depth, onOpenFile, openRel }: {
+ *  the tree refreshes (root change or manual refresh). Exported for the
+ *  workspace panel's Explorer tab. */
+export function DirNode({ root, rel, name, depth, onOpenFile, openRel }: {
   root: string;
   rel: string;
   name: string;
