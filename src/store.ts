@@ -33,7 +33,15 @@ import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type P
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 import type { AppMode } from "./lib/soloVisibility";
 
-export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
+export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "preview";
+
+/** One registered project workspace (projects.json via projects_list). */
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  path: string;
+  color?: string;
+}
 
 interface AppState {
   teammates: Teammate[];
@@ -158,8 +166,15 @@ interface AppState {
   settingsTab: string | null;
   setSettingsOpen: (open: boolean, tab?: string) => void;
   activeProject: string | null;
+  /** All registered projects — the layout sidebar nests sessions under the
+   *  active one and lists the rest for one-click switching. */
+  projects: ProjectInfo[];
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
+  /** Monocode-style bottom terminal panel (plain shell in the active
+   *  member's worktree). Toggled with ⌘` or the pane header button. */
+  bottomTermOpen: boolean;
+  toggleBottomTerm: () => void;
   /** Panel widths/ratios, persisted. */
   panelSizes: { left: number; right: number; split: number };
   setPanelSize: (key: "left" | "right" | "split", value: number, persist?: boolean) => void;
@@ -273,7 +288,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   activeId: "aryan",
   splitId: null,
-  railTab: "tasks",
+  railTab: "files",
   focusMode: false,
   demoMode: false,
   cinemaOpen: false,
@@ -634,7 +649,10 @@ export const useApp = create<AppState>((set, get) => ({
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
   activeProject: null,
+  projects: [],
   pickerOpen: false,
+  bottomTermOpen: false,
+  toggleBottomTerm: () => set({ bottomTermOpen: !get().bottomTermOpen }),
   setPickerOpen: (pickerOpen) => set({ pickerOpen }),
   panelSizes: { left: 276, right: 338, split: 0.5 },
   setPanelSize: (key, value, persist) => {
@@ -1003,10 +1021,12 @@ let firedBudgetLevel: BudgetLevel = 0;
   if (!project) return; // ProjectPicker shows; feeds start after selection reload
   await invoke("set_active_project", { id: project }).catch(() => {});
   useApp.setState({ activeProject: project });
-  // per-project accent tint — always know which workspace you're in
+  // per-project accent tint — always know which workspace you're in.
+  // The list also feeds the layout sidebar (projects with nested sessions).
   try {
-    const projects = JSON.parse(await invoke<string>("projects_list"));
-    const color = projects.find((x: { id: string }) => x.id === project)?.color;
+    const projects: ProjectInfo[] = JSON.parse(await invoke<string>("projects_list"));
+    useApp.setState({ projects });
+    const color = projects.find((x) => x.id === project)?.color;
     if (color) {
       setTimeout(() => document.documentElement.style.setProperty("--accent", color), 300);
     }

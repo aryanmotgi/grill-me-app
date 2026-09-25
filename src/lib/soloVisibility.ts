@@ -50,9 +50,9 @@ export function surfaceVisible(mode: AppMode, surface: SoloSurface): boolean {
 }
 
 /** Rail tab ids, structurally identical to the store's RailTab. */
-export type RailSurfaceTab = "tasks" | "inbox" | "activity" | "team" | "preview";
+export type RailSurfaceTab = "files" | "tasks" | "inbox" | "activity" | "team" | "preview";
 
-const ALL_RAIL_TABS: readonly RailSurfaceTab[] = ["tasks", "inbox", "activity", "team", "preview"];
+const ALL_RAIL_TABS: readonly RailSurfaceTab[] = ["files", "tasks", "inbox", "activity", "team", "preview"];
 
 /**
  * Rail tabs available in this mode, in ⌘1-⌘N order — the keyboard mapping
