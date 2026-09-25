@@ -71,6 +71,14 @@ body,
 :root[data-theme="synthwave"] #root {
   --glow-a: 9%;
 }
+/* monocode is a flat, quiet surface — barely-there glow, no visible grid. */
+:root[data-theme="monocode"] #root {
+  --glow-a: 3%;
+  --grid-a: 0%;
+}
+:root[data-theme="monocode"] #root::after {
+  opacity: 0.25;
+}
 
 ::selection {
   background: var(--selection);
