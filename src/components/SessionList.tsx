@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { visibleSessions } from "../lib/sessionNav";
 import { applySessionOrder, moveId, reorderByDrop } from "../lib/sessionOrder";
-import { isTauri } from "../data/sources/git";
+import { isTauri, type AgentId } from "../data/sources/git";
 import { Icon } from "./Icon";
 import { EmptyState } from "./EmptyState";
 import type { Teammate } from "../types";
@@ -21,6 +21,23 @@ interface RowReorder {
   onDragEnterRow: () => void;
   onDropRow: () => void;
   onMove: (dir: 1 | -1) => void;
+}
+
+/** Tiny per-session badge naming which agent CLI runs inside it. Claude is
+ *  the default and stays unlabeled to keep rows quiet; Cursor/Codex get a
+ *  mono chip so mixed fleets read at a glance. */
+export function AgentBadge({ memberId }: { memberId: string }) {
+  const agent = useApp((s) => s.members.find((m) => m.id === memberId)?.agent);
+  if (!agent || agent === "claude") return null;
+  const label = agent === "cursor" ? "Cursor" : "Codex";
+  return (
+    <span
+      className="font-mono text-[9px] uppercase tracking-wide px-1 py-px rounded-sm bg-raised hairline text-data flex-none"
+      title={`This session runs the ${label} CLI`}
+    >
+      {label}
+    </span>
+  );
 }
 
 const SETUP_LABEL: Record<Teammate["setup"], string> = {
@@ -149,6 +166,7 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
           aria-label={STATUS_LABEL[mate.status]}
           title={`${mate.status}${offline ? ` · no activity ${mate.lastActiveMin}m` : ""}`} />
         <span className="font-display font-semibold text-[13px]">{mate.name}</span>
+        <AgentBadge memberId={mate.id} />
         <span className="font-mono text-faint text-[10px] truncate" title={mate.branch}>
           <Icon name="branch" size={11} /> {mate.branch}
         </span>
@@ -338,9 +356,17 @@ export function SessionList() {
 
 function Spawner() {
   const spawnSession = useApp((s) => s.spawnSession);
+  const availableAgents = useApp((s) => s.availableAgents);
   const [open, setOpen] = useState(false);
   const [id, setId] = useState("");
   const [branch, setBranch] = useState("");
+  const [agent, setAgent] = useState<AgentId>("claude");
+  // only offer CLIs that are actually installed + logged in on this machine;
+  // before detection resolves (or in browser dev) fall back to claude only
+  const usable = availableAgents.filter((a) => a.installed && a.authed);
+  const choices: { id: AgentId; name: string }[] = usable.length
+    ? usable.map((a) => ({ id: a.id, name: a.name }))
+    : [{ id: "claude", name: "Claude Code" }];
   if (!open) {
     return (
       <div className="m-2 flex gap-1.5 demo-hide">
@@ -358,10 +384,20 @@ function Spawner() {
         placeholder="member id (e.g. mei)" value={id} onChange={(e) => setId(e.target.value)} />
       <input className="bg-raised hairline rounded-sm px-2 py-1 font-mono text-[10px] outline-none focus:border-accent"
         placeholder="branch (e.g. feature/inbox)" value={branch} onChange={(e) => setBranch(e.target.value)} />
+      <select
+        className="bg-raised hairline rounded-sm px-2 py-1 text-[11px] outline-none focus:border-accent"
+        title="Which agent CLI runs in this session (only installed + logged-in CLIs are listed)"
+        value={agent}
+        onChange={(e) => setAgent(e.target.value as AgentId)}
+      >
+        {choices.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
       <div className="flex gap-1.5">
         <button className="btn primary" disabled={!id.trim() || !branch.trim()}
           title={!id.trim() || !branch.trim() ? "Enter a member id and branch first" : "Create the worktree and spawn a session"}
-          onClick={() => { spawnSession(id, id, branch); setOpen(false); }}>
+          onClick={() => { spawnSession(id, id, branch, agent); setOpen(false); }}>
           create worktree + spawn
         </button>
         <button className="btn" onClick={() => setOpen(false)}>cancel</button>

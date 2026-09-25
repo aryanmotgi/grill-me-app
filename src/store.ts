@@ -20,8 +20,8 @@ import type {
 import { dedupeDecisions, makeDecision } from "./lib/decisions";
 import { roomTasksToAppTasks, taskBrief } from "./components/teamflow/logic";
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, startRoomFeed, type CiRun, type WatchState } from "./data/sources/feeds";
-import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
-import { isTauri } from "./data/sources/git";
+import type { AgentAvailability, AgentId, ConflictPair, TeamMemberConfig } from "./data/sources/git";
+import { detectAgents, isTauri } from "./data/sources/git";
 import { needsAttention } from "./lib/attention";
 import { tokenBudget, DEFAULT_TOKEN_BUDGET } from "./lib/dashboard";
 import { budgetAlertOnCross, budgetLevel, type BudgetLevel } from "./lib/ratelimit";
@@ -181,7 +181,10 @@ interface AppState {
   /** Write a snippet body verbatim (no newline) into the active session's pty
    *  so the user can edit before sending. Resolves true on a successful write. */
   insertSnippet: (body: string) => Promise<boolean>;
-  spawnSession: (id: string, name: string, branch: string) => Promise<void>;
+  spawnSession: (id: string, name: string, branch: string, agent?: AgentId) => Promise<void>;
+  /** Agent CLIs detected on this machine (detect_agents). Session-create UIs
+   *  only offer entries where installed && authed. */
+  availableAgents: AgentAvailability[];
   /** "New session from template" overlay (panel-session-templates). */
   sessionTemplatesOpen: boolean;
   /** Spawn a session on `branch` (reusing spawnSession), then brief the
@@ -705,7 +708,7 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  spawnSession: async (id, name, branch) => {
+  spawnSession: async (id, name, branch, agent) => {
     if (!isTauri()) return;
     const base = get().members[0];
     if (!base) return;
@@ -713,17 +716,20 @@ export const useApp = create<AppState>((set, get) => ({
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("worktree_add", { baseRepo: base.repoPath, branch, path });
-      const members = [...get().members, { id, name, repoPath: path, permission: "edit" }];
+      const member: TeamMemberConfig = { id, name, repoPath: path, permission: "edit" };
+      if (agent && agent !== "claude") member.agent = agent;
+      const members = [...get().members, member];
       await invoke("team_config_write", { cfg: { teammates: members } });
       get().applyTeamConfig(members);
       // pty ids are project-namespaced — a bare id here would orphan the
-      // claude process in any non-default project (feeds poll ptyIdFor ids)
-      await invoke("pty_ensure", { id: ptyIdFor(id), cwd: path, shell: false });
-      get().toast(`Spawned ${name} on ${branch} at ${path}`);
+      // agent process in any non-default project (feeds poll ptyIdFor ids)
+      await invoke("pty_ensure", { id: ptyIdFor(id), cwd: path, shell: false, agent: agent ?? null });
+      get().toast(`Spawned ${name} (${agent ?? "claude"}) on ${branch} at ${path}`);
     } catch (e) {
       get().toast(`Spawn failed: ${e}`, "warn");
     }
   },
+  availableAgents: [],
   sessionTemplatesOpen: false,
   spawnFromTemplate: async (id, name, branch, startingPrompt) => {
     if (!isTauri()) { get().toast("Session templates need the native app to spawn sessions", "warn"); return; }
@@ -1059,6 +1065,12 @@ useApp.subscribe((st, prev) => {
   startPtyFeed(useApp);
   startSharedFeed(useApp);
   startUsageFeed(useApp);
+  // one-shot probe: which agent CLIs are installed + logged in on this machine
+  if (isTauri()) {
+    detectAgents()
+      .then((agents) => useApp.setState({ availableAgents: agents }))
+      .catch(() => {});
+  }
 })();
 
 /** Pty ids are namespaced per project so sessions survive project switches. */
