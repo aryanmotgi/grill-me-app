@@ -31,10 +31,14 @@ export function EditorPane() {
   const [diff, setDiff] = useState("");
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
-  // load the active file whenever it (or the workspace root) changes
+  const diffRequest = useApp((s) => s.diffRequest);
+
+  // load the active file whenever it (or the workspace root) changes; a
+  // pending "Review" request lands the pane straight on the diff view
   useEffect(() => {
     if (!root || !activeFile || !isTauri()) return;
     let alive = true;
+    const wantDiff = diffRequest === activeFile;
     setMode("view");
     setLoadErr(null);
     (async () => {
@@ -50,9 +54,18 @@ export function EditorPane() {
         setBuffer("");
         setLoadErr(String(e));
       }
+      if (wantDiff && alive) {
+        try {
+          const d = await invoke<string>("git_diff_file", { repoPath: root, file: activeFile });
+          if (!alive) return;
+          setDiff(d.trim() ? d : "(no working-tree changes for this file)");
+          setMode("diff");
+        } catch { /* stay on view */ }
+        useApp.setState({ diffRequest: null });
+      }
     })();
     return () => { alive = false; };
-  }, [root, activeFile]);
+  }, [root, activeFile, diffRequest]);
 
   const showDiff = useCallback(async () => {
     if (!root || !activeFile || !isTauri()) return;
