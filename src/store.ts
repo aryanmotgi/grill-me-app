@@ -294,7 +294,7 @@ export const useApp = create<AppState>((set, get) => ({
   cinemaOpen: false,
   switcherOpen: false,
   searchQuery: "",
-  themeName: "ember",
+  themeName: "monocode",
   toasts: [],
 
   setActive: (id) => set({ activeId: id, switcherOpen: false, view: "session", navSelId: null }),
