@@ -1957,6 +1957,94 @@ fn git_diff_file(repo_path: String, file: String) -> Result<String, String> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// File explorer + inline editor (Monocode-style right panel). Every path is
+// resolved against a configured member's repo root and canonicalized before
+// any read/write, so the panel can never escape a workspace via `..` or
+// symlink tricks.
+// ---------------------------------------------------------------------------
+
+/// Canonicalize `root` and verify it is one of the configured worktrees
+/// (a teammate repo_path), then join + canonicalize `rel` and verify the
+/// result is still inside the root. Returns the safe absolute path.
+fn resolve_workspace_path(root: &str, rel: &str) -> Result<PathBuf, String> {
+    let cfg = team_config();
+    let canon_root = std::fs::canonicalize(root).map_err(|e| format!("bad root: {e}"))?;
+    let allowed = cfg.teammates.iter().any(|m| {
+        std::fs::canonicalize(&m.repo_path)
+            .map(|p| p == canon_root)
+            .unwrap_or(false)
+    });
+    if !allowed {
+        return Err("root is not a configured workspace".into());
+    }
+    if rel.is_empty() || rel == "." {
+        return Ok(canon_root);
+    }
+    let joined = canon_root.join(rel);
+    // canonicalize the nearest existing ancestor for new files (writes)
+    let canon = std::fs::canonicalize(&joined).or_else(|_| {
+        joined
+            .parent()
+            .and_then(|p| std::fs::canonicalize(p).ok())
+            .map(|p| p.join(joined.file_name().unwrap_or_default()))
+            .ok_or_else(|| "path does not exist".to_string())
+    })?;
+    if !canon.starts_with(&canon_root) {
+        return Err("path escapes the workspace".into());
+    }
+    Ok(canon)
+}
+
+#[derive(Serialize)]
+pub struct FsEntry {
+    pub name: String,
+    pub dir: bool,
+}
+
+/// List one directory level of a workspace (lazy tree). Dirs first, then
+/// files, both alphabetical; .git and node_modules stay hidden.
+#[tauri::command]
+fn fs_list_dir(root: String, rel: String) -> Result<Vec<FsEntry>, String> {
+    let path = resolve_workspace_path(&root, &rel)?;
+    let mut entries: Vec<FsEntry> = std::fs::read_dir(&path)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name == ".git" || name == "node_modules" || name == ".DS_Store" {
+                return None;
+            }
+            let dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            Some(FsEntry { name, dir })
+        })
+        .collect();
+    entries.sort_by(|a, b| b.dir.cmp(&a.dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Ok(entries)
+}
+
+const FS_READ_CAP: u64 = 400_000;
+
+/// Read a workspace file for the inline viewer/editor. Binary or oversized
+/// files come back as an honest error, not garbage in a textarea.
+#[tauri::command]
+fn fs_read_file(root: String, rel: String) -> Result<String, String> {
+    let path = resolve_workspace_path(&root, &rel)?;
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > FS_READ_CAP {
+        return Err(format!("file too large for the inline editor ({} KB)", meta.len() / 1024));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    String::from_utf8(bytes).map_err(|_| "binary file".to_string())
+}
+
+/// Save the inline editor's buffer back to disk (whole-file write).
+#[tauri::command]
+fn fs_write_file(root: String, rel: String, content: String) -> Result<(), String> {
+    let path = resolve_workspace_path(&root, &rel)?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
 /// One-shot claude -p over the working diff — returns a drafted PR body.
 #[tauri::command]
 fn pr_draft(repo_path: String) -> Result<String, String> {
@@ -4048,6 +4136,9 @@ pub fn run() {
             events_tail,
             worktree_add,
             git_diff_file,
+            fs_list_dir,
+            fs_read_file,
+            fs_write_file,
             pr_draft,
             generate_standup,
             generate_release_notes,

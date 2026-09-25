@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useApp, type RailTab } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { TaskBoard } from "./TaskBoard";
+import { FilesPanel } from "./FilesPanel";
 import { Inbox } from "./Inbox";
 import { ActivityTimeline } from "./ActivityTimeline";
 import { PreviewPane, TeamPanel } from "./TeamPanel";
 
 const PRIMARY_TABS: { id: RailTab; label: string }[] = [
+  { id: "files", label: "files" },
   { id: "tasks", label: "tasks" },
   { id: "inbox", label: "inbox" },
   { id: "activity", label: "feed" },
@@ -96,6 +98,7 @@ export function RightRail() {
         </div>
       ) : null}
       <div key={tab} className="tab-fade flex-1 min-h-0 overflow-hidden flex flex-col">
+        {tab === "files" ? <FilesPanel /> : null}
         {tab === "tasks" ? <TaskBoard /> : null}
         {tab === "inbox" ? <Inbox /> : null}
         {tab === "activity" ? <ActivityTimeline /> : null}

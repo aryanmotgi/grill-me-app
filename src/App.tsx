@@ -1,9 +1,10 @@
 import { useEffect } from "react";
-import { useApp } from "./store";
+import { useApp, ptyIdFor } from "./store";
 import { applyTheme, themes } from "./theme/themes";
 import { TopBar } from "./components/TopBar";
 import { SessionList } from "./components/SessionList";
 import { SessionPane } from "./components/SessionPane";
+import { SessionTabs } from "./components/SessionTabs";
 import { XtermPane } from "./components/XtermPane";
 import { RightRail } from "./components/RightRail";
 import { QuickSwitcher } from "./components/QuickSwitcher";
@@ -79,7 +80,7 @@ export default function App() {
     setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen,
     dense, mergePilotOpen, setMergePilotOpen, members, setActive,
     panelSizes, setPanelSize, view, setView, appMode, teamFlowNeeded,
-    cinemaOpen, toggleCinema, setCinemaOpen,
+    cinemaOpen, toggleCinema, setCinemaOpen, bottomTermOpen, toggleBottomTerm,
   } = useApp();
 
   useEffect(() => {
@@ -114,6 +115,11 @@ export default function App() {
       if (mod && e.key === ".") {
         e.preventDefault();
         toggleFocus();
+      }
+      // ⌘` toggles the bottom terminal panel (VS Code muscle memory)
+      if (mod && e.key === "`") {
+        e.preventDefault();
+        useApp.getState().toggleBottomTerm();
       }
       if (mod && e.key >= "1" && e.key <= "5") {
         // solo strips inbox/team tabs — ⌘1-N follows the visible order
@@ -251,6 +257,7 @@ export default function App() {
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
       <TopBar />
       <ConflictBanner />
+      {focusMode ? null : <SessionTabs />}
       <div className="flex-1 min-h-0 flex">
         {/* attention rail — one tick per session needing input */}
         <div className="w-[22px] flex-none bg-bg border-r border-line flex flex-col items-center gap-2 pt-3 demo-hide">
@@ -288,6 +295,26 @@ export default function App() {
           </div>
           </>
           )}
+          {/* Monocode-style bottom terminal: a plain shell in the ACTIVE
+              session's worktree (own pty id — never fights the SessionPane
+              shell tab over a stream). ⌘` or the header button toggles it. */}
+          {bottomTermOpen && active && members.some((m) => m.id === active.id) ? (
+            <div className="h-[30%] flex-none border-t border-line flex flex-col">
+              <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
+                <span className="panel-label">terminal — {members.find((m) => m.id === active.id)?.repoPath}</span>
+                <span className="flex-1" />
+                <button className="btn" onClick={toggleBottomTerm}>close (⌘`)</button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <XtermPane
+                  id={`${ptyIdFor(active.id)}:termpanel`}
+                  cwd={members.find((m) => m.id === active.id)?.repoPath ?? "."}
+                  themeName={themeName}
+                  shell
+                />
+              </div>
+            </div>
+          ) : null}
           {mergePilotOpen && members[0] ? (
             <div className="h-[38%] flex-none border-t border-line flex flex-col">
               <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
