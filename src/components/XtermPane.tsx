@@ -93,7 +93,7 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun, readOnly
       const isRemote = Boolean(member?.remote);
       if (!shell && !isRemote) {
         try {
-          await invoke("preflight_claude");
+          await invoke("preflight_agent", { agent: member?.agent ?? null });
           useApp.getState().setClaudeMissing(false);
         } catch {
           useApp.getState().setClaudeMissing(true);
@@ -102,12 +102,13 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun, readOnly
         }
       }
       try {
-        // pass the member's remote/tmux config — omitting it here would
+        // pass the member's remote/tmux/agent config — omitting it here would
         // lazily spawn a LOCAL claude for a remote teammate's pane
         await invoke("pty_ensure", {
           id, cwd, shell,
           remote: (!shell && member?.remote) || null,
           tmux: (!shell && member?.tmuxSession) || null,
+          agent: (!shell && member?.agent) || null,
         });
         if (autorun && !readOnly) {
           const sb0 = await invoke<string>("pty_scrollback", { id });

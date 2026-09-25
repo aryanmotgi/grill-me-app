@@ -17,7 +17,22 @@ export interface TeamMemberConfig {
   remote?: string;
   /** tmux session to attach (with remote: over ssh; alone: local tmux). */
   tmuxSession?: string;
+  /** Which agent CLI this session runs: "claude" (default), "cursor", "codex". */
+  agent?: AgentId;
 }
+
+export type AgentId = "claude" | "cursor" | "codex";
+
+/** One row from the Rust `detect_agents` probe — installed + authed CLIs. */
+export interface AgentAvailability {
+  id: AgentId;
+  name: string;
+  installed: boolean;
+  authed: boolean;
+  path: string;
+}
+
+export const detectAgents = () => invoke<AgentAvailability[]>("detect_agents");
 
 interface GitState {
   ok: boolean;

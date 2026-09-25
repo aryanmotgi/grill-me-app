@@ -24,6 +24,9 @@ pub struct TeamMember {
     /// tmux session name to attach (remote via ssh -t, or local tmux new -A).
     #[serde(default, rename = "tmuxSession")]
     pub tmux_session: Option<String>,
+    /// Which agent CLI this session runs: "claude" (default), "cursor", "codex".
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -48,6 +51,7 @@ fn default_config() -> TeamConfig {
             permission: Some("edit".into()),
             remote: None,
             tmux_session: None,
+            agent: None,
         }],
     }
 }
@@ -518,6 +522,124 @@ fn preflight_claude() -> Result<String, String> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Multi-agent support — sessions can run Claude Code, Cursor CLI, or Codex.
+// The pty/terminal layer is agent-agnostic: only the spawned command differs.
+// ---------------------------------------------------------------------------
+
+/// The agent ids the app understands. Anything else is rejected before it can
+/// reach a command line (same defensive posture as validate_ssh_host).
+const KNOWN_AGENTS: [&str; 3] = ["claude", "cursor", "codex"];
+
+fn validate_agent(agent: &str) -> Result<(), String> {
+    if KNOWN_AGENTS.contains(&agent) {
+        Ok(())
+    } else {
+        Err(format!(
+            "unknown agent {agent:?}: must be one of claude, cursor, codex"
+        ))
+    }
+}
+
+/// The interactive launch line for each agent, run under `zsh -lc` so the
+/// login-shell PATH applies. All strings are static — no interpolation of
+/// user-controlled values. Cursor's installer symlinks both `cursor-agent`
+/// and `agent` into ~/.local/bin; prefer the unambiguous name, fall back to
+/// the short one.
+fn agent_exec_line(agent: &str) -> &'static str {
+    match agent {
+        "cursor" => {
+            "if command -v cursor-agent >/dev/null 2>&1; then exec cursor-agent -f; else exec agent -f; fi"
+        }
+        "codex" => "exec codex --dangerously-bypass-approvals-and-sandbox",
+        _ => "exec claude --dangerously-skip-permissions",
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub struct AgentAvailability {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    /// Best-effort "logged in" probe. Claude has no cheap offline auth check,
+    /// so installed implies available there.
+    pub authed: bool,
+    pub path: String,
+}
+
+/// Run a probe command in a login shell; Ok(stdout) only on exit 0.
+fn login_shell_probe(cmd: &str) -> Option<String> {
+    let out = Command::new("/bin/zsh").args(["-lc", cmd]).output().ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// Detect which agent CLIs are installed and authenticated on this machine.
+/// The session-create UI only offers agents where installed && authed.
+#[tauri::command]
+fn detect_agents() -> Vec<AgentAvailability> {
+    let mut result = Vec::new();
+
+    // Claude Code: no offline auth-status command; treat installed as usable
+    // (the session itself surfaces a login prompt if credentials are missing).
+    let claude_path = login_shell_probe("command -v claude");
+    result.push(AgentAvailability {
+        id: "claude".into(),
+        name: "Claude Code".into(),
+        installed: claude_path.is_some(),
+        authed: claude_path.is_some(),
+        path: claude_path.unwrap_or_default(),
+    });
+
+    // Cursor CLI: binary is cursor-agent (also symlinked as `agent`);
+    // `cursor-agent status` exits 0 when logged in.
+    let cursor_path = login_shell_probe("command -v cursor-agent || command -v agent");
+    let cursor_authed = cursor_path.is_some()
+        && login_shell_probe("cursor-agent status 2>/dev/null || agent status 2>/dev/null")
+            .is_some();
+    result.push(AgentAvailability {
+        id: "cursor".into(),
+        name: "Cursor".into(),
+        installed: cursor_path.is_some(),
+        authed: cursor_authed,
+        path: cursor_path.unwrap_or_default(),
+    });
+
+    // Codex CLI: `codex login status` exits 0 when logged in.
+    let codex_path = login_shell_probe("command -v codex");
+    let codex_authed =
+        codex_path.is_some() && login_shell_probe("codex login status 2>/dev/null").is_some();
+    result.push(AgentAvailability {
+        id: "codex".into(),
+        name: "Codex".into(),
+        installed: codex_path.is_some(),
+        authed: codex_authed,
+        path: codex_path.unwrap_or_default(),
+    });
+
+    result
+}
+
+/// Per-agent preflight before spawning a session pane: is the CLI on PATH?
+/// Mirrors preflight_claude (which stays for the one-shot `claude -p` helpers:
+/// standup, PR drafts, explain — those always use Claude regardless of what
+/// agent the session itself runs).
+#[tauri::command]
+fn preflight_agent(agent: Option<String>) -> Result<String, String> {
+    let agent = agent.unwrap_or_else(|| "claude".into());
+    validate_agent(&agent)?;
+    match agent.as_str() {
+        "cursor" => login_shell_probe("command -v cursor-agent || command -v agent")
+            .ok_or_else(|| "cursor CLI (cursor-agent) not found on PATH".to_string()),
+        "codex" => login_shell_probe("command -v codex")
+            .ok_or_else(|| "codex CLI not found on PATH".to_string()),
+        _ => preflight_claude(),
+    }
+}
+
 #[tauri::command]
 fn pty_ensure(
     app: tauri::AppHandle,
@@ -526,8 +648,9 @@ fn pty_ensure(
     shell: Option<bool>,
     remote: Option<String>,
     tmux: Option<String>,
+    agent: Option<String>,
 ) -> Result<(), String> {
-    pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux)
+    pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux, agent)
 }
 
 /// Validate an ssh destination (e.g. "vm", "user@host") before it is passed to
@@ -571,6 +694,7 @@ fn pty_ensure_inner(
     shell: bool,
     remote: Option<String>,
     tmux: Option<String>,
+    agent: Option<String>,
 ) -> Result<(), String> {
     use tauri::Emitter;
     {
@@ -616,7 +740,12 @@ fn pty_ensure_inner(
             if shell {
                 c.args(["-l"]);
             } else {
-                c.args(["-lc", "exec claude --dangerously-skip-permissions"]);
+                // per-session agent choice: claude (default), cursor, codex.
+                // agent_exec_line returns only static strings, and the agent
+                // id is validated first — nothing user-controlled reaches zsh.
+                let agent = agent.as_deref().unwrap_or("claude");
+                validate_agent(agent)?;
+                c.args(["-lc", agent_exec_line(agent)]);
             }
             c
         }
@@ -2903,9 +3032,10 @@ fn start_api_server(app: tauri::AppHandle) {
                         permission: Some("edit".into()),
                         remote: None,
                         tmux_session: None,
+                        agent: None,
                     });
                     let _ = team_config_write(cfg);
-                    match pty_ensure_inner(app.clone(), id, path_new, false, None, None) {
+                    match pty_ensure_inner(app.clone(), id, path_new, false, None, None, None) {
                         Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
                         Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
                     }
@@ -3874,6 +4004,8 @@ pub fn run() {
             start_watching,
             watch_state,
             preflight_claude,
+            preflight_agent,
+            detect_agents,
             pty_ensure,
             pty_write,
             pty_resize,
@@ -4059,6 +4191,7 @@ mod tests {
             permission: permission.map(|p| p.into()),
             remote: None,
             tmux_session: None,
+            agent: None,
         }
     }
 
