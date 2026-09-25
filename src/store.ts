@@ -135,8 +135,11 @@ interface AppState {
   openFiles: string[];
   /** The editor tab currently showing. */
   activeFile: string | null;
-  openFile: (rel: string) => void;
+  openFile: (rel: string, opts?: { diff?: boolean }) => void;
   closeFile: (rel: string) => void;
+  /** Set when a file was opened via a "Review"/diff action — the editor pane
+   *  consumes it and lands on the diff view instead of the file body. */
+  diffRequest: string | null;
   featureIndexOpen: boolean;
   /** Keyboard cheatsheet overlay (opened with "?"). Toggled via setState. */
   cheatsheetOpen: boolean;
@@ -639,10 +642,12 @@ export const useApp = create<AppState>((set, get) => ({
   setView: (view) => set({ view }),
   openFiles: [],
   activeFile: null,
-  openFile: (rel) =>
+  diffRequest: null,
+  openFile: (rel, opts) =>
     set((s) => ({
       openFiles: s.openFiles.includes(rel) ? s.openFiles : [...s.openFiles, rel],
       activeFile: rel,
+      diffRequest: opts?.diff ? rel : null,
     })),
   closeFile: (rel) =>
     set((s) => {

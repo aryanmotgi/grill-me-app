@@ -1401,6 +1401,45 @@ fn git_commit_push(repo_path: String, message: String) -> Result<String, String>
     }
 }
 
+/// Commit the working tree WITHOUT pushing — the Changes-panel Commit button
+/// (Monocode-style). Push stays an explicit, separate act (ship / commit+push).
+#[tauri::command]
+fn git_commit_only(repo_path: String, message: String) -> Result<String, String> {
+    if message.trim().is_empty() {
+        return Err("empty commit message".into());
+    }
+    git(&repo_path, &["add", "-A"])?;
+    let staged = git(&repo_path, &["diff", "--cached", "--name-only"])?;
+    if staged.trim().is_empty() {
+        return Err("nothing to commit".into());
+    }
+    git(&repo_path, &["commit", "-m", &message])?;
+    Ok(format!("committed {} files", staged.lines().count()))
+}
+
+/// Draft a one-line conventional commit message from the working diff
+/// (the ✨ button next to the commit box). One-shot `claude -p`.
+#[tauri::command]
+fn commit_message_ai(repo_path: String) -> Result<String, String> {
+    let mut diff = git(&repo_path, &["diff"])?;
+    let staged = git(&repo_path, &["diff", "--cached"])?;
+    diff.push_str(&staged);
+    if diff.trim().is_empty() {
+        return Err("working tree clean — nothing to describe".into());
+    }
+    diff.truncate(60_000);
+    let msg = claude_pipe_stdin(
+        &diff,
+        "Write ONE conventional-commit subject line (max 72 chars) for this diff. \
+         Output only the line — no quotes, no body, no preamble.",
+    )?;
+    let line = msg.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
+    if line.is_empty() {
+        return Err("claude returned no message".into());
+    }
+    Ok(line)
+}
+
 /// Branches a checkpoint may never land on. A checkpoint is a private,
 /// working-branch snapshot — never the shared trunk. Mirrors the /ship and
 /// force-push guards so the whole app agrees on what "protected" means.
@@ -4121,6 +4160,8 @@ pub fn run() {
             standup_append,
             standup_tail,
             git_commit_push,
+            git_commit_only,
+            commit_message_ai,
             checkpoint_commit,
             git_revert_file,
             usage_stats,

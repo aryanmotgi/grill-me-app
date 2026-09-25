@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
-import { surfaceVisible } from "../lib/soloVisibility";
 import { visibleSessions } from "../lib/sessionNav";
 import { applySessionOrder, moveId, reorderByDrop } from "../lib/sessionOrder";
 import { isTauri, type AgentId } from "../data/sources/git";
@@ -21,6 +20,18 @@ interface RowReorder {
   onDragEnterRow: () => void;
   onDropRow: () => void;
   onMove: (dir: 1 | -1) => void;
+}
+
+/** Monocode card header: the agent CLI's name, colored like their model
+ *  labels ("Claude Opus 5" / "Cursor Grok"). */
+const AGENT_NAME: Record<string, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
+function AgentName({ memberId }: { memberId: string }) {
+  const agent = useApp((s) => s.members.find((m) => m.id === memberId)?.agent) ?? "claude";
+  return (
+    <span className="text-[10.5px] text-data font-medium" title={`This session runs the ${AGENT_NAME[agent]} CLI`}>
+      {AGENT_NAME[agent]}
+    </span>
+  );
 }
 
 /** Tiny per-session badge naming which agent CLI runs inside it. Claude is
@@ -147,7 +158,7 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
         }
       }}
     >
-      {/* primary line: optional drag grip + dot (the one status signal) + name + branch */}
+      {/* Monocode card, line 1: agent + elapsed (quiet metadata row) */}
       <div className="flex items-center gap-2">
         {reorder ? (
           <span
@@ -165,12 +176,11 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
         <span className={`status-dot ${mate.status}`} role="img"
           aria-label={STATUS_LABEL[mate.status]}
           title={`${mate.status}${offline ? ` · no activity ${mate.lastActiveMin}m` : ""}`} />
-        <span className="font-display font-semibold text-[13px]">{mate.name}</span>
-        <AgentBadge memberId={mate.id} />
-        <span className="font-mono text-faint text-[10px] truncate" title={mate.branch}>
-          <Icon name="branch" size={11} /> {mate.branch}
-        </span>
+        <AgentName memberId={mate.id} />
         <span className="flex-1" />
+        <span className="font-mono text-[9.5px] text-faint num" title="Time since last activity">
+          {mate.lastActiveMin < 60 ? `${mate.lastActiveMin}m` : `${Math.floor(mate.lastActiveMin / 60)}h ${mate.lastActiveMin % 60}m`}
+        </span>
         {isOwnSession ? (
           <button
             className={`flex items-center gap-1 text-[10px] ${PRESENCE_TONE[presence]} hover:brightness-110 cursor-pointer`}
@@ -184,11 +194,21 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
         {mate.dnd ? <span title="Do not disturb" className="text-faint"><Icon name="bellOff" size={11} /></span> : null}
       </div>
 
-      {/* secondary line: task label + quiet metadata */}
-      <div className="mt-1 flex items-center gap-2 pl-4">
-        <span className="text-dim text-[11px] truncate" title={mate.taskLabel}>
-          {mate.taskLabel}
+      {/* line 2: the session title (what it's working on), bold like Monocode */}
+      <div className="mt-0.5 pl-4 text-[12.5px] font-semibold text-ink truncate" title={mate.taskLabel || mate.name}>
+        {mate.taskLabel || mate.name}
+      </div>
+
+      {/* line 3: who/where + working-tree size + quiet flags */}
+      <div className="mt-0.5 flex items-center gap-2 pl-4">
+        <span className="font-mono text-faint text-[10px] truncate" title={`${mate.name} on ${mate.branch}`}>
+          {mate.name} · <Icon name="branch" size={10} /> {mate.branch}
         </span>
+        {mate.changes.length > 0 ? (
+          <span className="font-mono text-[9.5px] text-data num" title={`${mate.changes.length} files changed in the working tree`}>
+            ±{mate.changes.length}
+          </span>
+        ) : null}
         <span className="flex-1" />
         {res && res.cpu >= 3 ? (
           <span className={`font-mono text-[9px] num ${res.cpu > 80 ? "text-danger" : "text-data"}`}
@@ -294,57 +314,99 @@ export function SessionList() {
 
   // apply the persisted user order first, then the solo/team visibility filter
   // so the keyboard-nav source (visibleSessions) and this render stay identical.
+  const [query, setQuery] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
   const ordered = applySessionOrder(teammates, sessionOrder);
   const orderedIds = ordered.map((t) => t.id);
   // solo: only the own session row (members[0]; first fake row in browser dev)
-  const shown = visibleSessions(ordered, appMode, ownId);
-  // reorder only makes sense with more than one draggable row on screen
-  const canReorder = shown.length > 1;
+  const visible = visibleSessions(ordered, appMode, ownId);
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? visible.filter((t) =>
+        [t.name, t.taskLabel, t.branch].some((s) => s?.toLowerCase().includes(q)))
+    : visible;
+  // reorder only makes sense with more than one draggable row and no filter
+  const canReorder = shown.length > 1 && !q;
 
   const commitOrder = (ids: string[]) => {
     if (ids !== orderedIds) setSessionOrder(ids);
   };
 
+  // Monocode-style collapsible groups. Ours group by attention state, so the
+  // top of the list is always "what needs a human".
+  const GROUPS = [
+    { key: "needs-input", label: "Needs you" },
+    { key: "working", label: "Working" },
+    { key: "idle", label: "Idle" },
+  ] as const;
+  const grouped = GROUPS.map((g) => ({
+    ...g,
+    rows: shown.filter((t) => t.status === g.key),
+  })).filter((g) => g.rows.length > 0);
+
+  const row = (mate: Teammate, i: number) => (
+    <SessionRow
+      key={mate.id}
+      mate={mate}
+      reorder={
+        canReorder
+          ? {
+              isDragging: dragId === mate.id,
+              isDropTarget: overId === mate.id && dragId !== null && dragId !== mate.id,
+              position: `${i + 1} of ${shown.length}`,
+              onDragStart: () => setDragId(mate.id),
+              onDragEnd: () => { setDragId(null); setOverId(null); },
+              onDragEnterRow: () => setOverId(mate.id),
+              onDropRow: () => {
+                if (dragId) commitOrder(reorderByDrop(orderedIds, dragId, mate.id));
+                setDragId(null);
+                setOverId(null);
+              },
+              onMove: (dir) => commitOrder(moveId(orderedIds, mate.id, dir)),
+            }
+          : undefined
+      }
+    />
+  );
+
   return (
     <aside data-tour="sessions" className="w-full h-full bg-panel flex flex-col overflow-hidden">
-      <div className="px-3 py-2 flex items-center justify-between">
-        <span className="panel-label">sessions</span>
-        {surfaceVisible(appMode, "session-count") ? (
-          <span className="text-data text-[10px] num">{teammates.length} on vm</span>
-        ) : null}
+      <div className="px-2 pt-1 pb-2 flex-none">
+        <input
+          className="w-full bg-raised hairline rounded-md px-2.5 py-1.5 text-[11px] outline-none focus:border-accent placeholder:text-faint"
+          placeholder="Search sessions…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       <div className="overflow-y-auto flex-1">
         {shown.length === 0 ? (
-          <EmptyState
-            icon="terminal"
-            title="No sessions yet"
-            hint="Each session is a claude running in its own git worktree. Spin one up below to get started."
-            compact
-          />
-        ) : (
-          shown.map((mate, i) => (
-            <SessionRow
-              key={mate.id}
-              mate={mate}
-              reorder={
-                canReorder
-                  ? {
-                      isDragging: dragId === mate.id,
-                      isDropTarget: overId === mate.id && dragId !== null && dragId !== mate.id,
-                      position: `${i + 1} of ${shown.length}`,
-                      onDragStart: () => setDragId(mate.id),
-                      onDragEnd: () => { setDragId(null); setOverId(null); },
-                      onDragEnterRow: () => setOverId(mate.id),
-                      onDropRow: () => {
-                        if (dragId) commitOrder(reorderByDrop(orderedIds, dragId, mate.id));
-                        setDragId(null);
-                        setOverId(null);
-                      },
-                      onMove: (dir) => commitOrder(moveId(orderedIds, mate.id, dir)),
-                    }
-                  : undefined
-              }
+          q ? (
+            <p className="p-3 text-[11px] text-faint">No sessions match “{query}”.</p>
+          ) : (
+            <EmptyState
+              icon="terminal"
+              title="No sessions yet"
+              hint="Each session is an agent running in its own git worktree. Spin one up below to get started."
+              compact
             />
+          )
+        ) : (
+          grouped.map((g) => (
+            <div key={g.key}>
+              <button
+                className="flex items-center gap-1.5 w-full text-left px-3 py-1.5 cursor-pointer text-faint hover:text-dim transition-colors"
+                onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
+              >
+                <span className={`inline-block transition-transform ${collapsed[g.key] ? "" : "rotate-90"}`}>
+                  <Icon name="chevron" size={9} />
+                </span>
+                <span className="panel-label">{g.label}</span>
+                <span className="text-[10px] num">{g.rows.length}</span>
+              </button>
+              {!collapsed[g.key] ? g.rows.map((mate) => row(mate, shown.indexOf(mate))) : null}
+            </div>
           ))
         )}
       </div>
