@@ -4078,6 +4078,20 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             start_api_server(app.handle().clone());
+            // Monocode-style glass: native macOS under-window vibrancy so the
+            // desktop blurs through the (transparent) webview background.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window_vibrancy::apply_vibrancy(
+                        &window,
+                        window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+                        None,
+                        Some(12.0),
+                    );
+                }
+            }
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())

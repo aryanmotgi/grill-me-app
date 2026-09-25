@@ -35,6 +35,11 @@ import type { AppMode } from "./lib/soloVisibility";
 
 export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "preview";
 
+/** What fills the center stage: the session terminal, the home dashboard, or
+ *  one of the team surfaces opened from the nav rail (Monocode-style — team
+ *  panels are full center views now, not a right-rail sidebar). */
+export type MainView = "home" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
+
 /** One registered project workspace (projects.json via projects_list). */
 export interface ProjectInfo {
   id: string;
@@ -124,8 +129,14 @@ interface AppState {
   setConflicts: (pairs: ConflictPair[]) => void;
 
   /** "home" = mission control overview; "session" = terminal workspace */
-  view: "home" | "session";
-  setView: (v: "home" | "session") => void;
+  view: MainView;
+  setView: (v: MainView) => void;
+  /** Files open in the right editor pane (repo-relative paths, tab order). */
+  openFiles: string[];
+  /** The editor tab currently showing. */
+  activeFile: string | null;
+  openFile: (rel: string) => void;
+  closeFile: (rel: string) => void;
   featureIndexOpen: boolean;
   /** Keyboard cheatsheet overlay (opened with "?"). Toggled via setState. */
   cheatsheetOpen: boolean;
@@ -626,6 +637,21 @@ export const useApp = create<AppState>((set, get) => ({
   ciRuns: [],
   view: "home",
   setView: (view) => set({ view }),
+  openFiles: [],
+  activeFile: null,
+  openFile: (rel) =>
+    set((s) => ({
+      openFiles: s.openFiles.includes(rel) ? s.openFiles : [...s.openFiles, rel],
+      activeFile: rel,
+    })),
+  closeFile: (rel) =>
+    set((s) => {
+      const openFiles = s.openFiles.filter((f) => f !== rel);
+      return {
+        openFiles,
+        activeFile: s.activeFile === rel ? openFiles[openFiles.length - 1] ?? null : s.activeFile,
+      };
+    }),
   featureIndexOpen: false,
   cheatsheetOpen: false,
   navSelId: null,
@@ -799,7 +825,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   highlightFiles: [],
   flashFiles: (files) => {
-    set({ highlightFiles: files, railTab: "tasks" });
+    set({ highlightFiles: files, railTab: "tasks", view: "tasks" });
     setTimeout(() => set({ highlightFiles: [] }), 2600);
   },
 

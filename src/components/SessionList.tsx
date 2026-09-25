@@ -283,60 +283,8 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
   );
 }
 
-/** Monocode-style project strip at the top of the sidebar: every registered
- *  project, the active one highlighted with its sessions nested below (the
- *  session list that follows). Clicking another project switches workspace —
- *  same reload path the ProjectPicker uses, since each project is a fully
- *  separate world (own config, board, inbox, sessions). */
-function ProjectStrip() {
-  const projects = useApp((s) => s.projects);
-  const activeProject = useApp((s) => s.activeProject);
-  const setAppSetting = useApp((s) => s.setAppSetting);
-  const setPickerOpen = useApp((s) => s.setPickerOpen);
-  if (projects.length === 0) return null;
-
-  const switchTo = async (id: string) => {
-    if (id === activeProject) return;
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("set_active_project", { id }).catch(() => {});
-    setAppSetting("activeProject", id);
-    setTimeout(() => location.reload(), 150);
-  };
-
-  return (
-    <div className="border-b border-line flex-none demo-hide">
-      <div className="px-3 py-2 flex items-center justify-between">
-        <span className="panel-label">projects</span>
-        <button className="text-faint hover:text-accent cursor-pointer text-[12px]" title="Manage projects (⌘P)"
-          onClick={() => setPickerOpen(true)}>+</button>
-      </div>
-      <div className="max-h-[30vh] overflow-y-auto pb-1">
-        {projects.map((p) => {
-          const active = p.id === activeProject;
-          return (
-            <button
-              key={p.id}
-              className={`flex items-center gap-2 w-full text-left px-3 py-1 cursor-pointer transition-colors ${
-                active ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"
-              }`}
-              style={p.color ? { borderLeft: `2px solid ${p.color}` } : { borderLeft: "2px solid transparent" }}
-              title={active ? `${p.path} — active; sessions below` : `Switch to ${p.name} (reloads the workspace)`}
-              onClick={() => switchTo(p.id)}
-            >
-              <Icon name="folder" size={11} />
-              <span className="text-[11px] truncate flex-1">{p.name}</span>
-              {active ? <span className={`inline-block transition-transform rotate-90`}><Icon name="chevron" size={10} /></span> : null}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function SessionList() {
   const teammates = useApp((s) => s.teammates);
-  const width = useApp((s) => s.panelSizes.left);
   const appMode = useApp((s) => s.appMode);
   const ownId = useApp((s) => s.members[0]?.id);
   const sessionOrder = useApp((s) => s.sessionOrder);
@@ -358,8 +306,7 @@ export function SessionList() {
   };
 
   return (
-    <aside data-tour="sessions" style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
-      <ProjectStrip />
+    <aside data-tour="sessions" className="w-full h-full bg-panel flex flex-col overflow-hidden">
       <div className="px-3 py-2 flex items-center justify-between">
         <span className="panel-label">sessions</span>
         {surfaceVisible(appMode, "session-count") ? (

@@ -31,7 +31,8 @@ interface FeedStore {
   members: TeamMemberConfig[];
   appSettings: Record<string, unknown>;
   activeId: string;
-  view: "home" | "session";
+  /** center view — feeds only care whether it's "session" */
+  view: string;
   toast: (text: string, kind?: "info" | "warn") => void;
   tasks: import("../../types").Task[];
   sponsorChecklist: { sponsor: string; requirement: string; done: boolean }[];

@@ -80,6 +80,72 @@ body,
   opacity: 0.25;
 }
 
+/* ---- monocode glass (native macOS only — .vibrant is set by App when the
+   Tauri window has under-window vibrancy). Surfaces go translucent so the
+   desktop blurs through, exactly like the reference. !important because
+   applyTheme writes the opaque hex values as inline styles on <html>. ---- */
+:root.vibrant[data-theme="monocode"] {
+  --bg: rgba(20, 21, 24, 0.42) !important;
+  --panel: rgba(27, 28, 32, 0.5) !important;
+  --raised: rgba(44, 46, 52, 0.55) !important;
+  --overlay: rgba(30, 32, 36, 0.88) !important;
+  --line: rgba(255, 255, 255, 0.08) !important;
+  /* terminal stays OPAQUE: it repaints every frame (cursor, output), and a
+     translucent surface would force WindowServer to re-blur the wallpaper
+     on each repaint — that's a whole-machine slowdown, not a look. */
+  --termBg: #131417 !important;
+}
+/* under native vibrancy the OS already blurs — in-app backdrop blurs on
+   glass cards would stack a second live blur per frame. Kill them. */
+:root.vibrant[data-theme="monocode"] .glass,
+:root.vibrant[data-theme="monocode"] .scrim {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root.vibrant[data-theme="monocode"] .glass {
+  background: color-mix(in srgb, #1b1c20 92%, transparent);
+}
+/* every looping animation is a repaint per frame, and each repaint makes
+   WindowServer re-blur the wallpaper behind the translucent window. Under
+   glass, attention states go static (color still carries the signal). */
+:root.vibrant[data-theme="monocode"] .status-dot.needs-input,
+:root.vibrant[data-theme="monocode"] .caret::after {
+  animation: none;
+}
+:root.vibrant[data-theme="monocode"],
+:root.vibrant[data-theme="monocode"] body,
+:root.vibrant[data-theme="monocode"] #root {
+  background-color: transparent;
+}
+:root.vibrant[data-theme="monocode"] #root {
+  background-image: none;
+}
+:root.vibrant[data-theme="monocode"] #root::after {
+  display: none;
+}
+
+/* monocode typography: native system sans instead of the techy display
+   face, and sentence-case labels — Monocode's quiet chrome. */
+:root[data-theme="monocode"] {
+  --font-display: -apple-system, "SF Pro Display", system-ui, sans-serif;
+  --font-sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
+}
+:root[data-theme="monocode"] .panel-label {
+  text-transform: capitalize;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+}
+/* softer, larger radii on interactive chrome */
+:root[data-theme="monocode"] .btn {
+  border-radius: 7px;
+}
+
+/* Overlay titlebar: the native traffic lights float over the top-left of the
+   webview, so the header clears them and doubles as the drag region. */
+.titlebar-pad {
+  padding-left: 84px;
+}
+
 ::selection {
   background: var(--selection);
 }
