@@ -1889,6 +1889,9 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     // the /ship slash command the review-approve flow injects must actually
     // exist in the member repo — install it alongside the hooks
     install_ship_command(&PathBuf::from(&repo_path))?;
+    // multi-agent delegation playbook (DELEGATION.md + CLAUDE.md import) —
+    // same per-repo path, so every project and worktree gets it by default
+    install_delegation(&PathBuf::from(&repo_path))?;
     // idempotent: rewriting identical content still bumps mtime and can
     // trigger watcher/vite reload storms — skip when unchanged
     if std::fs::read_to_string(&path).map(|cur| cur == next).unwrap_or(false) {
@@ -1966,6 +1969,135 @@ fn install_ship_command(repo_path: &Path) -> Result<ShipInstall, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(&path, SHIP_COMMAND_MD).map_err(|e| e.to_string())?;
     Ok(ShipInstall::Installed)
+}
+
+// ---------------------------------------------------------------------------
+// Multi-agent delegation playbook: DELEGATION.md at the repo root teaches the
+// Claude Code session when to shell out to Codex / Cursor as subprocess tools
+// and when to handle work itself. Claude Code auto-loads it through an
+// @DELEGATION.md import appended to CLAUDE.md. Installed idempotently per
+// member repo alongside the hooks and /ship — every project and spawned
+// worktree gets it, Solo or Team. A user who edits the file and removes the
+// grillme marker owns it from then on; a template at
+// ~/.grillme/delegation.md overrides the built-in default for new installs.
+// ---------------------------------------------------------------------------
+
+const DELEGATION_MARKER: &str = "<!-- grillme:delegation-playbook -->";
+const DELEGATION_IMPORT: &str = "@DELEGATION.md";
+
+const DELEGATION_MD: &str = r#"<!-- grillme:delegation-playbook -->
+# Agent Delegation Playbook
+
+You (Claude Code) are the primary agent in this session. Codex CLI and Cursor
+CLI are available as subprocess tools you may delegate sub-tasks to. Run them
+like any shell command, read their stdout as the result, then verify and
+continue.
+
+## PRIORITY: conserve Codex/Cursor credits
+
+This user has far fewer credits on Codex and Cursor than on Claude Code.
+Delegate ONLY on a clear, strong fit. Borderline or could-go-either-way
+tasks: handle them yourself. This priority overrides everything below and
+should survive any future edits to this file.
+
+## Before any delegation
+
+1. Check the CLI is actually available — never assume:
+   - Codex: `command -v codex` (auth: `codex login status` exits 0 when logged in)
+   - Cursor: `command -v cursor-agent || command -v agent` (auth: `cursor-agent status`)
+2. If unavailable or not logged in, handle the task yourself. Do not retry.
+3. Delegate one sub-task at a time; wait for it, verify, then continue.
+
+## Delegate to Codex — ONLY these strong fits
+
+- Large mechanical refactors: rename/restructure across many files where
+  tests or a typecheck verify the result.
+- Genuine bulk repetitive work: dozens of similar small fixes (lint sweeps,
+  API-migration call sites).
+- Test-suite generation for existing, well-specified code.
+
+```bash
+timeout 600 codex exec "<task, precise and self-contained>" \
+  --cd "$PWD" -s workspace-write < /dev/null
+```
+
+- `< /dev/null` is MANDATORY — codex exec hangs forever on a pipe stdin.
+- Sandbox stays `workspace-write` (not full bypass) — a delegated subprocess
+  gets no more power than it needs.
+- stdout is the final answer; progress streams on stderr; non-zero exit =
+  failure. Always wrap in `timeout`.
+
+## Delegate to Cursor — ONLY these strong fits
+
+- Real speed-critical UI iteration: many quick visual passes over one
+  component where a fast loop genuinely beats doing it yourself.
+- A truly isolated small edit you can specify in one sentence and verify at
+  a glance.
+
+```bash
+# writes require --force; without it cursor "succeeds" but changes nothing
+timeout 300 cursor-agent -p "<task>" --force --output-format text
+```
+
+Read-only codebase Q&A via cursor is possible (`-p` without `--force`) but
+spends Cursor credits — prefer your own Grep/Read tools instead.
+
+## Handle directly (never delegate)
+
+- Architecture, cross-cutting design, root-cause debugging.
+- Anything security-sensitive: auth, secrets, permissions, payments.
+- Anything spanning multiple subsystems where first-pass correctness matters.
+- All verification: after ANY delegation, review the diff (`git diff`) and
+  run the project's tests yourself before continuing. Delegated output is
+  never trusted unreviewed.
+- Anything when the needed CLI is missing, not logged in, or the task is
+  borderline — see PRIORITY above.
+
+---
+*Managed by Grill Me. To customize per-project: edit this file and DELETE the
+grillme marker comment at the top — Grill Me will never touch it again. A
+template at `~/.grillme/delegation.md` (keeping the marker) overrides the
+default for all projects.*
+"#;
+
+/// Idempotently install DELEGATION.md at the repo root and ensure CLAUDE.md
+/// imports it. Same contract as install_ship_command: content-compared (no
+/// mtime churn), marker-guarded (a user-edited, marker-less DELEGATION.md is
+/// never touched), and ~/.grillme/delegation.md overrides the built-in
+/// template when present.
+fn install_delegation(repo_path: &Path) -> Result<ShipInstall, String> {
+    let template = std::fs::read_to_string(grillme_dir().join("delegation.md"))
+        .ok()
+        .filter(|s| s.contains(DELEGATION_MARKER))
+        .unwrap_or_else(|| DELEGATION_MD.to_string());
+    let path = repo_path.join("DELEGATION.md");
+    let wrote = match std::fs::read_to_string(&path) {
+        Ok(cur) if cur == template => ShipInstall::Unchanged,
+        Ok(cur) if !cur.contains(DELEGATION_MARKER) => ShipInstall::SkippedUserFile,
+        _ => {
+            std::fs::write(&path, &template).map_err(|e| e.to_string())?;
+            ShipInstall::Installed
+        }
+    };
+    // wire the auto-load: CLAUDE.md must import the playbook. Appended once;
+    // a repo without CLAUDE.md gets a minimal one.
+    let claude_md = repo_path.join("CLAUDE.md");
+    match std::fs::read_to_string(&claude_md) {
+        Ok(cur) if cur.contains(DELEGATION_IMPORT) => {}
+        Ok(cur) => {
+            let sep = if cur.ends_with('\n') { "" } else { "\n" };
+            std::fs::write(
+                &claude_md,
+                format!("{cur}{sep}\n{DELEGATION_IMPORT}\n"),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Err(_) => {
+            std::fs::write(&claude_md, format!("{DELEGATION_IMPORT}\n"))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(wrote)
 }
 
 #[tauri::command]
@@ -4489,6 +4621,71 @@ mod safety_tests {
     fn denies_when_blocklist_is_corrupt() {
         assert!(hook_denies("not valid json [", "ls -la"));
         assert!(hook_denies("{\"not\": \"a list\"}", "ls -la"));
+    }
+}
+
+#[cfg(test)]
+mod delegation_tests {
+    use super::{install_delegation, ShipInstall, DELEGATION_IMPORT, DELEGATION_MARKER, DELEGATION_MD};
+    use std::path::PathBuf;
+
+    fn tmp_repo(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "grillme-delegation-test-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn installs_playbook_and_wires_claude_md_import() {
+        let repo = tmp_repo("install");
+        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::Installed);
+        let body = std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap();
+        assert!(body.contains(DELEGATION_MARKER));
+        // the playbook must carry the operational rules that make delegation safe
+        assert!(body.contains("codex exec") && body.contains("< /dev/null"));
+        assert!(body.contains("cursor-agent -p") && body.contains("--force"));
+        assert!(body.contains("workspace-write"));
+        // ...and the credit-conservation priority that survives future edits
+        assert!(body.contains("conserve Codex/Cursor credits"));
+        let claude = std::fs::read_to_string(repo.join("CLAUDE.md")).unwrap();
+        assert!(claude.contains(DELEGATION_IMPORT), "CLAUDE.md must import the playbook");
+    }
+
+    #[test]
+    fn append_to_existing_claude_md_once() {
+        let repo = tmp_repo("append");
+        std::fs::write(repo.join("CLAUDE.md"), "# my project rules\n").unwrap();
+        install_delegation(&repo).unwrap();
+        install_delegation(&repo).unwrap(); // second run must not duplicate
+        let claude = std::fs::read_to_string(repo.join("CLAUDE.md")).unwrap();
+        assert!(claude.starts_with("# my project rules"), "existing content preserved");
+        assert_eq!(
+            claude.matches(DELEGATION_IMPORT).count(),
+            1,
+            "import appended exactly once"
+        );
+    }
+
+    #[test]
+    fn preserves_user_authored_playbook() {
+        let repo = tmp_repo("userfile");
+        let user = "My own delegation rules — always use codex.\n";
+        std::fs::write(repo.join("DELEGATION.md"), user).unwrap();
+        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::SkippedUserFile);
+        assert_eq!(std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap(), user);
+    }
+
+    #[test]
+    fn upgrades_stale_managed_playbook() {
+        let repo = tmp_repo("upgrade");
+        std::fs::write(repo.join("DELEGATION.md"), format!("{DELEGATION_MARKER}\nold rules\n")).unwrap();
+        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::Installed);
+        assert_eq!(std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap(), DELEGATION_MD);
     }
 }
 
