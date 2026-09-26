@@ -90,6 +90,17 @@ export default function App() {
     applyTheme(themes[themeName] ?? themes.monocode);
   }, [themeName]);
 
+  // Translucent background: the native window has under-window vibrancy
+  // (lib.rs), so the `.vibrant` class makes chrome surfaces translucent and
+  // the desktop wallpaper shows through — the Monocode look. Toggleable
+  // (default on); off → surfaces go solid and cover the transparent window.
+  // Browser dev has no native vibrancy, so it stays opaque there.
+  const translucentBg = useApp((s) => s.appSettings.translucentBg !== false);
+  useEffect(() => {
+    const native = "__TAURI_INTERNALS__" in window && navigator.platform.startsWith("Mac");
+    document.documentElement.classList.toggle("vibrant", native && translucentBg);
+  }, [translucentBg]);
+
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
