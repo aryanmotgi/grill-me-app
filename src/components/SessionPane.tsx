@@ -294,9 +294,9 @@ export function SessionPane({ mate }: { mate: Teammate }) {
   return (
     <section className="flex-1 min-w-0 flex flex-col bg-term-bg">
       <div className="flex items-center gap-2 px-3 h-9 border-b border-line bg-panel flex-none">
+        {/* the session tab strip above already shows name + branch — this row is
+            just the live status dot + this pane's tools (no duplicate title). */}
         <span className={`status-dot ${mate.status}`} />
-        <span className="font-display font-semibold text-[12px]">{mate.name}</span>
-        <span className="font-mono text-faint text-[10px]"><Icon name="branch" size={11} /> {mate.branch}</span>
         {mate.recording ? <span className="tag danger"><Icon name="record" size={9} /> rec</span> : null}
         {helpPending ? (
           <span className="tag warn" title="This session is flagged for help — the team can see it needs eyes">
@@ -309,8 +309,8 @@ export function SessionPane({ mate }: { mate: Teammate }) {
             <Icon name="warn" size={9} /> mcp auth
           </button>
         ) : null}
-        <span className="flex-1" />
-        <div className="flex demo-hide items-center">
+        <span className="flex-1 min-w-[8px]" />
+        <div className="flex demo-hide items-center min-w-0 overflow-x-auto no-scrollbar">
           <ExplainSession mate={mate} />
           <button className={`btn ml-1 ${tab === "terminal" ? "active" : ""}`} onClick={() => setTab("terminal")}>
             terminal

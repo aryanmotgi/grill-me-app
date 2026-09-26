@@ -76,8 +76,11 @@ body,
   --glow-a: 3%;
   --grid-a: 0%;
 }
+/* monocode: no full-screen scanline layer — a fixed, top-z overlay repaints
+   over the whole window and adds compositor cost for a texture this theme
+   doesn't want anyway. */
 :root[data-theme="monocode"] #root::after {
-  opacity: 0.25;
+  display: none;
 }
 
 /* ---- monocode glass (native macOS only — .vibrant is set by App when the
@@ -155,6 +158,14 @@ body,
   scrollbar-color: var(--line) transparent;
 }
 
+/* horizontal tool rows that may overflow scroll silently — no visible bar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ---- app-wide texture: faint scanlines over the whole window ---- */
 #root::after {
   content: "";
@@ -183,9 +194,11 @@ body,
    the rim inherits that radius. Structural chrome stays flat over the ground. */
 .glass {
   position: relative;
-  background: color-mix(in srgb, var(--panel) 82%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* Solid, opaque panel — no backdrop-filter. A live blur here recomposites
+     on every repaint (and, with a transparent window, re-blurs the desktop),
+     which is a major cause of drag/scroll lag. The gradient-glow rim below
+     still gives it a crafted edge without the per-frame cost. */
+  background: var(--panel);
 }
 .glass::before {
   content: "";
@@ -206,11 +219,10 @@ body,
   pointer-events: none;
 }
 
-/* Modal scrim: dark wash + a light blur behind glass modals. */
+/* Modal scrim: dark wash (no blur — a full-screen backdrop blur is one of the
+   heaviest things the compositor can do). The wash alone reads as "modal". */
 .scrim {
-  background: color-mix(in srgb, black 55%, transparent);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: color-mix(in srgb, black 62%, transparent);
 }
 
 /* Tabular figures so digit clusters (stats, cpu/mem, tokens) don't jitter. */
@@ -297,6 +309,10 @@ body,
   background: transparent;
   color: var(--dim);
   cursor: pointer;
+  /* never let a toolbar button wrap its label ("request"/"help") or get
+     squeezed to nothing when a row is tight — the row scrolls instead. */
+  white-space: nowrap;
+  flex: none;
   transition: border-color 140ms ease, color 140ms ease, background 140ms ease, transform 80ms ease;
 }
 .btn:hover {
