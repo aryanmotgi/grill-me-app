@@ -3324,6 +3324,22 @@ fn pty_kill(id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Kill EVERY live pty child (each `claude` process) and reap it. Called on
+/// app exit so quitting the app never orphans its spawned sessions — without
+/// this, every quit/relaunch left its `claude` processes running (reparented
+/// to launchd), and they piled up across rebuilds until the machine crawled.
+/// Idempotent: drains the map, so a second call is a no-op.
+fn kill_all_ptys() {
+    let sessions: Vec<PtySession> = {
+        let mut map = lock_or_recover(ptys());
+        map.drain().map(|(_, s)| s).collect()
+    };
+    for mut sess in sessions {
+        let _ = sess.child.kill();
+        let _ = sess.child.wait(); // reap so no zombie lingers
+    }
+}
+
 #[derive(Serialize)]
 struct SessionResources {
     id: String,
@@ -4247,6 +4263,13 @@ fn suggest_assignee(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .on_window_event(|_window, event| {
+            // Closing the window (red button / ⌘W on the last window) must reap
+            // the pty children too — not just ⌘Q — so no `claude` is orphaned.
+            if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
+                kill_all_ptys();
+            }
+        })
         .setup(|app| {
             start_api_server(app.handle().clone());
             // Monocode-style glass: native macOS under-window vibrancy so the
@@ -4342,8 +4365,15 @@ pub fn run() {
             room::room_make_plan,
             room::room_make_tasks
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // Final backstop: whatever path quits the app (⌘Q, exit, crash of
+            // the event loop), reap all pty children before the process dies.
+            if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+                kill_all_ptys();
+            }
+        });
 }
 
 #[cfg(test)]
