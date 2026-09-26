@@ -127,11 +127,22 @@ body,
   display: none;
 }
 
-/* monocode typography: native system sans instead of the techy display
-   face, and sentence-case labels — Monocode's quiet chrome. */
+/* monocode typography: native SF Pro for chrome, and SF Mono (via
+   ui-monospace, guaranteed on macOS — no bundled webfont, no CSP issue) for
+   ALL code/terminal/numeric text. SF Mono is Apple's dev typeface: crisper
+   and more characterful than the previous fallback stack. Sentence-case
+   labels keep the quiet Monocode chrome. */
 :root[data-theme="monocode"] {
   --font-display: -apple-system, "SF Pro Display", system-ui, sans-serif;
   --font-sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+}
+/* tighten mono so it reads as crafted, not raw terminal text */
+:root[data-theme="monocode"] .num,
+:root[data-theme="monocode"] .font-mono,
+:root[data-theme="monocode"] code {
+  font-feature-settings: "ss01", "cv01";
+  letter-spacing: -0.01em;
 }
 :root[data-theme="monocode"] .panel-label {
   text-transform: capitalize;
