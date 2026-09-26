@@ -230,6 +230,83 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+/* ---- code viewer: line-number gutter + muted syntax highlighting ---- */
+.codeview {
+  min-width: max-content; /* let long lines scroll the parent horizontally */
+  padding-bottom: 8px;
+}
+.codeview-row {
+  display: flex;
+  align-items: baseline;
+}
+.codeview-row:hover {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.codeview-ln {
+  position: sticky; /* stay visible when the code scrolls sideways */
+  left: 0;
+  flex: none;
+  width: 44px;
+  padding: 0 12px 0 8px;
+  text-align: right;
+  color: var(--faint);
+  opacity: 0.55;
+  background: var(--panel);
+  user-select: none;
+}
+.codeview-code {
+  white-space: pre;
+  padding-right: 16px;
+}
+/* Muted, low-saturation syntax palette — reads as monochrome-with-accents,
+   not a rainbow. Tuned for the graphite grounds. */
+.hljs-comment,
+.hljs-quote {
+  color: var(--faint);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal {
+  color: #c58fa0; /* muted rose */
+}
+.hljs-string,
+.hljs-meta-string,
+.hljs-regexp {
+  color: #9fb488; /* muted green */
+}
+.hljs-number,
+.hljs-symbol {
+  color: #cBA37f; /* muted amber */
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: #86b0c9; /* muted teal */
+}
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-built_in {
+  color: #7fa8bd;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable {
+  color: var(--dim);
+}
+.hljs-meta,
+.hljs-punctuation,
+.hljs-operator {
+  color: var(--faint);
+}
+.hljs-name,
+.hljs-tag {
+  color: var(--dim);
+}
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
 .panel-label {
   font-family: var(--font-display);
   font-size: 10px;

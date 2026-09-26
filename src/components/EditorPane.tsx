@@ -1,7 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useApp } from "../store";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
+import { highlightLine, langForFile } from "../lib/highlight";
+
+// Rendering N thousand highlighted rows is heavy; above this a file falls back
+// to a plain (still line-numbered) view so a giant generated file can't jank.
+const HIGHLIGHT_LINE_CAP = 4000;
+
+/** Read-only code view: a line-number gutter + syntax-highlighted rows. */
+function CodeView({ content, filename }: { content: string; filename: string }) {
+  const rows = useMemo(() => {
+    const lines = content.split("\n");
+    const lang = lines.length > HIGHLIGHT_LINE_CAP ? null : langForFile(filename);
+    return lines.map((line) => (line.length ? highlightLine(line, lang) : "&nbsp;"));
+  }, [content, filename]);
+
+  return (
+    <div className="codeview font-mono text-[11px] leading-[1.5]">
+      {rows.map((html, i) => (
+        <div key={i} className="codeview-row">
+          <span className="codeview-ln num">{i + 1}</span>
+          <code className="codeview-code hljs" dangerouslySetInnerHTML={{ __html: html }} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Monocode-style right editor pane: files opened from the Explorer / Changes
@@ -170,7 +195,7 @@ export function EditorPane() {
             ))}
           </pre>
         ) : (
-          <pre className="p-2 font-mono text-[11px] leading-relaxed text-ink whitespace-pre">{content}</pre>
+          <CodeView content={content} filename={activeFile ?? ""} />
         )}
       </div>
 
