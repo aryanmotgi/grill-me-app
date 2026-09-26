@@ -16,7 +16,7 @@
         "title": "Grill Me",
         "width": 1440,
         "height": 900,
-        "transparent": true,
+        "transparent": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }

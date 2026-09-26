@@ -90,13 +90,6 @@ export default function App() {
     applyTheme(themes[themeName] ?? themes.monocode);
   }, [themeName]);
 
-  // native macOS window has under-window vibrancy (lib.rs setup) — flag it so
-  // the monocode theme can go translucent. Browser dev stays opaque/readable.
-  useEffect(() => {
-    if ("__TAURI_INTERNALS__" in window && navigator.platform.startsWith("Mac")) {
-      document.documentElement.classList.add("vibrant");
-    }
-  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

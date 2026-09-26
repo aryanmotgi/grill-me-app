@@ -136,9 +136,10 @@ export const synthwave: Theme = {
   selection: "#382250",
 };
 
-/** Monocode look — neutral graphite grays, macOS-style blue accent, no
- *  amber anywhere. Matches the Monocode screenshot: quiet panels, hairline
- *  borders, blue as the only brand color. */
+/** Monocode look — mostly-monochrome graphite with ONE quiet accent. The
+ *  accent is a muted slate-blue used only on the active tab + primary button;
+ *  everything else is neutral gray. The old bright cyan/blue "data" token is
+ *  desaturated to near-gray so readouts read as chrome, not color. */
 export const monocode: Theme = {
   name: "monocode",
   bg: "#16171a",
@@ -146,22 +147,24 @@ export const monocode: Theme = {
   raised: "#26282d",
   overlay: "#202226",
   line: "#2e3036",
-  lineglow: "#4a4d55",
+  lineglow: "#42454c",
   ink: "#e8e9eb",
   dim: "#a0a3a9",
   faint: "#7c8087",
-  accent: "#4c8dff",
-  accentInk: "#0a1526",
-  data: "#79b8ff",
-  ok: "#34c759",
-  warn: "#ff9f0a",
-  danger: "#ff453a",
+  // one quiet accent — muted slate-blue, not a saturated brand blue
+  accent: "#5f7aa0",
+  accentInk: "#f2f5f9",
+  // readouts: near-neutral gray with only a hair of cool, so numbers stay chrome
+  data: "#9aa1ab",
+  ok: "#57b56a",
+  warn: "#d1943f",
+  danger: "#d1615a",
   idle: "#5c6067",
   termBg: "#131417",
   termInk: "#d6d8dc",
-  termClaude: "#82aaff",
+  termClaude: "#8ea6c7",
   termCmd: "#c3c7cd",
-  selection: "#2c3e5d",
+  selection: "#2b3646",
 };
 
 export const themes: Record<string, Theme> = {
