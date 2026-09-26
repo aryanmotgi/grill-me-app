@@ -1,6 +1,6 @@
 import { useApp } from "../store";
 import { visibleSessions } from "../lib/sessionNav";
-import { AgentBadge } from "./SessionList";
+import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 
 // ---------------------------------------------------------------------------
@@ -13,6 +13,7 @@ import { Icon } from "./Icon";
 
 export function SessionTabs() {
   const teammates = useApp((s) => s.teammates);
+  const members = useApp((s) => s.members);
   const activeId = useApp((s) => s.activeId);
   const setActive = useApp((s) => s.setActive);
   const appMode = useApp((s) => s.appMode);
@@ -29,22 +30,25 @@ export function SessionTabs() {
       <div className="flex items-stretch overflow-x-auto flex-1 min-w-0">
         {shown.map((t) => {
           const on = view === "session" && t.id === activeId;
+          const agent = members.find((m) => m.id === t.id)?.agent ?? "claude";
           return (
             <button
               key={t.id}
-              className={`flex flex-col justify-center px-3 min-w-0 max-w-[220px] border-r border-line cursor-pointer transition-colors ${
+              className={`group/tab flex items-center gap-2 px-3 min-w-0 max-w-[220px] border-r border-line cursor-pointer transition-colors ${
                 on ? "bg-bg text-ink" : "text-dim hover:text-ink hover:bg-raised"
               }`}
               title={`${t.name} · ${t.branch}${t.taskLabel ? ` · ${t.taskLabel}` : ""}`}
               onClick={() => { if (view !== "session") setView("session"); setActive(t.id); }}
             >
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className={`status-dot ${t.status} flex-none`} aria-hidden />
-                <span className="text-[11.5px] font-semibold truncate">{t.name}</span>
-                <AgentBadge memberId={t.id} />
-              </span>
-              <span className="font-mono text-[9px] text-faint truncate pl-4">
-                {t.taskLabel || t.branch}
+              <AgentLogo agent={agent} size={15} />
+              <span className="flex flex-col justify-center min-w-0 text-left">
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className={`status-dot ${t.status} flex-none`} aria-hidden />
+                  <span className="text-[11.5px] font-semibold truncate">{t.name}</span>
+                </span>
+                <span className="font-mono text-[9px] text-faint truncate">
+                  {t.taskLabel || t.branch}
+                </span>
               </span>
             </button>
           );

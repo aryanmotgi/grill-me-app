@@ -4,6 +4,7 @@ import { visibleSessions } from "../lib/sessionNav";
 import { applySessionOrder, moveId, reorderByDrop } from "../lib/sessionOrder";
 import { isTauri, type AgentId } from "../data/sources/git";
 import { Icon } from "./Icon";
+import { AgentLogo } from "./AgentLogo";
 import { EmptyState } from "./EmptyState";
 import type { Teammate } from "../types";
 import { fmtMem } from "../lib/format";
@@ -22,14 +23,14 @@ interface RowReorder {
   onMove: (dir: 1 | -1) => void;
 }
 
-/** Monocode card header: the agent CLI's name, colored like their model
- *  labels ("Claude Opus 5" / "Cursor Grok"). */
+/** Monocode card header: the agent CLI's logo + name. */
 const AGENT_NAME: Record<string, string> = { claude: "Claude Code", cursor: "Cursor", codex: "Codex" };
 function AgentName({ memberId }: { memberId: string }) {
   const agent = useApp((s) => s.members.find((m) => m.id === memberId)?.agent) ?? "claude";
   return (
-    <span className="text-[10.5px] text-data font-medium" title={`This session runs the ${AGENT_NAME[agent]} CLI`}>
-      {AGENT_NAME[agent]}
+    <span className="flex items-center gap-1.5" title={`This session runs the ${AGENT_NAME[agent]} CLI`}>
+      <AgentLogo agent={agent} size={13} />
+      <span className="text-[10.5px] text-dim font-medium">{AGENT_NAME[agent]}</span>
     </span>
   );
 }
