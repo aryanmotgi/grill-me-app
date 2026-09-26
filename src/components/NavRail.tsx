@@ -1,6 +1,7 @@
 import { useApp, type MainView } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { Icon } from "./Icon";
+import { projectColor } from "../lib/projectColor";
 
 // ---------------------------------------------------------------------------
 // Monocode-style far-left nav rail: Search / Inbox / team surfaces up top,
@@ -91,7 +92,7 @@ export function NavRail() {
             title={p.id === activeProject ? `${p.path} — active` : `Switch to ${p.name}`}
             onClick={() => switchProject(p.id)}
           >
-            <span className="w-2 h-2 rounded-full flex-none" style={{ background: p.color ?? "var(--idle)" }} />
+            <span className="w-2 h-2 rounded-full flex-none" style={{ background: p.color ?? projectColor(p.id) }} />
             <span className="text-[12px] truncate">{p.name}</span>
           </button>
         ))}
