@@ -24,6 +24,9 @@ pub struct TeamMember {
     /// tmux session name to attach (remote via ssh -t, or local tmux new -A).
     #[serde(default, rename = "tmuxSession")]
     pub tmux_session: Option<String>,
+    /// Which agent CLI this session runs: "claude" (default), "cursor", "codex".
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -48,6 +51,7 @@ fn default_config() -> TeamConfig {
             permission: Some("edit".into()),
             remote: None,
             tmux_session: None,
+            agent: None,
         }],
     }
 }
@@ -518,6 +522,124 @@ fn preflight_claude() -> Result<String, String> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Multi-agent support — sessions can run Claude Code, Cursor CLI, or Codex.
+// The pty/terminal layer is agent-agnostic: only the spawned command differs.
+// ---------------------------------------------------------------------------
+
+/// The agent ids the app understands. Anything else is rejected before it can
+/// reach a command line (same defensive posture as validate_ssh_host).
+const KNOWN_AGENTS: [&str; 3] = ["claude", "cursor", "codex"];
+
+fn validate_agent(agent: &str) -> Result<(), String> {
+    if KNOWN_AGENTS.contains(&agent) {
+        Ok(())
+    } else {
+        Err(format!(
+            "unknown agent {agent:?}: must be one of claude, cursor, codex"
+        ))
+    }
+}
+
+/// The interactive launch line for each agent, run under `zsh -lc` so the
+/// login-shell PATH applies. All strings are static — no interpolation of
+/// user-controlled values. Cursor's installer symlinks both `cursor-agent`
+/// and `agent` into ~/.local/bin; prefer the unambiguous name, fall back to
+/// the short one.
+fn agent_exec_line(agent: &str) -> &'static str {
+    match agent {
+        "cursor" => {
+            "if command -v cursor-agent >/dev/null 2>&1; then exec cursor-agent -f; else exec agent -f; fi"
+        }
+        "codex" => "exec codex --dangerously-bypass-approvals-and-sandbox",
+        _ => "exec claude --dangerously-skip-permissions",
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub struct AgentAvailability {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    /// Best-effort "logged in" probe. Claude has no cheap offline auth check,
+    /// so installed implies available there.
+    pub authed: bool,
+    pub path: String,
+}
+
+/// Run a probe command in a login shell; Ok(stdout) only on exit 0.
+fn login_shell_probe(cmd: &str) -> Option<String> {
+    let out = Command::new("/bin/zsh").args(["-lc", cmd]).output().ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// Detect which agent CLIs are installed and authenticated on this machine.
+/// The session-create UI only offers agents where installed && authed.
+#[tauri::command]
+fn detect_agents() -> Vec<AgentAvailability> {
+    let mut result = Vec::new();
+
+    // Claude Code: no offline auth-status command; treat installed as usable
+    // (the session itself surfaces a login prompt if credentials are missing).
+    let claude_path = login_shell_probe("command -v claude");
+    result.push(AgentAvailability {
+        id: "claude".into(),
+        name: "Claude Code".into(),
+        installed: claude_path.is_some(),
+        authed: claude_path.is_some(),
+        path: claude_path.unwrap_or_default(),
+    });
+
+    // Cursor CLI: binary is cursor-agent (also symlinked as `agent`);
+    // `cursor-agent status` exits 0 when logged in.
+    let cursor_path = login_shell_probe("command -v cursor-agent || command -v agent");
+    let cursor_authed = cursor_path.is_some()
+        && login_shell_probe("cursor-agent status 2>/dev/null || agent status 2>/dev/null")
+            .is_some();
+    result.push(AgentAvailability {
+        id: "cursor".into(),
+        name: "Cursor".into(),
+        installed: cursor_path.is_some(),
+        authed: cursor_authed,
+        path: cursor_path.unwrap_or_default(),
+    });
+
+    // Codex CLI: `codex login status` exits 0 when logged in.
+    let codex_path = login_shell_probe("command -v codex");
+    let codex_authed =
+        codex_path.is_some() && login_shell_probe("codex login status 2>/dev/null").is_some();
+    result.push(AgentAvailability {
+        id: "codex".into(),
+        name: "Codex".into(),
+        installed: codex_path.is_some(),
+        authed: codex_authed,
+        path: codex_path.unwrap_or_default(),
+    });
+
+    result
+}
+
+/// Per-agent preflight before spawning a session pane: is the CLI on PATH?
+/// Mirrors preflight_claude (which stays for the one-shot `claude -p` helpers:
+/// standup, PR drafts, explain — those always use Claude regardless of what
+/// agent the session itself runs).
+#[tauri::command]
+fn preflight_agent(agent: Option<String>) -> Result<String, String> {
+    let agent = agent.unwrap_or_else(|| "claude".into());
+    validate_agent(&agent)?;
+    match agent.as_str() {
+        "cursor" => login_shell_probe("command -v cursor-agent || command -v agent")
+            .ok_or_else(|| "cursor CLI (cursor-agent) not found on PATH".to_string()),
+        "codex" => login_shell_probe("command -v codex")
+            .ok_or_else(|| "codex CLI not found on PATH".to_string()),
+        _ => preflight_claude(),
+    }
+}
+
 #[tauri::command]
 fn pty_ensure(
     app: tauri::AppHandle,
@@ -526,8 +648,9 @@ fn pty_ensure(
     shell: Option<bool>,
     remote: Option<String>,
     tmux: Option<String>,
+    agent: Option<String>,
 ) -> Result<(), String> {
-    pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux)
+    pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux, agent)
 }
 
 /// Validate an ssh destination (e.g. "vm", "user@host") before it is passed to
@@ -571,6 +694,7 @@ fn pty_ensure_inner(
     shell: bool,
     remote: Option<String>,
     tmux: Option<String>,
+    agent: Option<String>,
 ) -> Result<(), String> {
     use tauri::Emitter;
     {
@@ -616,7 +740,12 @@ fn pty_ensure_inner(
             if shell {
                 c.args(["-l"]);
             } else {
-                c.args(["-lc", "exec claude --dangerously-skip-permissions"]);
+                // per-session agent choice: claude (default), cursor, codex.
+                // agent_exec_line returns only static strings, and the agent
+                // id is validated first — nothing user-controlled reaches zsh.
+                let agent = agent.as_deref().unwrap_or("claude");
+                validate_agent(agent)?;
+                c.args(["-lc", agent_exec_line(agent)]);
             }
             c
         }
@@ -1272,6 +1401,45 @@ fn git_commit_push(repo_path: String, message: String) -> Result<String, String>
     }
 }
 
+/// Commit the working tree WITHOUT pushing — the Changes-panel Commit button
+/// (Monocode-style). Push stays an explicit, separate act (ship / commit+push).
+#[tauri::command]
+fn git_commit_only(repo_path: String, message: String) -> Result<String, String> {
+    if message.trim().is_empty() {
+        return Err("empty commit message".into());
+    }
+    git(&repo_path, &["add", "-A"])?;
+    let staged = git(&repo_path, &["diff", "--cached", "--name-only"])?;
+    if staged.trim().is_empty() {
+        return Err("nothing to commit".into());
+    }
+    git(&repo_path, &["commit", "-m", &message])?;
+    Ok(format!("committed {} files", staged.lines().count()))
+}
+
+/// Draft a one-line conventional commit message from the working diff
+/// (the ✨ button next to the commit box). One-shot `claude -p`.
+#[tauri::command]
+fn commit_message_ai(repo_path: String) -> Result<String, String> {
+    let mut diff = git(&repo_path, &["diff"])?;
+    let staged = git(&repo_path, &["diff", "--cached"])?;
+    diff.push_str(&staged);
+    if diff.trim().is_empty() {
+        return Err("working tree clean — nothing to describe".into());
+    }
+    diff.truncate(60_000);
+    let msg = claude_pipe_stdin(
+        &diff,
+        "Write ONE conventional-commit subject line (max 72 chars) for this diff. \
+         Output only the line — no quotes, no body, no preamble.",
+    )?;
+    let line = msg.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
+    if line.is_empty() {
+        return Err("claude returned no message".into());
+    }
+    Ok(line)
+}
+
 /// Branches a checkpoint may never land on. A checkpoint is a private,
 /// working-branch snapshot — never the shared trunk. Mirrors the /ship and
 /// force-push guards so the whole app agrees on what "protected" means.
@@ -1721,6 +1889,9 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     // the /ship slash command the review-approve flow injects must actually
     // exist in the member repo — install it alongside the hooks
     install_ship_command(&PathBuf::from(&repo_path))?;
+    // multi-agent delegation playbook (DELEGATION.md + CLAUDE.md import) —
+    // same per-repo path, so every project and worktree gets it by default
+    install_delegation(&PathBuf::from(&repo_path))?;
     // idempotent: rewriting identical content still bumps mtime and can
     // trigger watcher/vite reload storms — skip when unchanged
     if std::fs::read_to_string(&path).map(|cur| cur == next).unwrap_or(false) {
@@ -1800,6 +1971,135 @@ fn install_ship_command(repo_path: &Path) -> Result<ShipInstall, String> {
     Ok(ShipInstall::Installed)
 }
 
+// ---------------------------------------------------------------------------
+// Multi-agent delegation playbook: DELEGATION.md at the repo root teaches the
+// Claude Code session when to shell out to Codex / Cursor as subprocess tools
+// and when to handle work itself. Claude Code auto-loads it through an
+// @DELEGATION.md import appended to CLAUDE.md. Installed idempotently per
+// member repo alongside the hooks and /ship — every project and spawned
+// worktree gets it, Solo or Team. A user who edits the file and removes the
+// grillme marker owns it from then on; a template at
+// ~/.grillme/delegation.md overrides the built-in default for new installs.
+// ---------------------------------------------------------------------------
+
+const DELEGATION_MARKER: &str = "<!-- grillme:delegation-playbook -->";
+const DELEGATION_IMPORT: &str = "@DELEGATION.md";
+
+const DELEGATION_MD: &str = r#"<!-- grillme:delegation-playbook -->
+# Agent Delegation Playbook
+
+You (Claude Code) are the primary agent in this session. Codex CLI and Cursor
+CLI are available as subprocess tools you may delegate sub-tasks to. Run them
+like any shell command, read their stdout as the result, then verify and
+continue.
+
+## PRIORITY: conserve Codex/Cursor credits
+
+This user has far fewer credits on Codex and Cursor than on Claude Code.
+Delegate ONLY on a clear, strong fit. Borderline or could-go-either-way
+tasks: handle them yourself. This priority overrides everything below and
+should survive any future edits to this file.
+
+## Before any delegation
+
+1. Check the CLI is actually available — never assume:
+   - Codex: `command -v codex` (auth: `codex login status` exits 0 when logged in)
+   - Cursor: `command -v cursor-agent || command -v agent` (auth: `cursor-agent status`)
+2. If unavailable or not logged in, handle the task yourself. Do not retry.
+3. Delegate one sub-task at a time; wait for it, verify, then continue.
+
+## Delegate to Codex — ONLY these strong fits
+
+- Large mechanical refactors: rename/restructure across many files where
+  tests or a typecheck verify the result.
+- Genuine bulk repetitive work: dozens of similar small fixes (lint sweeps,
+  API-migration call sites).
+- Test-suite generation for existing, well-specified code.
+
+```bash
+timeout 600 codex exec "<task, precise and self-contained>" \
+  --cd "$PWD" -s workspace-write < /dev/null
+```
+
+- `< /dev/null` is MANDATORY — codex exec hangs forever on a pipe stdin.
+- Sandbox stays `workspace-write` (not full bypass) — a delegated subprocess
+  gets no more power than it needs.
+- stdout is the final answer; progress streams on stderr; non-zero exit =
+  failure. Always wrap in `timeout`.
+
+## Delegate to Cursor — ONLY these strong fits
+
+- Real speed-critical UI iteration: many quick visual passes over one
+  component where a fast loop genuinely beats doing it yourself.
+- A truly isolated small edit you can specify in one sentence and verify at
+  a glance.
+
+```bash
+# writes require --force; without it cursor "succeeds" but changes nothing
+timeout 300 cursor-agent -p "<task>" --force --output-format text
+```
+
+Read-only codebase Q&A via cursor is possible (`-p` without `--force`) but
+spends Cursor credits — prefer your own Grep/Read tools instead.
+
+## Handle directly (never delegate)
+
+- Architecture, cross-cutting design, root-cause debugging.
+- Anything security-sensitive: auth, secrets, permissions, payments.
+- Anything spanning multiple subsystems where first-pass correctness matters.
+- All verification: after ANY delegation, review the diff (`git diff`) and
+  run the project's tests yourself before continuing. Delegated output is
+  never trusted unreviewed.
+- Anything when the needed CLI is missing, not logged in, or the task is
+  borderline — see PRIORITY above.
+
+---
+*Managed by Grill Me. To customize per-project: edit this file and DELETE the
+grillme marker comment at the top — Grill Me will never touch it again. A
+template at `~/.grillme/delegation.md` (keeping the marker) overrides the
+default for all projects.*
+"#;
+
+/// Idempotently install DELEGATION.md at the repo root and ensure CLAUDE.md
+/// imports it. Same contract as install_ship_command: content-compared (no
+/// mtime churn), marker-guarded (a user-edited, marker-less DELEGATION.md is
+/// never touched), and ~/.grillme/delegation.md overrides the built-in
+/// template when present.
+fn install_delegation(repo_path: &Path) -> Result<ShipInstall, String> {
+    let template = std::fs::read_to_string(grillme_dir().join("delegation.md"))
+        .ok()
+        .filter(|s| s.contains(DELEGATION_MARKER))
+        .unwrap_or_else(|| DELEGATION_MD.to_string());
+    let path = repo_path.join("DELEGATION.md");
+    let wrote = match std::fs::read_to_string(&path) {
+        Ok(cur) if cur == template => ShipInstall::Unchanged,
+        Ok(cur) if !cur.contains(DELEGATION_MARKER) => ShipInstall::SkippedUserFile,
+        _ => {
+            std::fs::write(&path, &template).map_err(|e| e.to_string())?;
+            ShipInstall::Installed
+        }
+    };
+    // wire the auto-load: CLAUDE.md must import the playbook. Appended once;
+    // a repo without CLAUDE.md gets a minimal one.
+    let claude_md = repo_path.join("CLAUDE.md");
+    match std::fs::read_to_string(&claude_md) {
+        Ok(cur) if cur.contains(DELEGATION_IMPORT) => {}
+        Ok(cur) => {
+            let sep = if cur.ends_with('\n') { "" } else { "\n" };
+            std::fs::write(
+                &claude_md,
+                format!("{cur}{sep}\n{DELEGATION_IMPORT}\n"),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Err(_) => {
+            std::fs::write(&claude_md, format!("{DELEGATION_IMPORT}\n"))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(wrote)
+}
+
 #[tauri::command]
 fn events_tail() -> Vec<String> {
     let path = grillme_dir().join("events.jsonl");
@@ -1826,6 +2126,94 @@ fn git_diff_file(repo_path: String, file: String) -> Result<String, String> {
     } else {
         Ok(diff)
     }
+}
+
+// ---------------------------------------------------------------------------
+// File explorer + inline editor (Monocode-style right panel). Every path is
+// resolved against a configured member's repo root and canonicalized before
+// any read/write, so the panel can never escape a workspace via `..` or
+// symlink tricks.
+// ---------------------------------------------------------------------------
+
+/// Canonicalize `root` and verify it is one of the configured worktrees
+/// (a teammate repo_path), then join + canonicalize `rel` and verify the
+/// result is still inside the root. Returns the safe absolute path.
+fn resolve_workspace_path(root: &str, rel: &str) -> Result<PathBuf, String> {
+    let cfg = team_config();
+    let canon_root = std::fs::canonicalize(root).map_err(|e| format!("bad root: {e}"))?;
+    let allowed = cfg.teammates.iter().any(|m| {
+        std::fs::canonicalize(&m.repo_path)
+            .map(|p| p == canon_root)
+            .unwrap_or(false)
+    });
+    if !allowed {
+        return Err("root is not a configured workspace".into());
+    }
+    if rel.is_empty() || rel == "." {
+        return Ok(canon_root);
+    }
+    let joined = canon_root.join(rel);
+    // canonicalize the nearest existing ancestor for new files (writes)
+    let canon = std::fs::canonicalize(&joined).or_else(|_| {
+        joined
+            .parent()
+            .and_then(|p| std::fs::canonicalize(p).ok())
+            .map(|p| p.join(joined.file_name().unwrap_or_default()))
+            .ok_or_else(|| "path does not exist".to_string())
+    })?;
+    if !canon.starts_with(&canon_root) {
+        return Err("path escapes the workspace".into());
+    }
+    Ok(canon)
+}
+
+#[derive(Serialize)]
+pub struct FsEntry {
+    pub name: String,
+    pub dir: bool,
+}
+
+/// List one directory level of a workspace (lazy tree). Dirs first, then
+/// files, both alphabetical; .git and node_modules stay hidden.
+#[tauri::command]
+fn fs_list_dir(root: String, rel: String) -> Result<Vec<FsEntry>, String> {
+    let path = resolve_workspace_path(&root, &rel)?;
+    let mut entries: Vec<FsEntry> = std::fs::read_dir(&path)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name == ".git" || name == "node_modules" || name == ".DS_Store" {
+                return None;
+            }
+            let dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            Some(FsEntry { name, dir })
+        })
+        .collect();
+    entries.sort_by(|a, b| b.dir.cmp(&a.dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Ok(entries)
+}
+
+const FS_READ_CAP: u64 = 400_000;
+
+/// Read a workspace file for the inline viewer/editor. Binary or oversized
+/// files come back as an honest error, not garbage in a textarea.
+#[tauri::command]
+fn fs_read_file(root: String, rel: String) -> Result<String, String> {
+    let path = resolve_workspace_path(&root, &rel)?;
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > FS_READ_CAP {
+        return Err(format!("file too large for the inline editor ({} KB)", meta.len() / 1024));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    String::from_utf8(bytes).map_err(|_| "binary file".to_string())
+}
+
+/// Save the inline editor's buffer back to disk (whole-file write).
+#[tauri::command]
+fn fs_write_file(root: String, rel: String, content: String) -> Result<(), String> {
+    let path = resolve_workspace_path(&root, &rel)?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 /// One-shot claude -p over the working diff — returns a drafted PR body.
@@ -2903,9 +3291,10 @@ fn start_api_server(app: tauri::AppHandle) {
                         permission: Some("edit".into()),
                         remote: None,
                         tmux_session: None,
+                        agent: None,
                     });
                     let _ = team_config_write(cfg);
-                    match pty_ensure_inner(app.clone(), id, path_new, false, None, None) {
+                    match pty_ensure_inner(app.clone(), id, path_new, false, None, None, None) {
                         Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
                         Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
                     }
@@ -2933,6 +3322,22 @@ fn pty_kill(id: String) -> Result<(), String> {
         let _ = sess.child.wait();
     }
     Ok(())
+}
+
+/// Kill EVERY live pty child (each `claude` process) and reap it. Called on
+/// app exit so quitting the app never orphans its spawned sessions — without
+/// this, every quit/relaunch left its `claude` processes running (reparented
+/// to launchd), and they piled up across rebuilds until the machine crawled.
+/// Idempotent: drains the map, so a second call is a no-op.
+fn kill_all_ptys() {
+    let sessions: Vec<PtySession> = {
+        let mut map = lock_or_recover(ptys());
+        map.drain().map(|(_, s)| s).collect()
+    };
+    for mut sess in sessions {
+        let _ = sess.child.kill();
+        let _ = sess.child.wait(); // reap so no zombie lingers
+    }
 }
 
 #[derive(Serialize)]
@@ -3858,8 +4263,29 @@ fn suggest_assignee(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .on_window_event(|_window, event| {
+            // Closing the window (red button / ⌘W on the last window) must reap
+            // the pty children too — not just ⌘Q — so no `claude` is orphaned.
+            if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
+                kill_all_ptys();
+            }
+        })
         .setup(|app| {
             start_api_server(app.handle().clone());
+            // Monocode-style glass: native macOS under-window vibrancy so the
+            // desktop blurs through the (transparent) webview background.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window_vibrancy::apply_vibrancy(
+                        &window,
+                        window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+                        None,
+                        Some(12.0),
+                    );
+                }
+            }
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -3874,6 +4300,8 @@ pub fn run() {
             start_watching,
             watch_state,
             preflight_claude,
+            preflight_agent,
+            detect_agents,
             pty_ensure,
             pty_write,
             pty_resize,
@@ -3887,6 +4315,8 @@ pub fn run() {
             standup_append,
             standup_tail,
             git_commit_push,
+            git_commit_only,
+            commit_message_ai,
             checkpoint_commit,
             git_revert_file,
             usage_stats,
@@ -3916,6 +4346,9 @@ pub fn run() {
             events_tail,
             worktree_add,
             git_diff_file,
+            fs_list_dir,
+            fs_read_file,
+            fs_write_file,
             pr_draft,
             generate_standup,
             generate_release_notes,
@@ -3932,8 +4365,15 @@ pub fn run() {
             room::room_make_plan,
             room::room_make_tasks
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // Final backstop: whatever path quits the app (⌘Q, exit, crash of
+            // the event loop), reap all pty children before the process dies.
+            if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+                kill_all_ptys();
+            }
+        });
 }
 
 #[cfg(test)]
@@ -4059,6 +4499,7 @@ mod tests {
             permission: permission.map(|p| p.into()),
             remote: None,
             tmux_session: None,
+            agent: None,
         }
     }
 
@@ -4210,6 +4651,71 @@ mod safety_tests {
     fn denies_when_blocklist_is_corrupt() {
         assert!(hook_denies("not valid json [", "ls -la"));
         assert!(hook_denies("{\"not\": \"a list\"}", "ls -la"));
+    }
+}
+
+#[cfg(test)]
+mod delegation_tests {
+    use super::{install_delegation, ShipInstall, DELEGATION_IMPORT, DELEGATION_MARKER, DELEGATION_MD};
+    use std::path::PathBuf;
+
+    fn tmp_repo(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "grillme-delegation-test-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn installs_playbook_and_wires_claude_md_import() {
+        let repo = tmp_repo("install");
+        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::Installed);
+        let body = std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap();
+        assert!(body.contains(DELEGATION_MARKER));
+        // the playbook must carry the operational rules that make delegation safe
+        assert!(body.contains("codex exec") && body.contains("< /dev/null"));
+        assert!(body.contains("cursor-agent -p") && body.contains("--force"));
+        assert!(body.contains("workspace-write"));
+        // ...and the credit-conservation priority that survives future edits
+        assert!(body.contains("conserve Codex/Cursor credits"));
+        let claude = std::fs::read_to_string(repo.join("CLAUDE.md")).unwrap();
+        assert!(claude.contains(DELEGATION_IMPORT), "CLAUDE.md must import the playbook");
+    }
+
+    #[test]
+    fn append_to_existing_claude_md_once() {
+        let repo = tmp_repo("append");
+        std::fs::write(repo.join("CLAUDE.md"), "# my project rules\n").unwrap();
+        install_delegation(&repo).unwrap();
+        install_delegation(&repo).unwrap(); // second run must not duplicate
+        let claude = std::fs::read_to_string(repo.join("CLAUDE.md")).unwrap();
+        assert!(claude.starts_with("# my project rules"), "existing content preserved");
+        assert_eq!(
+            claude.matches(DELEGATION_IMPORT).count(),
+            1,
+            "import appended exactly once"
+        );
+    }
+
+    #[test]
+    fn preserves_user_authored_playbook() {
+        let repo = tmp_repo("userfile");
+        let user = "My own delegation rules — always use codex.\n";
+        std::fs::write(repo.join("DELEGATION.md"), user).unwrap();
+        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::SkippedUserFile);
+        assert_eq!(std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap(), user);
+    }
+
+    #[test]
+    fn upgrades_stale_managed_playbook() {
+        let repo = tmp_repo("upgrade");
+        std::fs::write(repo.join("DELEGATION.md"), format!("{DELEGATION_MARKER}\nold rules\n")).unwrap();
+        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::Installed);
+        assert_eq!(std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap(), DELEGATION_MD);
     }
 }
 

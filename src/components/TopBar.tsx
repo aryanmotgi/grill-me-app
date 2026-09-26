@@ -98,7 +98,7 @@ export function TopBar() {
   const mergerName = teammates.find((t) => t.id === mergeQueue[0])?.name ?? mergeQueue[0] ?? "—";
 
   return (
-    <header className="flex items-center gap-3 px-4 h-11 border-b border-line bg-panel flex-none">
+    <header data-tauri-drag-region className="titlebar-pad flex items-center gap-3 px-4 h-11 border-b border-line bg-panel flex-none">
       {/* identity + project */}
       <div className="flex items-baseline gap-2">
         <button className="font-display font-bold text-[15px] tracking-[0.08em] text-accent cursor-pointer hover:brightness-110"

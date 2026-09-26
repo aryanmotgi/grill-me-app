@@ -136,7 +136,36 @@ export const synthwave: Theme = {
   selection: "#382250",
 };
 
+/** Monocode look — neutral graphite grays, macOS-style blue accent, no
+ *  amber anywhere. Matches the Monocode screenshot: quiet panels, hairline
+ *  borders, blue as the only brand color. */
+export const monocode: Theme = {
+  name: "monocode",
+  bg: "#16171a",
+  panel: "#1c1d21",
+  raised: "#26282d",
+  overlay: "#202226",
+  line: "#2e3036",
+  lineglow: "#4a4d55",
+  ink: "#e8e9eb",
+  dim: "#a0a3a9",
+  faint: "#7c8087",
+  accent: "#4c8dff",
+  accentInk: "#0a1526",
+  data: "#79b8ff",
+  ok: "#34c759",
+  warn: "#ff9f0a",
+  danger: "#ff453a",
+  idle: "#5c6067",
+  termBg: "#131417",
+  termInk: "#d6d8dc",
+  termClaude: "#82aaff",
+  termCmd: "#c3c7cd",
+  selection: "#2c3e5d",
+};
+
 export const themes: Record<string, Theme> = {
+  monocode,
   ember,
   paperwhite,
   "cyan-noir": cyanNoir,

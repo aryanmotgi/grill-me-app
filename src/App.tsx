@@ -1,11 +1,16 @@
 import { useEffect } from "react";
-import { useApp } from "./store";
+import { useApp, ptyIdFor } from "./store";
 import { applyTheme, themes } from "./theme/themes";
-import { TopBar } from "./components/TopBar";
-import { SessionList } from "./components/SessionList";
+import { NavRail } from "./components/NavRail";
+import { WorkspacePanel } from "./components/WorkspacePanel";
+import { EditorPane } from "./components/EditorPane";
 import { SessionPane } from "./components/SessionPane";
+import { SessionTabs } from "./components/SessionTabs";
 import { XtermPane } from "./components/XtermPane";
-import { RightRail } from "./components/RightRail";
+import { TaskBoard } from "./components/TaskBoard";
+import { Inbox } from "./components/Inbox";
+import { ActivityTimeline } from "./components/ActivityTimeline";
+import { PreviewPane, TeamPanel } from "./components/TeamPanel";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { ConflictBanner, Toasts } from "./components/Chrome";
@@ -39,7 +44,6 @@ import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
-import type { RailTab } from "./store";
 
 /** Overlays that own the screen — bare-key session nav is suspended while any
  *  is open so a "?" or "j" behind a modal can't move the list underneath. */
@@ -79,12 +83,20 @@ export default function App() {
     setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen,
     dense, mergePilotOpen, setMergePilotOpen, members, setActive,
     panelSizes, setPanelSize, view, setView, appMode, teamFlowNeeded,
-    cinemaOpen, toggleCinema, setCinemaOpen,
+    cinemaOpen, toggleCinema, setCinemaOpen, bottomTermOpen, toggleBottomTerm,
   } = useApp();
 
   useEffect(() => {
-    applyTheme(themes[themeName] ?? themes.ember);
+    applyTheme(themes[themeName] ?? themes.monocode);
   }, [themeName]);
+
+  // native macOS window has under-window vibrancy (lib.rs setup) — flag it so
+  // the monocode theme can go translucent. Browser dev stays opaque/readable.
+  useEffect(() => {
+    if ("__TAURI_INTERNALS__" in window && navigator.platform.startsWith("Mac")) {
+      document.documentElement.classList.add("vibrant");
+    }
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -115,12 +127,23 @@ export default function App() {
         e.preventDefault();
         toggleFocus();
       }
+      // ⌘` toggles the bottom terminal panel (VS Code muscle memory)
+      if (mod && e.key === "`") {
+        e.preventDefault();
+        useApp.getState().toggleBottomTerm();
+      }
       if (mod && e.key >= "1" && e.key <= "5") {
-        // solo strips inbox/team tabs — ⌘1-N follows the visible order
-        const tab = visibleRailTabs(useApp.getState().appMode)[Number(e.key) - 1];
-        if (tab) {
+        // ⌘1-N jump between center views (solo strips inbox/team)
+        const mode = useApp.getState().appMode;
+        const views = (["tasks", "inbox", "feed", "team", "preview"] as const).filter(
+          (v) =>
+            (v !== "inbox" || visibleRailTabs(mode).includes("inbox")) &&
+            (v !== "team" || visibleRailTabs(mode).includes("team")),
+        );
+        const v = views[Number(e.key) - 1];
+        if (v) {
           e.preventDefault();
-          setRailTab(tab as RailTab);
+          setView(v);
         }
       }
 
@@ -249,24 +272,28 @@ export default function App() {
 
   return (
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
-      <TopBar />
       <ConflictBanner />
       <div className="flex-1 min-h-0 flex">
-        {/* attention rail — one tick per session needing input */}
-        <div className="w-[22px] flex-none bg-bg border-r border-line flex flex-col items-center gap-2 pt-3 demo-hide">
-          {teammates.filter((t) => t.status === "needs-input").map((t) => (
-            <button key={t.id} className="status-dot needs-input cursor-pointer" title={`${t.name} needs input`}
-              onClick={() => setActive(t.id)} />
-          ))}
-        </div>
-        {focusMode ? null : <SessionList />}
+        {focusMode ? null : <NavRail />}
+        {focusMode ? null : <WorkspacePanel />}
         {focusMode ? null : (
           <DragHandle onDrag={(dx) => setPanelSize("left", Math.min(480, Math.max(180, panelSizes.left + dx)))}
             onDone={() => setPanelSize("left", panelSizes.left, true)} />
         )}
         <main className="flex-1 min-w-0 flex flex-col">
+          {focusMode ? null : <SessionTabs />}
           {view === "home" ? (
             <HomeDashboard />
+          ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" || view === "preview" ? (
+            // team surfaces as full center screens (Monocode-style): the nav
+            // rail toggles them; Esc/clicking a session tab returns to it
+            <div className="flex-1 min-h-0 flex flex-col max-w-[860px] w-full mx-auto border-x border-line bg-panel">
+              {view === "tasks" ? <TaskBoard /> : null}
+              {view === "inbox" ? <Inbox /> : null}
+              {view === "feed" ? <ActivityTimeline /> : null}
+              {view === "team" ? <TeamPanel /> : null}
+              {view === "preview" ? <PreviewPane /> : null}
+            </div>
           ) : (
           <>
           <GlobalSearch />
@@ -288,6 +315,26 @@ export default function App() {
           </div>
           </>
           )}
+          {/* Monocode-style bottom terminal: a plain shell in the ACTIVE
+              session's worktree (own pty id — never fights the SessionPane
+              shell tab over a stream). ⌘` or the header button toggles it. */}
+          {bottomTermOpen && active && members.some((m) => m.id === active.id) ? (
+            <div className="h-[30%] flex-none border-t border-line flex flex-col">
+              <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
+                <span className="panel-label">terminal — {members.find((m) => m.id === active.id)?.repoPath}</span>
+                <span className="flex-1" />
+                <button className="btn" onClick={toggleBottomTerm}>close (⌘`)</button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <XtermPane
+                  id={`${ptyIdFor(active.id)}:termpanel`}
+                  cwd={members.find((m) => m.id === active.id)?.repoPath ?? "."}
+                  themeName={themeName}
+                  shell
+                />
+              </div>
+            </div>
+          ) : null}
           {mergePilotOpen && members[0] ? (
             <div className="h-[38%] flex-none border-t border-line flex flex-col">
               <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
@@ -303,10 +350,10 @@ export default function App() {
           ) : null}
         </main>
         {focusMode ? null : (
-          <DragHandle onDrag={(dx) => setPanelSize("right", Math.min(560, Math.max(240, panelSizes.right - dx)))}
+          <DragHandle onDrag={(dx) => setPanelSize("right", Math.min(680, Math.max(240, panelSizes.right - dx)))}
             onDone={() => setPanelSize("right", panelSizes.right, true)} />
         )}
-        {focusMode ? null : <RightRail />}
+        {focusMode ? null : <EditorPane />}
       </div>
       <QuickSwitcher />
       <SettingsModal />

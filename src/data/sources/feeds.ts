@@ -31,7 +31,8 @@ interface FeedStore {
   members: TeamMemberConfig[];
   appSettings: Record<string, unknown>;
   activeId: string;
-  view: "home" | "session";
+  /** center view — feeds only care whether it's "session" */
+  view: string;
   toast: (text: string, kind?: "info" | "warn") => void;
   tasks: import("../../types").Task[];
   sponsorChecklist: { sponsor: string; requirement: string; done: boolean }[];
@@ -356,28 +357,31 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   const { invoke } = await import("@tauri-apps/api/core");
 
   const ensureAll = async () => {
-    // preflight once before any claude spawn: a missing CLI would otherwise
+    // preflight once before any agent spawn: a missing CLI would otherwise
     // die instantly and put self-healing into a spawn/die/respawn loop
-    let claudeOk = true;
-    try {
-      await invoke("preflight_claude");
-    } catch {
-      claudeOk = false;
-    }
-    store.getState().setClaudeMissing(!claudeOk);
-    // lazy spawn: only YOUR session starts eagerly — teammates' claude
-    // processes spawn on first view of their pane (calmer start, less churn)
     const members = store.getState().members;
     const me = members[0];
-    // remote/tmux sessions attach over ssh — they don't need a local claude
-    if (me && (claudeOk || me.remote)) {
+    let agentOk = true;
+    try {
+      await invoke("preflight_agent", { agent: me?.agent ?? null });
+    } catch {
+      agentOk = false;
+    }
+    store.getState().setClaudeMissing(!agentOk);
+    // lazy spawn: only YOUR session starts eagerly — teammates' agent
+    // processes spawn on first view of their pane (calmer start, less churn)
+    // remote/tmux sessions attach over ssh — they don't need a local CLI
+    if (me && (agentOk || me.remote)) {
       await invoke("pty_ensure", {
         id: ptyIdFor(me.id), cwd: me.repoPath, shell: false,
         remote: me.remote ?? null, tmux: me.tmuxSession ?? null,
+        agent: me.agent ?? null,
       }).catch(() => {});
     }
     for (const m of members) {
-      // hooks install is cheap and spawn-independent
+      // hooks are a Claude Code mechanism (.claude/settings.json) — skip for
+      // cursor/codex sessions; their status falls back to OSC/bell + quiet-time
+      if (m.agent && m.agent !== "claude") continue;
       await invoke("install_hooks", { repoPath: m.repoPath, memberId: m.id }).catch(() => {});
     }
   };
@@ -454,6 +458,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
             invoke("pty_ensure", {
               id: st.id, cwd: member.repoPath, shell: false,
               remote: member.remote ?? null, tmux: member.tmuxSession ?? null,
+              agent: member.agent ?? null,
             }).catch(() => {});
           } else {
             stg.toast(`${member.name}'s session keeps crashing — auto-restart paused, restart manually`, "warn");

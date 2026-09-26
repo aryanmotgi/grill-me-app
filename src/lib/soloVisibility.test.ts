@@ -45,16 +45,16 @@ describe("surfaceVisible", () => {
 });
 
 describe("visibleRailTabs", () => {
-  it("team mode keeps the full ⌘1-5 order", () => {
-    expect(visibleRailTabs("team")).toEqual(["tasks", "inbox", "activity", "team", "preview"]);
+  it("team mode keeps the full ⌘1-N order (files first)", () => {
+    expect(visibleRailTabs("team")).toEqual(["files", "tasks", "inbox", "activity", "team", "preview"]);
   });
 
   it("null mode keeps the full order too", () => {
-    expect(visibleRailTabs(null)).toEqual(["tasks", "inbox", "activity", "team", "preview"]);
+    expect(visibleRailTabs(null)).toEqual(["files", "tasks", "inbox", "activity", "team", "preview"]);
   });
 
-  it("solo drops inbox and team, remapping ⌘1-3 to tasks/activity/preview", () => {
-    expect(visibleRailTabs("solo")).toEqual(["tasks", "activity", "preview"]);
+  it("solo drops inbox and team, remapping ⌘1-4 to files/tasks/activity/preview", () => {
+    expect(visibleRailTabs("solo")).toEqual(["files", "tasks", "activity", "preview"]);
   });
 
   it("stays consistent with surfaceVisible — a hidden tab never appears", () => {

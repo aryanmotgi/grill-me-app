@@ -20,8 +20,8 @@ import type {
 import { dedupeDecisions, makeDecision } from "./lib/decisions";
 import { roomTasksToAppTasks, taskBrief } from "./components/teamflow/logic";
 import { startGitFeed, startWatchFeed, startPtyFeed, startSharedFeed, startUsageFeed, startRoomFeed, type CiRun, type WatchState } from "./data/sources/feeds";
-import type { ConflictPair, TeamMemberConfig } from "./data/sources/git";
-import { isTauri } from "./data/sources/git";
+import type { AgentAvailability, AgentId, ConflictPair, TeamMemberConfig } from "./data/sources/git";
+import { detectAgents, isTauri } from "./data/sources/git";
 import { needsAttention } from "./lib/attention";
 import { tokenBudget, DEFAULT_TOKEN_BUDGET } from "./lib/dashboard";
 import { budgetAlertOnCross, budgetLevel, type BudgetLevel } from "./lib/ratelimit";
@@ -33,7 +33,20 @@ import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type P
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 import type { AppMode } from "./lib/soloVisibility";
 
-export type RailTab = "tasks" | "inbox" | "activity" | "team" | "preview";
+export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "preview";
+
+/** What fills the center stage: the session terminal, the home dashboard, or
+ *  one of the team surfaces opened from the nav rail (Monocode-style — team
+ *  panels are full center views now, not a right-rail sidebar). */
+export type MainView = "home" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
+
+/** One registered project workspace (projects.json via projects_list). */
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  path: string;
+  color?: string;
+}
 
 interface AppState {
   teammates: Teammate[];
@@ -116,8 +129,17 @@ interface AppState {
   setConflicts: (pairs: ConflictPair[]) => void;
 
   /** "home" = mission control overview; "session" = terminal workspace */
-  view: "home" | "session";
-  setView: (v: "home" | "session") => void;
+  view: MainView;
+  setView: (v: MainView) => void;
+  /** Files open in the right editor pane (repo-relative paths, tab order). */
+  openFiles: string[];
+  /** The editor tab currently showing. */
+  activeFile: string | null;
+  openFile: (rel: string, opts?: { diff?: boolean }) => void;
+  closeFile: (rel: string) => void;
+  /** Set when a file was opened via a "Review"/diff action — the editor pane
+   *  consumes it and lands on the diff view instead of the file body. */
+  diffRequest: string | null;
   featureIndexOpen: boolean;
   /** Keyboard cheatsheet overlay (opened with "?"). Toggled via setState. */
   cheatsheetOpen: boolean;
@@ -158,8 +180,15 @@ interface AppState {
   settingsTab: string | null;
   setSettingsOpen: (open: boolean, tab?: string) => void;
   activeProject: string | null;
+  /** All registered projects — the layout sidebar nests sessions under the
+   *  active one and lists the rest for one-click switching. */
+  projects: ProjectInfo[];
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
+  /** Monocode-style bottom terminal panel (plain shell in the active
+   *  member's worktree). Toggled with ⌘` or the pane header button. */
+  bottomTermOpen: boolean;
+  toggleBottomTerm: () => void;
   /** Panel widths/ratios, persisted. */
   panelSizes: { left: number; right: number; split: number };
   setPanelSize: (key: "left" | "right" | "split", value: number, persist?: boolean) => void;
@@ -181,7 +210,10 @@ interface AppState {
   /** Write a snippet body verbatim (no newline) into the active session's pty
    *  so the user can edit before sending. Resolves true on a successful write. */
   insertSnippet: (body: string) => Promise<boolean>;
-  spawnSession: (id: string, name: string, branch: string) => Promise<void>;
+  spawnSession: (id: string, name: string, branch: string, agent?: AgentId) => Promise<void>;
+  /** Agent CLIs detected on this machine (detect_agents). Session-create UIs
+   *  only offer entries where installed && authed. */
+  availableAgents: AgentAvailability[];
   /** "New session from template" overlay (panel-session-templates). */
   sessionTemplatesOpen: boolean;
   /** Spawn a session on `branch` (reusing spawnSession), then brief the
@@ -270,13 +302,13 @@ export const useApp = create<AppState>((set, get) => ({
 
   activeId: "aryan",
   splitId: null,
-  railTab: "tasks",
+  railTab: "files",
   focusMode: false,
   demoMode: false,
   cinemaOpen: false,
   switcherOpen: false,
   searchQuery: "",
-  themeName: "ember",
+  themeName: "monocode",
   toasts: [],
 
   setActive: (id) => set({ activeId: id, switcherOpen: false, view: "session", navSelId: null }),
@@ -608,6 +640,23 @@ export const useApp = create<AppState>((set, get) => ({
   ciRuns: [],
   view: "home",
   setView: (view) => set({ view }),
+  openFiles: [],
+  activeFile: null,
+  diffRequest: null,
+  openFile: (rel, opts) =>
+    set((s) => ({
+      openFiles: s.openFiles.includes(rel) ? s.openFiles : [...s.openFiles, rel],
+      activeFile: rel,
+      diffRequest: opts?.diff ? rel : null,
+    })),
+  closeFile: (rel) =>
+    set((s) => {
+      const openFiles = s.openFiles.filter((f) => f !== rel);
+      return {
+        openFiles,
+        activeFile: s.activeFile === rel ? openFiles[openFiles.length - 1] ?? null : s.activeFile,
+      };
+    }),
   featureIndexOpen: false,
   cheatsheetOpen: false,
   navSelId: null,
@@ -631,7 +680,10 @@ export const useApp = create<AppState>((set, get) => ({
   settingsTab: null,
   setSettingsOpen: (settingsOpen, tab) => set({ settingsOpen, settingsTab: settingsOpen ? tab ?? null : null }),
   activeProject: null,
+  projects: [],
   pickerOpen: false,
+  bottomTermOpen: false,
+  toggleBottomTerm: () => set({ bottomTermOpen: !get().bottomTermOpen }),
   setPickerOpen: (pickerOpen) => set({ pickerOpen }),
   panelSizes: { left: 276, right: 338, split: 0.5 },
   setPanelSize: (key, value, persist) => {
@@ -705,7 +757,7 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  spawnSession: async (id, name, branch) => {
+  spawnSession: async (id, name, branch, agent) => {
     if (!isTauri()) return;
     const base = get().members[0];
     if (!base) return;
@@ -713,17 +765,20 @@ export const useApp = create<AppState>((set, get) => ({
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("worktree_add", { baseRepo: base.repoPath, branch, path });
-      const members = [...get().members, { id, name, repoPath: path, permission: "edit" }];
+      const member: TeamMemberConfig = { id, name, repoPath: path, permission: "edit" };
+      if (agent && agent !== "claude") member.agent = agent;
+      const members = [...get().members, member];
       await invoke("team_config_write", { cfg: { teammates: members } });
       get().applyTeamConfig(members);
       // pty ids are project-namespaced — a bare id here would orphan the
-      // claude process in any non-default project (feeds poll ptyIdFor ids)
-      await invoke("pty_ensure", { id: ptyIdFor(id), cwd: path, shell: false });
-      get().toast(`Spawned ${name} on ${branch} at ${path}`);
+      // agent process in any non-default project (feeds poll ptyIdFor ids)
+      await invoke("pty_ensure", { id: ptyIdFor(id), cwd: path, shell: false, agent: agent ?? null });
+      get().toast(`Spawned ${name} (${agent ?? "claude"}) on ${branch} at ${path}`);
     } catch (e) {
       get().toast(`Spawn failed: ${e}`, "warn");
     }
   },
+  availableAgents: [],
   sessionTemplatesOpen: false,
   spawnFromTemplate: async (id, name, branch, startingPrompt) => {
     if (!isTauri()) { get().toast("Session templates need the native app to spawn sessions", "warn"); return; }
@@ -775,7 +830,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   highlightFiles: [],
   flashFiles: (files) => {
-    set({ highlightFiles: files, railTab: "tasks" });
+    set({ highlightFiles: files, railTab: "tasks", view: "tasks" });
     setTimeout(() => set({ highlightFiles: [] }), 2600);
   },
 
@@ -997,10 +1052,12 @@ let firedBudgetLevel: BudgetLevel = 0;
   if (!project) return; // ProjectPicker shows; feeds start after selection reload
   await invoke("set_active_project", { id: project }).catch(() => {});
   useApp.setState({ activeProject: project });
-  // per-project accent tint — always know which workspace you're in
+  // per-project accent tint — always know which workspace you're in.
+  // The list also feeds the layout sidebar (projects with nested sessions).
   try {
-    const projects = JSON.parse(await invoke<string>("projects_list"));
-    const color = projects.find((x: { id: string }) => x.id === project)?.color;
+    const projects: ProjectInfo[] = JSON.parse(await invoke<string>("projects_list"));
+    useApp.setState({ projects });
+    const color = projects.find((x) => x.id === project)?.color;
     if (color) {
       setTimeout(() => document.documentElement.style.setProperty("--accent", color), 300);
     }
@@ -1059,6 +1116,12 @@ useApp.subscribe((st, prev) => {
   startPtyFeed(useApp);
   startSharedFeed(useApp);
   startUsageFeed(useApp);
+  // one-shot probe: which agent CLIs are installed + logged in on this machine
+  if (isTauri()) {
+    detectAgents()
+      .then((agents) => useApp.setState({ availableAgents: agents }))
+      .catch(() => {});
+  }
 })();
 
 /** Pty ids are namespaced per project so sessions survive project switches. */

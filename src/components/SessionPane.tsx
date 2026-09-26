@@ -9,6 +9,7 @@ async function shipRaw(memberId: string, data: string) {
 import type { Teammate } from "../types";
 import { isHelpPending } from "../lib/help";
 import { XtermPane } from "./XtermPane";
+import { Composer } from "./Composer";
 import { useApp as useVitals } from "../store";
 import { fmtFullTime, fmtMem, fmtTokens } from "../lib/format";
 
@@ -369,6 +370,7 @@ export function SessionPane({ mate }: { mate: Teammate }) {
                 shell={tab === "shell"}
               />
             </div>
+            {tab === "terminal" ? <Composer mateId={mate.id} /> : null}
             <VitalsStrip mateId={mate.id} />
           </div>
         ) : (
