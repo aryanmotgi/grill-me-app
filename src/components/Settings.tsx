@@ -31,7 +31,7 @@ const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
 // "no matches here" hint. Row-level filtering below is automatic via context.
 const SEARCH_INDEX: Record<Tab, string[]> = {
   team: ["team", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
-  appearance: ["theme", "color", "density", "compact", "backup", "restore", "export", "import"],
+  appearance: ["theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "backup", "restore", "export", "import"],
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
   notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat", "budget", "token", "rate", "limit", "cap"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
@@ -307,6 +307,9 @@ export function SettingsModal() {
                   </Row>
                   <Row label="Compact density" hint="Tighter spacing — useful with 6+ sessions">
                     <Toggle checked={dense} onChange={() => toggleDense()} />
+                  </Row>
+                  <Row label="Translucent background" hint="Show the desktop through the app (macOS). Turn off if window dragging feels heavy.">
+                    <Toggle checked={appSettings.translucentBg !== false} onChange={(v) => setAppSetting("translucentBg", v)} />
                   </Row>
                   <Row label="Backup & restore" hint="Move your preferences to another machine">
                     <button className="btn" onClick={exportSettings}><Icon name="download" size={10} /> export</button>

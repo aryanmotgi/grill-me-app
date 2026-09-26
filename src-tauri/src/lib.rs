@@ -4272,10 +4272,23 @@ pub fn run() {
         })
         .setup(|app| {
             start_api_server(app.handle().clone());
-            // NOTE: no window vibrancy. An under-window blur behind a
-            // transparent webview forces WindowServer to re-blur the desktop
-            // every frame the window moves — the cause of the window-drag lag.
-            // The monocode theme uses solid opaque panels instead (styles.css).
+            // Monocode-style glass: native macOS under-window vibrancy so the
+            // desktop wallpaper shows through the (transparent) chrome. The
+            // in-app `.vibrant` class (toggled by the Translucent-background
+            // setting, default on) decides whether surfaces are translucent;
+            // when off they go solid and simply cover the transparent window.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window_vibrancy::apply_vibrancy(
+                        &window,
+                        window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+                        None,
+                        None,
+                    );
+                }
+            }
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
