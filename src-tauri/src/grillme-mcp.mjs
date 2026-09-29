@@ -94,6 +94,35 @@ function baseBranch(repo) {
   return "";
 }
 
+/** Branch, commits beyond the base branch, file summary, and full diff. */
+function diffOf(m) {
+  const base = baseBranch(m.repoPath);
+  const branch = git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const range = base && base !== branch ? `${base}...HEAD` : "";
+  return {
+    base, branch,
+    log: range ? git(m.repoPath, ["log", "--oneline", "-20", `${base}..HEAD`]) : git(m.repoPath, ["log", "--oneline", "-20"]),
+    stat: [range && git(m.repoPath, ["diff", "--stat", range]), git(m.repoPath, ["diff", "--stat", "HEAD"])].filter(Boolean).join("\n"),
+    diff: [range && git(m.repoPath, ["diff", range]), git(m.repoPath, ["diff", "HEAD"])].filter(Boolean).join("\n"),
+  };
+}
+
+// ---- past hackathons (lessons carried across projects) ------------------------
+
+const LESSONS = join(ROOT, "lessons.json");
+
+/** Lessons from wrapped-up projects, newest first, skipping `exceptProject`. */
+function lessonsText(exceptProject, n = 6) {
+  const all = readJson(LESSONS, []).filter((l) => l.project !== exceptProject).slice(-n).reverse();
+  return all.map((l) => [
+    `- **${l.name ?? l.project}** (${l.date ? new Date(Number(l.date) * 1000).toISOString().slice(0, 10) : "?"}): ${l.summary ?? ""}`,
+    l.stack?.length ? `  - stack: ${l.stack.join(", ")}` : null,
+    l.worked?.length ? `  - worked: ${l.worked.join("; ")}` : null,
+    l.mistakes?.length ? `  - avoid: ${l.mistakes.join("; ")}` : null,
+    l.reuse?.length ? `  - reuse: ${l.reuse.join("; ")}` : null,
+  ].filter(Boolean).join("\n")).join("\n");
+}
+
 // ---- transcripts ------------------------------------------------------------
 
 function transcriptFile(repo) {
@@ -248,7 +277,12 @@ function catchUp(since, { exclude, full = false } = {}) {
   const dl = deadlineLine(since, full);
   if (dl) out.push(dl);
 
-  const decisions = readJson(join(dir, "decisions.json"), []).filter((d) => full || tsOf(d.epochMs) > since);
+  // team brain: notes are mirrored to teammates as "brain-<noteId>" decisions —
+  // don't show our own notes twice
+  const ownNotes = new Set((b.notes ?? []).map((n) => `brain-${n.id}`));
+  const decisions = readJson(join(dir, "decisions.json"), [])
+    .filter((d) => !ownNotes.has(d.id))
+    .filter((d) => full || tsOf(d.epochMs) > since);
   if (decisions.length) out.push(`**${full ? "Decisions" : "New decisions"}:**\n${decisions.slice(-12).map((d) => `- ${d.text}`).join("\n")}`);
 
   const notes = (b.notes ?? []).filter((n) => full || tsOf(n.ts) > since);
@@ -281,7 +315,11 @@ function catchUp(since, { exclude, full = false } = {}) {
   if (openQ.length && (full || openQ.some((q) => tsOf(q.ts) > since))) {
     out.push(`**Open questions for the brainstorm side:**\n${openQ.map((q) => `- ${q.fromTitle ?? q.from}: ${q.question}`).join("\n")}`);
   }
-  return out.length ? `_Project: ${id}_\n\n${out.join("\n\n")}` : "";
+  if (full) {
+    const lessons = lessonsText(id);
+    if (lessons) out.push(`**Lessons from past hackathons:**\n${lessons}`);
+  }
+  return out.length ? `*Project: ${id}*\n\n${out.join("\n\n")}` : "";
 }
 
 // ---- deadline (hack clock) ------------------------------------------------------
@@ -353,6 +391,62 @@ function cutInput() {
   }, null, 1);
 }
 
+function readme() {
+  const m = members()[0];
+  if (!m) return "";
+  for (const f of ["README.md", "readme.md", "README"]) {
+    try { return clip(readFileSync(join(m.repoPath, f), "utf8"), 3000); } catch { /* next */ }
+  }
+  return "";
+}
+
+function workSummary(turnsPer = 6) {
+  return members().map((m) => ({
+    session: label(m),
+    commits: diffOf(m).log.split("\n").filter(Boolean).slice(0, 25),
+    recentWork: turns(m.repoPath).turns.slice(-turnsPer).map((t) => ({ ask: clip(t.ask, 300), did: t.tools.slice(-8), reply: clip(t.reply, 500) })),
+  }));
+}
+
+function pitchInput() {
+  const { dir } = projectDir();
+  const b = bridgeState();
+  return JSON.stringify({
+    goal: b.goal ?? "",
+    decisions: readJson(join(dir, "decisions.json"), []).slice(-20).map((d) => d.text),
+    readme: readme(),
+    work: workSummary(),
+    playbook: skillText("pitch") ?? "",
+  }, null, 1);
+}
+
+function quizInput(member) {
+  const m = findSession(member);
+  if (!m) return "";
+  const d = diffOf(m);
+  if (!d.diff && !d.log) return "";
+  return JSON.stringify({
+    session: label(m),
+    commits: d.log,
+    files: d.stat,
+    diff: clip(d.diff, 16000),
+    recentWork: turns(m.repoPath).turns.slice(-3).map((t) => ({ ask: clip(t.ask, 300), reply: clip(t.reply, 600) })),
+  }, null, 1);
+}
+
+function wrapupInput() {
+  const { dir, id } = projectDir();
+  const b = bridgeState();
+  return JSON.stringify({
+    project: id,
+    goal: b.goal ?? "",
+    decisions: readJson(join(dir, "decisions.json"), []).slice(-25).map((d) => d.text),
+    notes: (b.notes ?? []).slice(-25).map((n) => n.text),
+    tasks: readJson(join(dir, "tasks.json"), []).map((t) => `[${t.status}] ${t.title}`),
+    work: workSummary(4),
+  }, null, 1);
+}
+
 /** CLI modes (hooks and Grill Me call the script directly, not over MCP). */
 function cliMode(argv) {
   const flag = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
@@ -380,6 +474,9 @@ function cliMode(argv) {
     process.stdout.write(checkInput(flag("--check-input")));
     return true;
   }
+  if (argv.includes("--pitch-input")) { process.stdout.write(pitchInput()); return true; }
+  if (argv.includes("--quiz-input")) { process.stdout.write(quizInput(flag("--quiz-input"))); return true; }
+  if (argv.includes("--wrapup-input")) { process.stdout.write(wrapupInput()); return true; }
   if (argv.includes("--cut-input")) {
     process.stdout.write(cutInput());
     return true;
@@ -487,6 +584,11 @@ const TOOLS = [
     inputSchema: { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["read", "add"] }, text: { type: "string" } } },
   },
   {
+    name: "past_lessons",
+    description: "Lessons from past hackathons (stack, what worked, mistakes, reusable pieces). Use when starting a new project or choosing a stack.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "catch_up",
     description: "Everything new in this project since you last asked (or in the last `hours`): goal, decisions, notes, plans, what each session did, commits. Call at the start of a conversation and whenever the user returns.",
     inputSchema: { type: "object", properties: { hours: { type: "number", description: "Look back this many hours instead of since last call" } } },
@@ -537,18 +639,17 @@ async function callTool(name, args = {}) {
     case "get_diff": {
       const m = findSession(args.session);
       if (!m) return `No session "${args.session}".`;
-      const base = baseBranch(m.repoPath);
-      const branch = git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
-      const range = base && base !== branch ? `${base}...HEAD` : "";
-      const log = range ? git(m.repoPath, ["log", "--oneline", "-20", `${base}..HEAD`]) : "";
-      const stat = [range && git(m.repoPath, ["diff", "--stat", range]), git(m.repoPath, ["diff", "--stat", "HEAD"])].filter(Boolean).join("\n");
-      const diff = [range && git(m.repoPath, ["diff", range]), git(m.repoPath, ["diff", "HEAD"])].filter(Boolean).join("\n");
+      const d = diffOf(m);
       return [
-        `Session ${label(m)} on ${branch}${base ? ` (vs ${base})` : ""}`,
-        log ? `## Commits\n${log}` : "No commits beyond the base branch.",
-        stat ? `## Files\n${stat}` : "No changes.",
-        diff ? `## Diff\n${clip(diff, 24000)}` : null,
+        `Session ${label(m)} on ${d.branch}${d.base ? ` (vs ${d.base})` : ""}`,
+        d.log ? `## Commits\n${d.log}` : "No commits beyond the base branch.",
+        d.stat ? `## Files\n${d.stat}` : "No changes.",
+        d.diff ? `## Diff\n${clip(d.diff, 24000)}` : null,
       ].filter(Boolean).join("\n\n");
+    }
+    case "past_lessons": {
+      const l = lessonsText(null, 20);
+      return l || "No past hackathons wrapped up yet.";
     }
     case "get_plan": {
       const { dir } = projectDir();

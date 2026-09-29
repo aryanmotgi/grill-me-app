@@ -41,6 +41,25 @@ async function refresh(announce: boolean) {
   const prev = useBridge.getState().state;
   useBridge.setState({ state: next });
   if (announce) for (const msg of newlyPending(prev, next)) useApp.getState().toast(`${msg} — open Claude bridge`);
+  void mirrorToTeam(next);
+}
+
+/** Team brain: in a live room, brain notes + goal ride the room's shared
+ *  decisions log (tagged "brain"), so teammates' sessions see them too. */
+async function mirrorToTeam(b: BridgeState) {
+  const st = useApp.getState();
+  if (!st.room || !st.roomSelf || st.room.phase !== "done") return;
+  const have = new Set(st.decisions.map((d) => `${d.id}|${d.text}`));
+  const author = st.members[0]?.id ?? "me";
+  const entries = [
+    ...b.notes.map((n) => ({ id: `brain-${n.id}`, text: n.text, epochMs: n.ts })),
+    ...(b.goal ? [{ id: "brain-goal", text: `🎯 Goal: ${b.goal}`, epochMs: Date.now() }] : []),
+  ]
+    .filter((e) => !have.has(`${e.id}|${e.text}`))
+    .map((e) => ({ ...e, author, ts: new Date(e.epochMs).toTimeString().slice(0, 5), tag: "brain" }));
+  if (!entries.length) return;
+  useApp.setState((s) => ({ decisions: [...entries, ...s.decisions.filter((d) => !entries.some((e) => e.id === d.id))] }));
+  await upsertShared("decisions.json", entries);
 }
 
 async function refreshConn() {

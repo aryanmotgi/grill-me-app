@@ -350,6 +350,100 @@ pub(crate) fn brain_cut() -> Result<String, String> {
     claude_quick(&input, CUT_PROMPT, "sonnet")
 }
 
+// ---- round 3: pitch writer, code quiz, hackathon wrap-up -------------------
+
+const PITCH_PROMPT: &str = "You write hackathon pitches from what a team ACTUALLY built. The input JSON has the goal, decisions, README, \
+each session's commits and recent work, and the team's pitch playbook (follow it when present). \
+Write markdown with exactly these sections: '## One-liner', '## The problem', '## Demo script' (numbered steps, the exact clicks, under 2 minutes, wow moment early), \
+'## Devpost' (What it does / How we built it / Challenges / What's next — short paragraphs), '## Judge Q&A' (4 likely questions with crisp answers). \
+Never invent features that aren't in the work. Output only the markdown.";
+
+const QUIZ_PROMPT: &str = "You quiz a beginner-to-intermediate developer on code an AI agent wrote for them, so they truly understand it. \
+The input JSON has the session's commits, changed files, diff and recent work. Write 4 multiple-choice questions about what the code does, \
+why it was done that way, and what would break if changed — grounded in the actual diff, not trivia. \
+Reply with ONLY JSON, no prose, no fences: {\"questions\": [{\"q\": string, \"choices\": [string, string, string, string], \"answer\": 0-3, \"why\": string}]}. \
+Keep each question and choice short.";
+
+const WRAPUP_PROMPT: &str = "You capture lessons from a finished hackathon project so the next one goes better. The input JSON has the goal, \
+decisions, notes, tasks and each session's commits and recent work. Reply with ONLY JSON, no prose, no fences: \
+{\"summary\": string (one sentence: what we built), \"stack\": string[], \"worked\": string[], \"mistakes\": string[], \"reuse\": string[] (setups, snippets, or services worth reusing)}. \
+Max 5 short items per list, grounded in the input.";
+
+/// Pitch: one-liner, demo script, Devpost text, judge Q&A — from real work.
+#[tauri::command(async)]
+pub(crate) fn brain_pitch() -> Result<String, String> {
+    install();
+    claude_quick(&run_script(&["--pitch-input"])?, PITCH_PROMPT, "sonnet")
+}
+
+/// Code quiz on one session's changes. Returns validated questions.
+#[tauri::command(async)]
+pub(crate) fn brain_quiz(member_id: String) -> Result<Value, String> {
+    crate::validate_member_id(&member_id)?;
+    install();
+    let input = run_script(&["--quiz-input", &member_id])?;
+    if input.trim().is_empty() {
+        return Err("That session hasn't changed any code yet.".into());
+    }
+    let r = extract_json(&claude_quick(&input, QUIZ_PROMPT, "sonnet")?).ok_or("quiz came back empty")?;
+    let questions: Vec<Value> = r["questions"]
+        .as_array()
+        .map(|qs| {
+            qs.iter()
+                .filter_map(|q| {
+                    let choices: Vec<&str> = q["choices"].as_array()?.iter().filter_map(|c| c.as_str()).collect();
+                    let answer = q["answer"].as_u64()? as usize;
+                    (choices.len() == 4 && answer < 4 && q["q"].is_string())
+                        .then(|| json!({ "q": q["q"], "choices": choices, "answer": answer, "why": q["why"].as_str().unwrap_or("") }))
+                })
+                .take(6)
+                .collect()
+        })
+        .unwrap_or_default();
+    if questions.is_empty() {
+        return Err("quiz came back malformed — try again".into());
+    }
+    Ok(json!({ "questions": questions }))
+}
+
+static LESSONS_LOCK: Mutex<()> = Mutex::new(());
+
+fn str_list(v: &Value) -> Vec<String> {
+    v.as_array()
+        .map(|a| a.iter().filter_map(|x| x.as_str()).take(5).map(|x| x.chars().take(200).collect()).collect())
+        .unwrap_or_default()
+}
+
+/// Wrap up the active project: Claude distills lessons, saved to
+/// ~/.grillme/lessons.json (one entry per project, replaced on re-run).
+/// Future projects' sessions and chats get them in their first catch-up.
+#[tauri::command(async)]
+pub(crate) fn brain_wrapup(project_id: String, project_name: String) -> Result<Value, String> {
+    install();
+    let r = extract_json(&claude_quick(&run_script(&["--wrapup-input"])?, WRAPUP_PROMPT, "sonnet")?)
+        .ok_or("wrap-up came back empty")?;
+    let secs = now_ms() / 1000;
+    let entry = json!({
+        "project": project_id,
+        "name": project_name.chars().take(80).collect::<String>(),
+        "date": format!("{}", secs), // epoch secs; UI formats it
+        "summary": r["summary"].as_str().unwrap_or("").chars().take(300).collect::<String>(),
+        "stack": str_list(&r["stack"]),
+        "worked": str_list(&r["worked"]),
+        "mistakes": str_list(&r["mistakes"]),
+        "reuse": str_list(&r["reuse"]),
+    });
+    let _g = crate::lock_or_recover(&LESSONS_LOCK);
+    let path = root().join("lessons.json");
+    let mut all: Vec<Value> = read_json(&path).and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    all.retain(|l| l["project"] != entry["project"]);
+    all.push(entry.clone());
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(entry)
+}
+
 /// Hack clock end (epoch ms; 0 clears) — the brain tells sessions time left.
 #[tauri::command]
 pub(crate) fn bridge_set_deadline(ms: u64) -> Result<(), String> {
