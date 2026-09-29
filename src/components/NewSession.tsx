@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import type { AgentId } from "../data/sources/git";
-import { SKILL_LOADERS } from "../data/skills";
+import { SKILL_LOADERS, loadSkill, type SkillLoader } from "../data/skills";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { GrillFlame } from "./GrillMark";
@@ -71,8 +71,8 @@ function PixelBanner() {
   );
 }
 
-function MenuItem({ icon, label, detail, onClick, soon, tint }: {
-  icon: string; label: string; detail: string; onClick: () => void; soon?: boolean; tint?: string;
+function MenuItem({ icon, label, detail, onClick, tint }: {
+  icon: string; label: string; detail: string; onClick: () => void; tint?: string;
 }) {
   return (
     <button
@@ -83,7 +83,6 @@ function MenuItem({ icon, label, detail, onClick, soon, tint }: {
       <span className="flex flex-col min-w-0">
         <span className="flex items-center gap-2 text-[13px] text-ink">
           {label}
-          {soon ? <span className="text-[9.5px] px-1.5 rounded bg-raised text-faint">soon</span> : null}
         </span>
         <span className="text-[11.5px] text-faint truncate">{detail}</span>
       </span>
@@ -102,6 +101,7 @@ export function NewSession() {
   const [text, setText] = useState("");
   const [agent, setAgent] = useState<AgentId>("claude");
   const [plan, setPlan] = useState(false);
+  const [skill, setSkill] = useState<{ s: SkillLoader; body: string } | null>(null);
   const [grill, setGrill] = useState<GrillMode>("");
   const hackEndsAt = useApp((s) => s.appSettings.hackathonEndsAt as number | undefined);
   const hoursLeft = hackEndsAt ? (hackEndsAt - Date.now()) / 3_600_000 : null;
@@ -131,14 +131,16 @@ export function NewSession() {
     if (!body || busy) return;
     setBusy(true);
     // the slash command must lead the message for Claude Code to run the skill
+    const playbook = skill ? `Follow this ${skill.s.label} playbook:\n\n${skill.body.trim()}\n\n---\n\n` : "";
     const brief = agent === "claude" && grill
-      ? grillPrefix(grill, hoursLeft) + (plan ? PLAN_PREFIX : "") + body
-      : (plan ? PLAN_PREFIX : "") + body;
+      ? grillPrefix(grill, hoursLeft) + (plan ? PLAN_PREFIX : "") + playbook + body
+      : (plan ? PLAN_PREFIX : "") + playbook + body;
     await spawnFromTemplate(slug, slug, branch, brief, agent);
     setBusy(false);
     // spawn registered the member → it's now the active tab; else keep the draft
     if (useApp.getState().members.some((m) => m.id === slug)) {
       setText("");
+      setSkill(null);
       useApp.getState().setActive(slug);
     }
   };
@@ -197,6 +199,11 @@ export function NewSession() {
                 <GrillFlame px={1.5} dim={!grill} /> {grill === "hack" ? "Hackathon grill" : "Grill"}
               </button>
             ) : null}
+            {skill ? (
+              <button className="composer-btn on" title="Playbook attached to the first message — click to remove" onClick={() => setSkill(null)}>
+                <Icon name="doc" size={12} /> {skill.s.label} <Icon name="cross" size={9} className="opacity-60" />
+              </button>
+            ) : null}
             {plan ? (
               <button className="composer-btn on" title="Plan mode on — click to turn off" onClick={() => setPlan(false)}>
                 <Icon name="bulb" size={13} /> Plan mode <Icon name="cross" size={9} className="opacity-60" />
@@ -224,9 +231,18 @@ export function NewSession() {
                 onClick={() => { setPlan(true); setMenu(""); ta.current?.focus(); }} />
               <div className="px-3 pt-3 pb-1 text-[10.5px] tracking-[0.12em] text-faint uppercase">Hackathon skills</div>
               {SKILL_LOADERS.map((s) => (
-                <MenuItem key={s.id} icon="doc" label={s.label} detail={s.detail} soon={!s.path} tint="#8ea6c7"
-                  onClick={() => { setMenu(""); toast(`${s.label} skill file isn't written yet — placeholder`); }} />
+                <MenuItem key={s.id} icon="doc" label={s.label} detail={s.detail} tint="#8ea6c7"
+                  onClick={async () => {
+                    setMenu("");
+                    try {
+                      setSkill({ s, body: await loadSkill(s) });
+                      ta.current?.focus();
+                    } catch {
+                      toast(`Couldn't read ~/.grillme/${s.path}${"__TAURI_INTERNALS__" in window ? "" : " (needs the native app)"}`, "warn");
+                    }
+                  }} />
               ))}
+              <div className="px-3 pt-1 pb-2 text-[10.5px] text-faint">Edit these in ~/.grillme/skills — the Claude app sees them too.</div>
             </div>
           ) : null}
 

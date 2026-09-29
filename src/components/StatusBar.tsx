@@ -4,6 +4,7 @@ import { tokenBudget, DEFAULT_TOKEN_BUDGET } from "../lib/dashboard";
 import { AgentLogo } from "./AgentLogo";
 import { GrillFlame } from "./GrillMark";
 import { Icon } from "./Icon";
+import { BridgeButton } from "./BridgePanel";
 
 // ---------------------------------------------------------------------------
 // Monocode-style bottom status bar for the center column, with the Grill Me
@@ -131,6 +132,7 @@ export function StatusBar() {
       ) : null}
 
       <span className="flex-1" />
+      <BridgeButton />
       <HackClock />
       <button
         className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md cursor-pointer transition-colors ${

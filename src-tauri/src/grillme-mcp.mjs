@@ -1,0 +1,470 @@
+#!/usr/bin/env node
+// ---------------------------------------------------------------------------
+// grill-me MCP bridge — connects the Claude app (brainstorm partner) and
+// Claude Code sessions (the coders) through Grill Me.
+//
+// Zero dependencies: speaks MCP (JSON-RPC 2.0, newline-delimited) over stdio.
+// READS come straight from disk (Grill Me's project files, Claude Code
+// transcripts, git). WRITES (handoffs, plans, questions, notes) go through
+// Grill Me's loopback API, so nothing reaches a session or the task board
+// until you approve it in Grill Me. Installed by Grill Me to
+// ~/.grillme/bin/grillme-mcp.mjs — edit the source in src-tauri/src/.
+// ---------------------------------------------------------------------------
+
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join, basename, resolve } from "node:path";
+import { createInterface } from "node:readline";
+
+const HOME = homedir();
+const ROOT = join(HOME, ".grillme");
+const API = "http://127.0.0.1:4517";
+const SERVER = { name: "grill-me", version: "1.0.0" };
+const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+
+// ---- file helpers ----------------------------------------------------------
+
+function readJson(path, fallback) {
+  try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
+}
+
+function projectDir() {
+  const settings = readJson(join(ROOT, "settings.json"), {});
+  const id = typeof settings.activeProject === "string" ? settings.activeProject : "";
+  if (id && id !== "default" && /^[a-z0-9-]+$/.test(id) && existsSync(join(ROOT, "projects", id))) {
+    return { id, dir: join(ROOT, "projects", id) };
+  }
+  return { id: "default", dir: ROOT };
+}
+
+function members() {
+  const { dir } = projectDir();
+  const cfg = readJson(join(dir, "config.json"), readJson(join(ROOT, "config.json"), {}));
+  return Array.isArray(cfg.teammates) ? cfg.teammates : [];
+}
+
+function titles() {
+  const { dir } = projectDir();
+  const a = readJson(join(dir, "settings.json"), {}).sessionTitles ?? {};
+  const b = readJson(join(ROOT, "settings.json"), {}).sessionTitles ?? {};
+  return { ...b, ...a };
+}
+
+/** Which session is calling? A Claude Code session runs inside its worktree. */
+function selfMember() {
+  const cwd = resolve(process.cwd());
+  return members()
+    .filter((m) => m.repoPath && (cwd === resolve(m.repoPath) || cwd.startsWith(resolve(m.repoPath) + "/")))
+    .sort((a, b) => b.repoPath.length - a.repoPath.length)[0];
+}
+
+function findSession(key) {
+  const all = members();
+  if (!key) {
+    const self = selfMember();
+    return self ?? all[0];
+  }
+  const k = String(key).toLowerCase();
+  const t = titles();
+  return all.find((m) => m.id.toLowerCase() === k)
+    ?? all.find((m) => (t[m.id] ?? "").toLowerCase() === k)
+    ?? all.find((m) => m.name.toLowerCase() === k)
+    ?? all.find((m) => (t[m.id] ?? m.name).toLowerCase().includes(k));
+}
+
+function label(m) {
+  return titles()[m.id] || m.name || m.id;
+}
+
+function git(repo, args) {
+  try {
+    return execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch { return ""; }
+}
+
+function baseBranch(repo) {
+  for (const b of ["main", "master"]) if (git(repo, ["rev-parse", "--verify", "--quiet", b])) return b;
+  return "";
+}
+
+// ---- transcripts ------------------------------------------------------------
+
+function transcriptFile(repo) {
+  const dir = join(HOME, ".claude", "projects", repo.replace(/\/+$/, "").replace(/[/.]/g, "-"));
+  try {
+    return readdirSync(dir)
+      .filter((f) => f.endsWith(".jsonl"))
+      .map((f) => ({ f: join(dir, f), t: statSync(join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t)[0] ?? null;
+  } catch { return null; }
+}
+
+function tailLines(path, bytes = 1_500_000) {
+  const buf = readFileSync(path);
+  const start = Math.max(0, buf.length - bytes);
+  const text = buf.subarray(start).toString("utf8");
+  const lines = text.split("\n");
+  if (start > 0) lines.shift();
+  return lines.filter(Boolean);
+}
+
+function toolSummary(name, input = {}) {
+  const s = (k) => (typeof input[k] === "string" ? input[k] : "");
+  const b = (k) => basename(s(k));
+  switch (name) {
+    case "Read": return `read ${b("file_path")}`;
+    case "Edit": case "MultiEdit": return `edited ${b("file_path")}`;
+    case "Write": return `wrote ${b("file_path")}`;
+    case "Bash": return s("description") || `ran ${s("command").split("\n")[0].slice(0, 80)}`;
+    case "Grep": return `searched "${s("pattern")}"`;
+    default: return name.replace(/^mcp__[^_]+__/, "");
+  }
+}
+
+function userText(raw) {
+  if (/<local-command-(stdout|stderr|caveat)>|<task-notification>/.test(raw)) return null;
+  const cmd = raw.match(/<command-name>([\s\S]*?)<\/command-name>/);
+  if (cmd) return cmd[1].trim();
+  const t = raw.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+  return t || null;
+}
+
+/** Turns: [{ ask, at, tools: [..], reply }] oldest first. */
+function turns(repo) {
+  const tf = transcriptFile(repo);
+  if (!tf) return { turns: [], updated: null };
+  const out = [];
+  let cur = null;
+  for (const line of tailLines(tf.f)) {
+    let o;
+    try { o = JSON.parse(line); } catch { continue; }
+    if (o.isSidechain || o.isMeta) continue;
+    const c = o.message?.content;
+    if (o.type === "user") {
+      let text = null;
+      if (typeof c === "string") text = userText(c);
+      else if (Array.isArray(c)) {
+        const t = c.filter((x) => x.type === "text").map((x) => userText(x.text ?? "")).filter(Boolean);
+        if (t.length) text = t.join("\n");
+      }
+      if (text) { cur = { ask: text, at: o.timestamp, tools: [], reply: "" }; out.push(cur); }
+    } else if (o.type === "assistant" && Array.isArray(c) && cur) {
+      for (const x of c) {
+        if (x.type === "text" && x.text?.trim()) cur.reply = x.text.trim();
+        if (x.type === "tool_use") cur.tools.push(toolSummary(x.name, x.input));
+      }
+    }
+  }
+  return { turns: out, updated: tf.t };
+}
+
+const clip = (s, n) => (s.length > n ? `${s.slice(0, n)}…` : s);
+const ago = (ms) => {
+  if (!ms) return "never";
+  const m = Math.round((Date.now() - ms) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
+};
+
+function sessionCard(m) {
+  const { turns: ts, updated } = turns(m.repoPath);
+  const last = ts[ts.length - 1];
+  const working = updated && Date.now() - updated < 20_000;
+  const changed = git(m.repoPath, ["status", "--porcelain"]).split("\n").filter(Boolean).length;
+  return [
+    `### ${label(m)}  (id: ${m.id})`,
+    `branch: ${git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]) || "?"} · ${changed} changed files · ${working ? "WORKING now" : `last active ${ago(updated)}`}`,
+    last ? `last ask: "${clip(last.ask, 200)}"` : "no conversation yet",
+    last && last.tools.length ? `did: ${clip(last.tools.slice(-8).join(", "), 300)}` : null,
+    last && last.reply ? `last reply: ${clip(last.reply, 500)}` : null,
+  ].filter(Boolean).join("\n");
+}
+
+// ---- bridge (writes go through Grill Me) -----------------------------------
+
+function bridgeState() {
+  return readJson(join(projectDir().dir, "bridge.json"), { handoffs: [], questions: [], plans: [], notes: [] });
+}
+
+async function push(kind, item) {
+  let token = "";
+  try { token = readFileSync(join(ROOT, "api-token"), "utf8").trim(); } catch { /* none */ }
+  let res;
+  try {
+    res = await fetch(`${API}/bridge/push`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, item }),
+    });
+  } catch {
+    throw new Error("Grill Me isn't running — open the Grill Me app, then try again.");
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    if (body.includes("unknown route")) throw new Error("This Grill Me build doesn't have the bridge yet — update Grill Me (grill update), then try again.");
+    throw new Error(`Grill Me refused: ${body}`);
+  }
+  return res.json();
+}
+
+// ---- skills (hackathon playbooks, shared with Grill Me's composer) ----------
+
+const SKILLS = [
+  ["prep", "Prep hack", "Before the event: stack, repo, rules"],
+  ["intra", "Intra-hack", "Keep the team on track mid-build"],
+  ["brainstorm", "Brainstorm", "Generate and pick an idea"],
+  ["breakdown", "Breakdown", "Split the idea into tasks"],
+  ["finalize", "Finalize", "Polish, fix, cut scope"],
+  ["pitch", "Pitch", "Demo script and slides"],
+];
+
+function skillText(id) {
+  try { return readFileSync(join(ROOT, "skills", `${id}.md`), "utf8"); } catch { return null; }
+}
+
+// ---- tools -------------------------------------------------------------------
+
+const ROLE_NOTE = "Brainstorm side = the Claude app. Coder side = a Claude Code session running inside a Grill Me worktree.";
+
+const TOOLS = [
+  {
+    name: "whats_new",
+    description: "Catch up on every coding session in the open Grill Me project: what each is working on, what it just did, its last reply, and anything waiting (questions from coders, pending handoffs/plans). Call this first whenever the user asks what's going on.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "read_session",
+    description: "Read the recent conversation of one coding session as turns (the user's ask, tools used, final reply). `session` is a session id or title from whats_new; omit to read the calling session.",
+    inputSchema: { type: "object", properties: { session: { type: "string" }, turns: { type: "number", description: "How many recent turns (default 3, max 10)" } } },
+  },
+  {
+    name: "get_diff",
+    description: "The code a session changed: its commits vs main, a file summary, and the diff (truncated). Use it to explain the change to the user in plain English and flag anything risky.",
+    inputSchema: { type: "object", properties: { session: { type: "string" } } },
+  },
+  {
+    name: "get_plan",
+    description: "The team's saved decisions, open tasks, and shared notes. Coders should read this before starting work.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "save_plan",
+    description: "Propose a plan: tasks for the board plus the decision behind it. The user approves it in Grill Me before anything is saved. Use after brainstorming lands on a plan.",
+    inputSchema: {
+      type: "object",
+      required: ["title", "tasks"],
+      properties: {
+        title: { type: "string" },
+        decision: { type: "string", description: "What was decided and why, one or two sentences" },
+        tasks: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["title"],
+            properties: { title: { type: "string" }, desc: { type: "string" }, files: { type: "array", items: { type: "string" } } },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: "send_to_coder",
+    description: "Hand a task to a Claude Code session. GRILL GATE: before calling, ask the user to explain the plan back in their own words and push back if it's vague. Pass their explanation verbatim as `user_explanation` — the call is rejected without a real one. The user approves the handoff in Grill Me before it's typed into the session.",
+    inputSchema: {
+      type: "object",
+      required: ["session", "message", "user_explanation"],
+      properties: {
+        session: { type: "string", description: "Session id or title from whats_new" },
+        message: { type: "string", description: "The full instruction for the coder" },
+        user_explanation: { type: "string", description: "The user's own words explaining the plan back" },
+      },
+    },
+  },
+  {
+    name: "ask_brainstorm",
+    description: "(Coder side) Ask the brainstorm side a question — a product or design call you shouldn't make alone. The user sees it in Grill Me and answers with the Claude app; the answer comes back to this session.",
+    inputSchema: { type: "object", required: ["question"], properties: { question: { type: "string" }, context: { type: "string" } } },
+  },
+  {
+    name: "open_questions",
+    description: "Questions coders have asked the brainstorm side that are still unanswered.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "answer_question",
+    description: "Answer a coder's question (id from open_questions). The answer is sent back to that session after the user approves it in Grill Me.",
+    inputSchema: { type: "object", required: ["id", "answer"], properties: { id: { type: "string" }, answer: { type: "string" } } },
+  },
+  {
+    name: "notes",
+    description: "Shared scratchpad both sides can read and add to (ideas, constraints, links). action=read or add.",
+    inputSchema: { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["read", "add"] }, text: { type: "string" } } },
+  },
+  {
+    name: "team_status",
+    description: "In team mode: every teammate's presence, branch, and tasks. (Teammates' conversations live on their machines and aren't readable.)",
+    inputSchema: { type: "object", properties: {} },
+  },
+];
+
+async function callTool(name, args = {}) {
+  const self = selfMember();
+  switch (name) {
+    case "whats_new": {
+      const all = members();
+      if (!all.length) return "No sessions — open a project in Grill Me first.";
+      const b = bridgeState();
+      const waiting = [
+        ...b.questions.filter((q) => !q.answered).map((q) => `- QUESTION from ${q.fromTitle ?? q.from} (id ${q.id}): ${q.question}`),
+        ...b.handoffs.filter((h) => h.status === "pending").map((h) => `- handoff to ${h.session} waiting for the user's OK`),
+        ...b.plans.filter((p) => p.status === "pending").map((p) => `- plan "${p.title}" waiting for the user's OK`),
+      ];
+      return [
+        `Project: ${projectDir().id}. ${ROLE_NOTE}${self ? ` You are the coder session "${label(self)}".` : ""}`,
+        ...all.map(sessionCard),
+        waiting.length ? `## Waiting\n${waiting.join("\n")}` : "Nothing waiting.",
+      ].join("\n\n");
+    }
+    case "read_session": {
+      const m = findSession(args.session);
+      if (!m) return `No session "${args.session}". Call whats_new for the list.`;
+      const n = Math.min(10, Math.max(1, Number(args.turns) || 3));
+      const { turns: ts } = turns(m.repoPath);
+      if (!ts.length) return `${label(m)} has no conversation yet.`;
+      return ts.slice(-n).map((t, i) => [
+        `## Turn ${ts.length - Math.min(n, ts.length) + i + 1}${t.at ? ` (${t.at})` : ""}`,
+        `USER: ${clip(t.ask, 1500)}`,
+        t.tools.length ? `TOOLS: ${clip(t.tools.join(", "), 800)}` : null,
+        t.reply ? `CLAUDE: ${clip(t.reply, 3000)}` : "CLAUDE: (no reply yet)",
+      ].filter(Boolean).join("\n")).join("\n\n");
+    }
+    case "get_diff": {
+      const m = findSession(args.session);
+      if (!m) return `No session "${args.session}".`;
+      const base = baseBranch(m.repoPath);
+      const branch = git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+      const range = base && base !== branch ? `${base}...HEAD` : "";
+      const log = range ? git(m.repoPath, ["log", "--oneline", "-20", `${base}..HEAD`]) : "";
+      const stat = [range && git(m.repoPath, ["diff", "--stat", range]), git(m.repoPath, ["diff", "--stat", "HEAD"])].filter(Boolean).join("\n");
+      const diff = [range && git(m.repoPath, ["diff", range]), git(m.repoPath, ["diff", "HEAD"])].filter(Boolean).join("\n");
+      return [
+        `Session ${label(m)} on ${branch}${base ? ` (vs ${base})` : ""}`,
+        log ? `## Commits\n${log}` : "No commits beyond the base branch.",
+        stat ? `## Files\n${stat}` : "No changes.",
+        diff ? `## Diff\n${clip(diff, 24000)}` : null,
+      ].filter(Boolean).join("\n\n");
+    }
+    case "get_plan": {
+      const { dir } = projectDir();
+      const decisions = readJson(join(dir, "decisions.json"), []);
+      const tasks = readJson(join(dir, "tasks.json"), []).filter((t) => t.status !== "done");
+      const notes = bridgeState().notes;
+      return [
+        decisions.length ? `## Decisions\n${decisions.slice(-10).map((d) => `- ${d.text}`).join("\n")}` : "No decisions yet.",
+        tasks.length ? `## Open tasks\n${tasks.map((t) => `- [${t.status}] ${t.title}${t.owner ? ` (${t.owner})` : ""}`).join("\n")}` : "No open tasks.",
+        notes.length ? `## Notes\n${notes.slice(-15).map((n) => `- ${n.text}`).join("\n")}` : "",
+      ].filter(Boolean).join("\n\n");
+    }
+    case "save_plan": {
+      if (!Array.isArray(args.tasks) || !args.tasks.length) throw new Error("A plan needs at least one task.");
+      await push("plan", { title: String(args.title), decision: args.decision ? String(args.decision) : "", tasks: args.tasks.slice(0, 20) });
+      return "Plan sent to Grill Me — the user approves it there, then the tasks land on the board and the decision is logged.";
+    }
+    case "send_to_coder": {
+      const m = findSession(args.session);
+      if (!m) return `No session "${args.session}". Call whats_new for the list.`;
+      const exp = String(args.user_explanation ?? "").trim();
+      if (exp.length < 40 || exp === String(args.message).trim()) {
+        throw new Error("Grill gate: ask the user to explain the plan back in their own words (a few sentences) and pass that as user_explanation.");
+      }
+      await push("handoff", { session: m.id, sessionTitle: label(m), message: String(args.message), userExplanation: exp });
+      return `Handoff to ${label(m)} is waiting for the user's OK in Grill Me.`;
+    }
+    case "ask_brainstorm": {
+      await push("question", { from: self?.id ?? "unknown", fromTitle: self ? label(self) : "a session", question: String(args.question), context: args.context ? String(args.context) : "" });
+      return "Question sent. Keep working on anything that doesn't depend on it — the answer arrives in this session once the user approves it.";
+    }
+    case "open_questions": {
+      const q = bridgeState().questions.filter((x) => !x.answered);
+      return q.length ? q.map((x) => `- id ${x.id} from ${x.fromTitle ?? x.from}: ${x.question}${x.context ? `\n  context: ${x.context}` : ""}`).join("\n") : "No open questions.";
+    }
+    case "answer_question": {
+      await push("answer", { id: String(args.id), answer: String(args.answer) });
+      return "Answer sent — it goes back to the coder after the user approves it in Grill Me.";
+    }
+    case "notes": {
+      if (args.action === "add") {
+        if (!args.text) throw new Error("text is required to add a note");
+        await push("note", { text: String(args.text), by: self ? label(self) : "Claude app" });
+        return "Note added.";
+      }
+      const n = bridgeState().notes;
+      return n.length ? n.slice(-30).map((x) => `- ${x.text}${x.by ? ` (${x.by})` : ""}`).join("\n") : "No notes yet.";
+    }
+    case "team_status": {
+      const settings = readJson(join(ROOT, "settings.json"), {});
+      if (settings.appMode !== "team") return "Grill Me is in solo mode — no teammates.";
+      const room = readJson(join(ROOT, "room.json"), {});
+      const people = Array.isArray(room.members) ? room.members : [];
+      const tasks = readJson(join(projectDir().dir, "tasks.json"), []);
+      return people.length
+        ? people.map((p) => `- ${p.name ?? p.id}: ${p.presence ?? "?"}; tasks: ${tasks.filter((t) => t.owner === p.id && t.status !== "done").map((t) => t.title).join(", ") || "none"}`).join("\n")
+        : "No teammates in the room yet.";
+    }
+    default:
+      throw new Error(`Unknown tool ${name}`);
+  }
+}
+
+// ---- JSON-RPC over stdio -------------------------------------------------------
+
+const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
+
+async function handle(req) {
+  const { id, method, params = {} } = req;
+  const reply = (result) => id !== undefined && send({ jsonrpc: "2.0", id, result });
+  const fail = (code, message) => id !== undefined && send({ jsonrpc: "2.0", id, error: { code, message } });
+
+  switch (method) {
+    case "initialize":
+      return reply({
+        protocolVersion: PROTOCOLS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOLS[0],
+        capabilities: { tools: {}, prompts: {} },
+        serverInfo: SERVER,
+        instructions:
+          "Grill Me bridge. In the Claude app you are the user's brainstorm partner and reviewer; Claude Code sessions are the coders. " +
+          "Start with whats_new. Explain code changes (get_diff) in plain English. Turn agreed plans into save_plan. " +
+          "Before send_to_coder, grill the user: make them explain the plan back and push back on vague answers. " +
+          "In a Claude Code session: read get_plan before starting, and use ask_brainstorm for product/design calls.",
+      });
+    case "ping":
+      return reply({});
+    case "tools/list":
+      return reply({ tools: TOOLS });
+    case "tools/call":
+      try {
+        const text = await callTool(params.name, params.arguments ?? {});
+        return reply({ content: [{ type: "text", text }] });
+      } catch (e) {
+        return reply({ content: [{ type: "text", text: String(e?.message ?? e) }], isError: true });
+      }
+    case "prompts/list":
+      return reply({ prompts: SKILLS.map(([name, title, description]) => ({ name, title, description })) });
+    case "prompts/get": {
+      const s = SKILLS.find(([n]) => n === params.name);
+      if (!s) return fail(-32602, `Unknown prompt ${params.name}`);
+      const body = skillText(s[0]) ?? `# ${s[1]}\n\n${s[2]}. (Playbook not written yet — edit ~/.grillme/skills/${s[0]}.md)`;
+      return reply({ description: s[2], messages: [{ role: "user", content: { type: "text", text: body } }] });
+    }
+    default:
+      if (method?.startsWith("notifications/")) return;
+      return fail(-32601, `Method not found: ${method}`);
+  }
+}
+
+createInterface({ input: process.stdin }).on("line", (line) => {
+  if (!line.trim()) return;
+  let req;
+  try { req = JSON.parse(line); } catch { return send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
+  handle(req).catch((e) => process.stderr.write(`[grill-me mcp] ${e?.stack ?? e}\n`));
+});
