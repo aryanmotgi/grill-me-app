@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTailscale } from "./TailscaleCard";
 import { useApp } from "../../store";
 import { roomClient } from "../../data/sources/feeds";
 import { memberStatus, statusDotClass, statusLabel } from "../../lib/roomStatus";
@@ -20,6 +21,7 @@ export function Lobby() {
   const toast = useApp((s) => s.toast);
   const leaveRoom = useApp((s) => s.leaveRoom);
   const [busy, setBusy] = useState(false);
+  const [ts] = useTailscale();
 
   // re-derive statuses once a second — lastSeen ages even between polls
   const [now, setNow] = useState(() => Date.now());
@@ -32,6 +34,8 @@ export function Lobby() {
   const isHost = roomRole === "host";
   const host = room.members.find((m) => m.isHost);
   const joinAddr = roomHostIp ? `${roomHostIp}:4518` : null;
+  // over Tailscale, teammates on any Wi-Fi reach the host by its MagicDNS name
+  const tsAddr = ts?.running && ts.dnsName ? `${ts.dnsName}:4518` : null;
   const openSlots = Math.max(0, MAX_MEMBERS - room.members.length);
 
   const copy = (text: string) => {
@@ -96,12 +100,20 @@ export function Lobby() {
                   </>
                 ) : null}
                 {" — read it aloud"}
+                {tsAddr ? (
+                  <div className="mt-0.5">
+                    {"from anywhere (Tailscale): "}
+                    <span className="font-mono text-ink cursor-pointer" title="click to copy" onClick={() => copy(tsAddr)}>
+                      {tsAddr}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="text-[11px] text-dim mt-1">room code</div>
             )}
           </div>
-          <button className="btn" onClick={() => copy(joinAddr ? `${room.code} @ ${joinAddr}` : room.code)}>
+          <button className="btn" onClick={() => copy(`${room.code}${joinAddr ? ` @ ${joinAddr}` : ""}${tsAddr ? ` (anywhere: ${tsAddr})` : ""}`)}>
             copy
           </button>
         </div>

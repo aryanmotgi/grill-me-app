@@ -6,6 +6,7 @@ mod room;
 mod bridge;
 mod claude_panel;
 mod automations;
+mod tailscale;
 
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.
@@ -4452,6 +4453,8 @@ pub fn run() {
             automations::dev_servers,
             automations::detect_dev_cmd,
             automations::plan_usage,
+            tailscale::tailscale_status,
+            tailscale::tailscale_up,
             claude_panel::brainstorm_stop,
             claude_panel::brainstorm_history,
             claude_panel::claudeai_show,
