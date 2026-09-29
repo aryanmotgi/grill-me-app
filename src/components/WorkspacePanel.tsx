@@ -140,7 +140,7 @@ export function WorkspacePanel() {
   return (
     <aside style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
       <div data-tauri-drag-region className="flex items-center gap-1 h-12 pl-4 pr-2 flex-none border-b border-line">
-        <span className="text-[15px] font-semibold text-ink flex-1">Workspace</span>
+        <span data-tauri-drag-region className="text-[15px] font-semibold text-ink flex-1">Workspace</span>
         <button className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised cursor-pointer"
           title="Search sessions"
           onClick={() => { setTab("sessions"); requestAnimationFrame(() => document.getElementById("session-search")?.focus()); }}>
