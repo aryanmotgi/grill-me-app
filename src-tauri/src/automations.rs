@@ -166,6 +166,90 @@ pub(crate) fn phone_ping(topic: String, title: String, body: String) -> Result<(
     }
 }
 
+// ---- ship queue + dev servers ------------------------------------------------
+
+/// Per session: branch, commits ahead of the default branch, uncommitted
+/// files (minus Grill Me's own installs), and whether it's ON the default
+/// branch (/ship refuses to ship from there).
+#[tauri::command(async)]
+pub(crate) fn ship_overview(sessions: Vec<(String, String)>) -> Vec<Value> {
+    sessions
+        .into_iter()
+        .filter(|(_, p)| is_repo(Path::new(p)))
+        .map(|(id, p)| {
+            let repo = PathBuf::from(&p);
+            let branch = git_out(&repo, &["rev-parse", "--abbrev-ref", "HEAD"]).trim().to_string();
+            let base = ["main", "master"]
+                .into_iter()
+                .find(|b| !git_out(&repo, &["rev-parse", "--verify", "--quiet", b]).trim().is_empty())
+                .unwrap_or("");
+            let ahead: u64 = if base.is_empty() || base == branch {
+                0
+            } else {
+                git_out(&repo, &["rev-list", "--count", &format!("{base}..HEAD")]).trim().parse().unwrap_or(0)
+            };
+            let dirty = git_out(&repo, &["status", "--porcelain"])
+                .lines()
+                .filter(|l| l.len() > 3 && !(l.starts_with("??") && crate::is_grillme_managed(l[3..].trim())))
+                .count();
+            json!({ "id": id, "branch": branch, "base": base, "ahead": ahead, "dirty": dirty, "onDefault": !base.is_empty() && base == branch })
+        })
+        .collect()
+}
+
+/// Local dev servers: TCP listeners owned by this user on unprivileged
+/// ports (minus Grill Me's own), with the process name and working dir so
+/// the UI can label them by project.
+#[tauri::command(async)]
+pub(crate) fn dev_servers() -> Vec<Value> {
+    let user = std::env::var("USER").unwrap_or_default();
+    let out = Command::new("/usr/sbin/lsof")
+        .args(["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-u", &user, "-Fpcn"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    let mut found: Vec<(u32, String, u16)> = vec![];
+    let (mut pid, mut cmd) = (0u32, String::new());
+    for line in out.lines() {
+        match line.split_at(1) {
+            ("p", v) => pid = v.parse().unwrap_or(0),
+            ("c", v) => cmd = v.to_string(),
+            ("n", v) => {
+                // "*:5173", "127.0.0.1:3000", "[::1]:8787"
+                if let Some(port) = v.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
+                    let local = v.starts_with('*') || v.starts_with("127.") || v.starts_with("[::1]") || v.starts_with("[::]") || v.starts_with("0.0.0.0");
+                    if local && port >= 1024 && ![4517, 4518].contains(&port) && !found.iter().any(|f| f.2 == port) {
+                        found.push((pid, cmd.clone(), port));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+        .into_iter()
+        .filter(|(_, c, _)| !["rapportd", "ControlCe", "Spotify", "Discord", "Brave", "Google", "Figma", "ollama"].iter().any(|x| c.starts_with(x)))
+        .map(|(pid, cmd, port)| {
+            let cwd = Command::new("/usr/sbin/lsof")
+                .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).lines().find_map(|l| l.strip_prefix('n').map(str::to_owned)).unwrap_or_default())
+                .unwrap_or_default();
+            json!({ "port": port, "pid": pid, "command": cmd, "cwd": cwd })
+        })
+        // desktop apps run from "/" — dev servers run from a project folder
+        .filter(|v| v["cwd"].as_str().is_some_and(|c| c.len() > 1))
+        .collect()
+}
+
+/// The repo's dev-server script, if package.json has one.
+#[tauri::command]
+pub(crate) fn detect_dev_cmd(repo_path: String) -> Option<String> {
+    let pkg = std::fs::read_to_string(PathBuf::from(repo_path).join("package.json")).ok()?;
+    let v: Value = serde_json::from_str(&pkg).ok()?;
+    ["dev", "start", "serve"].into_iter().find(|k| v["scripts"][k].is_string()).map(|k| format!("npm run {k}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,5 +286,16 @@ mod live_tests {
         let again = super::run_tests(repo, None, r["sig"].as_str().map(str::to_owned)).unwrap();
         println!("rerun skipped={}", again["skipped"]);
         println!("ping: {:?}", super::phone_ping("grillme-selftest-0000000000".into(), "Grill Me".into(), "self-test".into()));
+    }
+}
+
+#[cfg(test)]
+mod live_dev_tests {
+    #[test]
+    #[ignore]
+    fn live_dev_servers() {
+        for s in super::dev_servers() { println!("{} {} {}", s["port"], s["command"], s["cwd"]); }
+        let repo = std::env::var("GM_REPO").unwrap();
+        println!("{:?}", super::ship_overview(vec![("me".into(), repo)]));
     }
 }

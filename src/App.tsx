@@ -10,7 +10,7 @@ import { XtermPane } from "./components/XtermPane";
 import { TaskBoard } from "./components/TaskBoard";
 import { Inbox } from "./components/Inbox";
 import { ActivityTimeline } from "./components/ActivityTimeline";
-import { PreviewPane, TeamPanel } from "./components/TeamPanel";
+import { TeamPanel } from "./components/TeamPanel";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { ConflictBanner, Toasts } from "./components/Chrome";
 import { SettingsModal } from "./components/Settings";
@@ -46,6 +46,8 @@ import { ClaudePanel } from "./components/ClaudePanel";
 import { BrainPage, useWelcomeBack } from "./components/BrainPage";
 import { AutomationsPage, useAutomations } from "./components/Automations";
 import { Kickoff } from "./components/Kickoff";
+import { ShipQueue } from "./components/ShipQueue";
+import { PreviewPage } from "./components/PreviewPage";
 import { StatusBar } from "./components/StatusBar";
 import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -305,6 +307,8 @@ export default function App() {
           {focusMode ? null : <SessionTabs />}
           {view === "home" ? (
             <HomeDashboard />
+          ) : view === "preview" ? (
+            <PreviewPage />
           ) : view === "automations" ? (
             <AutomationsPage />
           ) : view === "brain" ? (
@@ -313,7 +317,7 @@ export default function App() {
             <ClaudePanel />
           ) : view === "new" || !active ? (
             <NewSession />
-          ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" || view === "preview" ? (
+          ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" ? (
             // team surfaces as full center screens (Monocode-style): the nav
             // rail toggles them; Esc/clicking a session tab returns to it
             <div className="flex-1 min-h-0 flex flex-col max-w-[860px] w-full mx-auto border-x border-line bg-panel">
@@ -321,7 +325,6 @@ export default function App() {
               {view === "inbox" ? <Inbox /> : null}
               {view === "feed" ? <ActivityTimeline /> : null}
               {view === "team" ? <TeamPanel /> : null}
-              {view === "preview" ? <PreviewPane /> : null}
             </div>
           ) : (
           <>
@@ -412,6 +415,7 @@ export default function App() {
       <CheckpointRunner />
       <BridgePanel />
       <Kickoff />
+      <ShipQueue />
       <Toasts />
     </div>
   );
