@@ -42,6 +42,8 @@ import { CinemaMode } from "./components/CinemaMode";
 import { CheckpointRunner } from "./components/CheckpointRunner";
 import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
+import { NewSession } from "./components/NewSession";
+import { StatusBar } from "./components/StatusBar";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
 
@@ -90,17 +92,18 @@ export default function App() {
     applyTheme(themes[themeName] ?? themes.monocode);
   }, [themeName]);
 
-  // Translucent background: the native window has under-window vibrancy
-  // (lib.rs), so the `.vibrant` class makes chrome surfaces translucent and
-  // the desktop wallpaper shows through — the Monocode look. Toggleable
-  // (default on); off → surfaces go solid and cover the transparent window.
-  // Browser dev has no native vibrancy, so it stays opaque there.
-  const translucentBg = useApp((s) => s.appSettings.translucentBg !== false);
+  // Background style (monocode theme): "gradient" (default) paints a soft
+  // graphite ground with blurred warm/cool color pools; "translucent" uses
+  // the native under-window vibrancy (lib.rs) so the desktop wallpaper shows
+  // through; "solid" is flat opaque chrome. Translucent needs native macOS —
+  // browser dev falls back to the gradient.
+  const bgStyle = useApp((s) => (s.appSettings.background as string | undefined) ?? "gradient");
   useEffect(() => {
     const native = "__TAURI_INTERNALS__" in window && navigator.platform.startsWith("Mac");
-    document.documentElement.classList.toggle("vibrant", native && translucentBg);
-  }, [translucentBg]);
-
+    const vibrant = native && bgStyle === "translucent";
+    document.documentElement.classList.toggle("vibrant", vibrant);
+    document.documentElement.classList.toggle("bg-gradient", !vibrant && bgStyle !== "solid");
+  }, [bgStyle]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -110,6 +113,10 @@ export default function App() {
       if (mod && e.key === "/") {
         e.preventDefault();
         useApp.setState({ featureIndexOpen: !useApp.getState().featureIndexOpen });
+      }
+      if (mod && e.key === ",") {
+        e.preventDefault();
+        useApp.getState().setSettingsOpen(true);
       }
       if (mod && e.key === "h") {
         e.preventDefault();
@@ -288,6 +295,8 @@ export default function App() {
           {focusMode ? null : <SessionTabs />}
           {view === "home" ? (
             <HomeDashboard />
+          ) : view === "new" || !active ? (
+            <NewSession />
           ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" || view === "preview" ? (
             // team surfaces as full center screens (Monocode-style): the nav
             // rail toggles them; Esc/clicking a session tab returns to it
@@ -352,12 +361,14 @@ export default function App() {
               </div>
             </div>
           ) : null}
+          {focusMode ? null : <StatusBar />}
         </main>
-        {focusMode ? null : (
+        {/* the new-session screen is full-width like Monocode's — no editor */}
+        {focusMode || view === "new" || !active ? null : (
           <DragHandle onDrag={(dx) => setPanelSize("right", Math.min(680, Math.max(240, panelSizes.right - dx)))}
             onDone={() => setPanelSize("right", panelSizes.right, true)} />
         )}
-        {focusMode ? null : <EditorPane />}
+        {focusMode || view === "new" || !active ? null : <EditorPane />}
       </div>
       <QuickSwitcher />
       <SettingsModal />

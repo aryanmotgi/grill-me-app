@@ -73,6 +73,38 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M4 5.8c0 4 4 6.2 6.2 6.2M4 5.8v4.4" />
     </>
   ),
+  inbox: (
+    <>
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <path d="M2 9h3.2l.8 1.6h4l.8-1.6H14" />
+    </>
+  ),
+  note: (
+    <>
+      <path d="M4 2h6l2.5 2.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" />
+      <path d="M5.5 7h5M5.5 9.5h3" />
+    </>
+  ),
+  bolt: <path d="M9 1.8 3.8 9h3.7L7 14.2 12.2 7H8.5Z" />,
+  upload: (
+    <>
+      <path d="M8 10.5V3M5 6l3-3 3 3" />
+      <path d="M3 10v2.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V10" />
+    </>
+  ),
+  bulb: (
+    <>
+      <path d="M6 11.5h4M6.5 13.8h3" />
+      <path d="M8 2a4 4 0 0 0-2.4 7.2c.5.4.9 1 .9 1.6V11h3v-.2c0-.6.4-1.2.9-1.6A4 4 0 0 0 8 2Z" />
+    </>
+  ),
+  up: <path d="M8 13V3.5M4 7.5l4-4 4 4" />,
+  doc: (
+    <>
+      <path d="M4 1.8h5.2L12.5 5v8.2a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V2.8a1 1 0 0 1 1-1Z" />
+      <path d="M9 1.8V5h3.5" />
+    </>
+  ),
   check: <path d="m3 8.5 3.2 3L13 4.5" />,
   cross: <path d="m4 4 8 8M12 4l-8 8" />,
   bell: (

@@ -308,8 +308,11 @@ export function SettingsModal() {
                   <Row label="Compact density" hint="Tighter spacing — useful with 6+ sessions">
                     <Toggle checked={dense} onChange={() => toggleDense()} />
                   </Row>
-                  <Row label="Translucent background" hint="Show the desktop through the app (macOS). Turn off if window dragging feels heavy.">
-                    <Toggle checked={appSettings.translucentBg !== false} onChange={(v) => setAppSetting("translucentBg", v)} />
+                  <Row label="Background" hint="Gradient: soft graphite with color glows. Translucent: desktop shows through (macOS). Solid: flat.">
+                    {(["gradient", "translucent", "solid"] as const).map((b) => (
+                      <button key={b} className={`btn ${((appSettings.background as string | undefined) ?? "gradient") === b ? "active" : ""}`}
+                        onClick={() => setAppSetting("background", b)}>{b}</button>
+                    ))}
                   </Row>
                   <Row label="Backup & restore" hint="Move your preferences to another machine">
                     <button className="btn" onClick={exportSettings}><Icon name="download" size={10} /> export</button>

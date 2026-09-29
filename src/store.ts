@@ -38,7 +38,7 @@ export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "previ
 /** What fills the center stage: the session terminal, the home dashboard, or
  *  one of the team surfaces opened from the nav rail (Monocode-style — team
  *  panels are full center views now, not a right-rail sidebar). */
-export type MainView = "home" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
+export type MainView = "home" | "new" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
 
 /** One registered project workspace (projects.json via projects_list). */
 export interface ProjectInfo {
@@ -218,7 +218,7 @@ interface AppState {
   sessionTemplatesOpen: boolean;
   /** Spawn a session on `branch` (reusing spawnSession), then brief the
    *  template's starting prompt in once the pty reaches an idle claude prompt. */
-  spawnFromTemplate: (id: string, name: string, branch: string, startingPrompt: string) => Promise<void>;
+  spawnFromTemplate: (id: string, name: string, branch: string, startingPrompt: string, agent?: AgentId) => Promise<void>;
   appSettings: Record<string, unknown>;
   setAppSetting: (key: string, value: unknown) => void;
   /** Clear a session's cost-cap flag on a manual resume and rebaseline its cap
@@ -780,10 +780,10 @@ export const useApp = create<AppState>((set, get) => ({
   },
   availableAgents: [],
   sessionTemplatesOpen: false,
-  spawnFromTemplate: async (id, name, branch, startingPrompt) => {
-    if (!isTauri()) { get().toast("Session templates need the native app to spawn sessions", "warn"); return; }
+  spawnFromTemplate: async (id, name, branch, startingPrompt, agent) => {
+    if (!isTauri()) { get().toast("Starting a session needs the native app", "warn"); return; }
     // reuse the one spawn path (worktree + pty + team entry); it toasts on failure
-    await get().spawnSession(id, name, branch);
+    await get().spawnSession(id, name, branch, agent);
     // spawn didn't get far enough to register the member → don't poll for a
     // session that will never come up (spawnSession already reported why)
     if (!get().members.some((m) => m.id === id)) return;
