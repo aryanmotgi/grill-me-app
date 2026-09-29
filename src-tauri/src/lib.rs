@@ -1622,6 +1622,76 @@ fn newest_transcript(repo_path: &str) -> Option<PathBuf> {
     None
 }
 
+/// Newest transcript for EXACTLY this folder (no parent fallback) — the chat
+/// view must never show another project's conversation.
+fn newest_transcript_exact(repo_path: &str) -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let dir = PathBuf::from(home)
+        .join(".claude")
+        .join("projects")
+        .join(project_slug(repo_path.trim_end_matches('/')));
+    std::fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+}
+
+#[derive(Serialize, Default)]
+struct TranscriptChunk {
+    /// transcript file these lines came from ("" = none yet)
+    path: String,
+    /// byte offset to pass back on the next call
+    offset: u64,
+    /// true when `path` differs from the caller's — discard old messages
+    reset: bool,
+    /// complete JSONL lines appended since `offset`
+    lines: Vec<String>,
+}
+
+/// Incremental tail of the session's Claude Code transcript for the chat
+/// view. First call (or a new transcript file) starts from the last ~2MB;
+/// later calls return only complete lines appended since `offset`.
+#[tauri::command]
+fn transcript_tail(repo_path: String, path: Option<String>, offset: u64) -> TranscriptChunk {
+    use std::io::{Read as _, Seek as _};
+    const START_WINDOW: u64 = 2_000_000;
+    const READ_CAP: u64 = 4_000_000;
+    let Some(newest) = newest_transcript_exact(&repo_path) else {
+        return TranscriptChunk::default();
+    };
+    let newest_s = newest.to_string_lossy().into_owned();
+    let Ok(mut f) = std::fs::File::open(&newest) else {
+        return TranscriptChunk::default();
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let reset = path.as_deref() != Some(newest_s.as_str()) || offset > len;
+    let mut start = if reset { len.saturating_sub(START_WINDOW) } else { offset };
+    let _ = f.seek(std::io::SeekFrom::Start(start));
+    let mut raw = Vec::new();
+    let _ = (&mut f).take(READ_CAP).read_to_end(&mut raw);
+    let mut body: &[u8] = &raw;
+    if reset && start > 0 {
+        // landed mid-line: drop the partial first line
+        match body.iter().position(|&b| b == b'\n') {
+            Some(i) => {
+                start += (i + 1) as u64;
+                body = &body[i + 1..];
+            }
+            None => body = &[],
+        }
+    }
+    // only hand back complete lines; a trailing partial line waits for next poll
+    let end = body.iter().rposition(|&b| b == b'\n').map(|i| i + 1).unwrap_or(0);
+    let lines = String::from_utf8_lossy(&body[..end])
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(str::to_owned)
+        .collect();
+    TranscriptChunk { path: newest_s, offset: start + end as u64, reset, lines }
+}
+
 #[derive(Default, Clone)]
 struct UsageCacheEntry {
     offset: u64,
@@ -4323,6 +4393,7 @@ pub fn run() {
             checkpoint_commit,
             git_revert_file,
             usage_stats,
+            transcript_tail,
             ci_state,
             pr_list,
             pr_merge,
