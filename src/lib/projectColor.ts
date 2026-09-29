@@ -19,3 +19,14 @@ function hueFromId(id: string): number {
 export function projectColor(id: string): string {
   return `hsl(${hueFromId(id)} 34% 62%)`;
 }
+
+/** Brighter variant for the pixel project icon — sprites need more punch than
+ *  a dot to read at 16px, still desaturated enough for the graphite chrome. */
+export function projectSpriteColor(id: string): string {
+  return `hsl(${hueFromId(id)} 62% 64%)`;
+}
+
+/** Stable small integer from an id (sprite picker). */
+export function projectHash(id: string): number {
+  return hueFromId(id + "#sprite");
+}
