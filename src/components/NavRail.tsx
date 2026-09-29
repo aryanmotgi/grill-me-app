@@ -15,7 +15,7 @@ import { addProjectFromFinder } from "../lib/addProject";
 // under the overlay titlebar.
 // ---------------------------------------------------------------------------
 
-function NavItem({ icon, label, badge, active, onClick, title, kbd }: {
+function NavItem({ icon, label, badge, active, onClick, title, kbd, tour }: {
   icon: string;
   label: string;
   badge?: number;
@@ -23,6 +23,7 @@ function NavItem({ icon, label, badge, active, onClick, title, kbd }: {
   onClick: () => void;
   title?: string;
   kbd?: string;
+  tour?: string;
 }) {
   return (
     <button
@@ -31,6 +32,7 @@ function NavItem({ icon, label, badge, active, onClick, title, kbd }: {
       }`}
       title={title ?? label}
       onClick={onClick}
+      data-tour={tour}
     >
       {icon === "claude" ? <AgentLogo agent="claude" size={15} /> : <Icon name={icon} size={15} />}
       <span className="text-[13px] flex-1">{label}</span>
@@ -78,6 +80,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
         <button
           className="flex items-center gap-2.5 w-full h-9 px-2.5 mb-1.5 rounded-lg border border-line bg-raised/40 text-faint hover:text-dim cursor-pointer transition-colors"
           title="Jump to a session or action (⌘K)"
+          data-tour="command"
           onClick={() => setSwitcherOpen(true)}
         >
           <Icon name="search" size={15} />
@@ -86,7 +89,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
         </button>
         <NavItem icon="layout" label="Home" active={view === "home"} title="Mission control (⌘H)"
           onClick={() => go("home")} />
-        <NavItem icon="note" label="Brain" active={view === "brain"} title="Shared project brain: goal, where was I, what's happening"
+        <NavItem icon="note" label="Brain" tour="brain" active={view === "brain"} title="Shared project brain: goal, where was I, what's happening"
           onClick={() => go("brain")} />
         <NavItem icon="claude" label="Claude" active={claudeOpen} title="Claude chat panel — sees your sessions (⌘J)"
           onClick={() => togglePanel("claude")} />
@@ -141,7 +144,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
       </div>
 
       <div className="flex-none px-2 py-2 flex flex-col gap-0.5">
-        <NavItem icon="gear" label="Settings" kbd="⌘," title="Settings (⌘,)" onClick={() => setSettingsOpen(true)} />
+        <NavItem icon="gear" label="Settings" tour="settings" kbd="⌘," title="Settings (⌘,)" onClick={() => setSettingsOpen(true)} />
       </div>
     </nav>
   );

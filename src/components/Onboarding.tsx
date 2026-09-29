@@ -5,7 +5,7 @@ import { placeCoachmark, type Placed } from "../lib/spotlight";
 /**
  * Spotlight tour: a dark overlay with a cut-out highlight around the REAL UI
  * element each step describes, plus a coachmark with back / next / skip.
- * Targets are found by `data-tour="…"` attributes (see SessionList, TopBar,
+ * Targets are found by `data-tour="…"` attributes (see SessionList, NavRail,
  * HomeDashboard) and positioned via getBoundingClientRect — so the tour tracks
  * the live layout and re-measures on resize / scroll. If a step's element is
  * not mounted (focus mode, demo mode, wrong view) that step is skipped rather
@@ -18,31 +18,49 @@ const STEPS: Step[] = [
     key: "sessions",
     sel: '[data-tour="sessions"]',
     title: "Sessions",
-    body: "One row per teammate. The status dot means idle / working / needs-input — click a row to view it, hover for split, DND and pause. “+ new session” spawns a real worktree with a live Claude Code terminal.",
+    body: "Every Claude Code session in this project. The dot means idle / working / needs you — click one to open it as a chat. Double-click a name to rename it.",
+  },
+  {
+    key: "new-session",
+    sel: '[data-tour="new-session"]',
+    title: "Start something",
+    body: "“+” opens “What are we grilling?” — type a task and Grill Me spins up a session on its own branch. Or “Start a hackathon” to plan the whole build at once.",
+  },
+  {
+    key: "brain",
+    sel: '[data-tour="brain"]',
+    title: "Brain",
+    body: "The project's shared notebook: goal, “where was I?”, deadline, pitch, and a code quiz. Every session and Claude read it automatically.",
+  },
+  {
+    key: "claude",
+    sel: '[data-tour="claude"]',
+    title: "Claude, beside your code",
+    body: "⌘J opens Claude next to your sessions — your claude.ai chats, and (once connected) it can see what your sessions are doing.",
   },
   {
     key: "needs-you",
     sel: '[data-tour="needs-you"]',
     title: "Needs you",
-    body: "The one queue that matters: sessions waiting on a decision, teammates blocked on you, and your merge turn all land here first. Empty means you're genuinely clear.",
-  },
-  {
-    key: "command",
-    sel: '[data-tour="command"]',
-    title: "Command palette",
-    body: "⌘K is the front door — jump to any teammate AND run actions (ship, settings, switch project). ⌘P switches projects, ⌘/ opens the full feature index.",
+    body: "Sessions waiting on a decision land here first. Empty means you're genuinely clear.",
   },
   {
     key: "ship",
     sel: '[data-tour="ship"]',
-    title: "Review & ship",
-    body: "Review the active session's diff and ship it — the one primary action up here. ⌘S does the same from anywhere.",
+    title: "Ship",
+    body: "See which sessions are ready and ship them — tests, commit, push, PR — in one go.",
+  },
+  {
+    key: "command",
+    sel: '[data-tour="command"]',
+    title: "Search",
+    body: "⌘K jumps to any session or action. ⌘B / ⌘⇧B / ⌘J show or hide the side panels.",
   },
   {
     key: "settings",
     sel: '[data-tour="settings"]',
     title: "Settings",
-    body: "Themes, the safety blocklist, terminal preferences — and the button to replay this tour — all live behind the gear.",
+    body: "Themes, background, the safety blocklist — and the button to replay this tour.",
   },
 ];
 

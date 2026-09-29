@@ -171,7 +171,7 @@ export function StatusBar() {
         <span className="status-dot working" style={{ width: 6, height: 6 }} /> <span className="num">{working}</span> working
       </span>
       {waiting.length ? (
-        <button className="flex items-center gap-1.5 text-warn hover:underline cursor-pointer"
+        <button data-tour="needs-you" className="flex items-center gap-1.5 text-warn hover:underline cursor-pointer"
           title={`Jump to ${waiting[0].name}`}
           onClick={() => setActive(waiting[0].id)}>
           <span className="status-dot needs-input" style={{ width: 6, height: 6 }} /> <span className="num">{waiting.length}</span> need you
@@ -191,6 +191,7 @@ export function StatusBar() {
       <span className="flex-1" />
       <button className="flex items-center gap-1.5 px-2 py-0.5 rounded-md cursor-pointer transition-colors hover:bg-raised hover:text-ink"
         title="Ship queue — ship every ready session at once"
+        data-tour="ship"
         onClick={() => void import("./ShipQueue").then(({ useShipQueue }) => useShipQueue.getState().setOpen(true))}>
         <Icon name="push" size={12} /> <span className="sb-wide">Ship</span>
       </button>

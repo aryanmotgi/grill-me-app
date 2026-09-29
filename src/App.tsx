@@ -42,7 +42,7 @@ import { CheckpointRunner } from "./components/CheckpointRunner";
 import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { NewSession } from "./components/NewSession";
-import { ClaudeDock, ClaudePanel } from "./components/ClaudePanel";
+import { ClaudeDock } from "./components/ClaudePanel";
 import { togglePanel, useLayout } from "./components/Dock";
 import { useRemoteAutostart } from "./components/ClaudeConnect";
 import { leftEdgePanel, panelsOn } from "./lib/layout";
@@ -350,8 +350,6 @@ export default function App() {
             <AutomationsPage />
           ) : view === "brain" ? (
             <BrainPage />
-          ) : view === "claude" ? (
-            <ClaudePanel />
           ) : view === "new" || !active ? (
             <NewSession />
           ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" ? (
