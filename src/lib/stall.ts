@@ -56,11 +56,11 @@ export function isStalled(
 }
 
 /**
- * Does recent output keep repeating? Cheap repeat-ratio heuristic: with enough
- * samples, the latest screen tail is near-identical to several of the previous
- * ones. The feed only asks this while the session is actively producing output
- * (status "working") — identical tails while output flows means a loop, not an
- * idle frozen screen.
+ * Does recent output keep repeating? A loop MOVES and comes back: the latest
+ * screen tail is near-identical to several earlier ones, AND somewhere in the
+ * window the screen was clearly different (A → B → A → B). A screen that just
+ * sits still — a long-running command, thinking, a ticking status line — is
+ * busy, not looping, so a window with no real change never counts.
  */
 export function looksLooping(recentTails: string[]): boolean {
   const tails = recentTails.map((t) => t.trim()).filter((t) => t.length > 0);
@@ -70,5 +70,7 @@ export function looksLooping(recentTails: string[]): boolean {
   if (last.replace(/\s+/g, "").length < 24) return false;
   const prev = tails.slice(0, -1);
   const similar = prev.filter((t) => tailSimilarity(t, last) >= 0.9).length;
-  return similar >= 2;
+  if (similar < 2) return false;
+  // evidence of motion: at least one sample clearly unlike the latest
+  return prev.some((t) => tailSimilarity(t, last) < 0.6);
 }

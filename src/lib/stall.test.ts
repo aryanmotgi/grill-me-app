@@ -36,21 +36,30 @@ describe("isStalled", () => {
 
 describe("looksLooping", () => {
   const block = "running tests\nFAIL src/foo.test.ts\nretrying command\nsame error as before";
+  const other = "installing dependencies\nresolving packages\nfetching metadata\nlinking binaries";
 
   it("returns false with too few samples", () => {
     expect(looksLooping([])).toBe(false);
     expect(looksLooping([block, block])).toBe(false);
   });
 
-  it("detects the latest tail repeating across several recent tails", () => {
-    expect(looksLooping([block, block, block, block])).toBe(true);
+  it("detects output that changes and keeps coming back (A → B → A → B)", () => {
+    expect(looksLooping([block, other, block, block])).toBe(true);
+    expect(looksLooping([other, block, other, block, block])).toBe(true);
   });
 
-  it("tolerates minor churn (a spinner frame) while the body repeats", () => {
+  it("does NOT flag a screen that just sits still (long command, thinking)", () => {
+    expect(looksLooping([block, block, block, block])).toBe(false);
     const a = `${block}\n⠋ esc to interrupt`;
     const b = `${block}\n⠙ esc to interrupt`;
     const c = `${block}\n⠹ esc to interrupt`;
-    expect(looksLooping([a, b, c])).toBe(true);
+    expect(looksLooping([a, b, c])).toBe(false);
+  });
+
+  it("tolerates spinner churn inside a real loop", () => {
+    const a = `${block}\n⠋ esc to interrupt`;
+    const c = `${block}\n⠹ esc to interrupt`;
+    expect(looksLooping([a, other, c, a])).toBe(true);
   });
 
   it("does NOT flag steadily-advancing output as a loop", () => {
@@ -69,6 +78,7 @@ describe("looksLooping", () => {
   });
 
   it("ignores blank/whitespace tails between real output", () => {
-    expect(looksLooping(["", "   ", block, block, block])).toBe(true);
+    expect(looksLooping(["", "   ", block, other, block, block])).toBe(true);
+    expect(looksLooping(["", "   ", block, block, block])).toBe(false);
   });
 });
