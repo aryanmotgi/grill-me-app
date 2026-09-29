@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp, attentionSessions } from "../store";
 import { tokenBudget, DEFAULT_TOKEN_BUDGET } from "../lib/dashboard";
 import { AgentLogo } from "./AgentLogo";
@@ -35,6 +35,29 @@ function HackClock() {
   const setAppSetting = useApp((s) => s.setAppSetting);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+
+  // the brain tells sessions how much time is left
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    void import("@tauri-apps/api/core").then(({ invoke }) => invoke("bridge_set_deadline", { ms: endsAt ?? 0 }).catch(() => {}));
+  }, [endsAt]);
+
+  // nudge when a threshold passes (3h, 1h, 30m, 15m, time's up)
+  const lastLeft = useRef<number | null>(null);
+  useEffect(() => {
+    if (!endsAt) { lastLeft.current = null; return; }
+    const left = endsAt - now;
+    const prev = lastLeft.current;
+    lastLeft.current = left;
+    if (prev === null) return;
+    for (const t of [180, 60, 30, 15, 0]) {
+      const at = t * 60_000;
+      if (prev > at && left <= at) {
+        useApp.getState().toast(t === 0 ? "⏰ Time's up — ship what works" : `⏰ ${clockLabel(left)} left — open Brain → What should we cut?`, "warn");
+        break;
+      }
+    }
+  }, [endsAt, now]);
 
   // minute resolution is enough — a per-second tick is a repaint per second
   useEffect(() => {

@@ -47,6 +47,63 @@ export function useWelcomeBack() {
   }, []);
 }
 
+function DeadlineCard() {
+  const endsAt = useApp((s) => s.appSettings.hackathonEndsAt as number | undefined);
+  const openTasks = useApp((s) => s.tasks.filter((t) => t.status !== "done").length);
+  const toast = useApp((s) => s.toast);
+  const [plan, setPlan] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!endsAt) return null;
+  const left = endsAt - Date.now();
+  const mins = Math.max(0, Math.floor(left / 60_000));
+  const label = left <= 0 ? "time's up" : mins >= 60 ? `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m left` : `${mins}m left`;
+
+  const ask = async () => {
+    if (!native()) { toast("Needs the native app", "warn"); return; }
+    setBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      setPlan(await invoke<string>("brain_cut"));
+    } catch (e) {
+      toast(`Couldn't plan: ${e}`, "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (!plan) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("bridge_add_note", { text: `✂ Deadline plan (${label}):\n${plan}`, by: "Deadline coach" })
+      .then(() => toast("Saved to the brain — every session sees it on its next message"))
+      .catch((e) => toast(`${e}`, "warn"));
+  };
+
+  return (
+    <div className={`composer-card rounded-xl px-4 py-3 flex flex-col gap-2 ${left < 3_600_000 ? "border-warn/50" : ""}`}>
+      <div className="flex items-center gap-2">
+        <Icon name="clock" size={13} />
+        <span className={`text-[13px] font-semibold flex-1 ${left < 3_600_000 ? "text-warn" : "text-ink"}`}>
+          Deadline · <span className="num">{label}</span>
+          <span className="font-normal text-faint"> · {openTasks} open task{openTasks === 1 ? "" : "s"}</span>
+        </span>
+        <button className="composer-btn" disabled={busy} onClick={() => void ask()}>
+          {busy ? <span className="spinner" /> : <Icon name="spark" size={11} />} What should we cut?
+        </button>
+      </div>
+      {plan ? (
+        <div className="text-[13px] leading-[1.6] text-dim">
+          <Markdown text={plan} />
+          <div className="flex gap-2 mt-2">
+            <button className="composer-btn on" onClick={() => void save()}><Icon name="check" size={11} /> Save to brain</button>
+            <button className="composer-btn" onClick={() => setPlan(null)}>Dismiss</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function BrainPage() {
   const project = useApp((s) => s.activeProject) ?? "default";
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "this project");
@@ -59,6 +116,7 @@ export function BrainPage() {
   const bridgeSig = useBridge((b) => JSON.stringify([b.state.goal, b.state.notes.length, b.state.plans.length, b.state.questions.length]));
   const toast = useApp((s) => s.toast);
 
+  const checksOn = useApp((s) => s.appSettings.brainChecks !== false);
   const [since, setSince] = useState<string | null>(null);
   const [now, setNow] = useState<string | null>(null);
   const [draftGoal, setDraftGoal] = useState<string | null>(null);
@@ -92,6 +150,12 @@ export function BrainPage() {
           <p className="text-[12.5px] text-faint mt-1">
             One shared notebook. The Claude app, Grill Me Chat, and every Claude Code session read it automatically.
           </p>
+          <label className="mt-2 flex items-center gap-2 text-[12px] text-dim cursor-pointer w-fit"
+            title="After each session reply, a quick Claude check flags work that contradicts the plan and ticks tasks on the board. Uses a little of your Claude plan.">
+            <input type="checkbox" className="accent-(--accent)" checked={checksOn}
+              onChange={(e) => setAppSetting("brainChecks", e.target.checked)} />
+            Smart checks — flag off-plan work and update the board automatically
+          </label>
         </div>
 
         {/* goal */}
@@ -109,6 +173,8 @@ export function BrainPage() {
             </button>
           )}
         </div>
+
+        <DeadlineCard />
 
         {/* where was I */}
         <div className="composer-card rounded-xl px-4 py-3 flex flex-col gap-2">
