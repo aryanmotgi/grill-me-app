@@ -99,9 +99,13 @@ function baseBranch(repo) {
 const MANAGED = [".claude/", "CLAUDE.md", "DELEGATION.md"];
 const isManaged = (f) => MANAGED.some((m) => f === m || f.startsWith(m));
 
+// Secret-bearing files never leave the Mac in a diff or a new-file preview.
+const SECRET_FILE = /(^|\/)(\.env[^/]*|[^/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)[^/]*|\.npmrc|\.netrc|credentials[^/]*)$/i;
+const NO_SECRETS = [":(exclude,glob)**/.env*", ":(exclude,glob)**/*.pem", ":(exclude,glob)**/*.key", ":(exclude,glob)**/id_rsa*", ":(exclude,glob)**/.npmrc"];
+
 /** New files the session created that git doesn't track yet. */
 function untracked(repo) {
-  return git(repo, ["ls-files", "--others", "--exclude-standard"]).split("\n").filter((f) => f && !isManaged(f));
+  return git(repo, ["ls-files", "--others", "--exclude-standard"]).split("\n").filter((f) => f && !isManaged(f) && !SECRET_FILE.test(f));
 }
 
 /** Changed + new files, minus Grill Me's own. */
@@ -136,7 +140,11 @@ function diffOf(m) {
       git(m.repoPath, ["diff", "--stat", "HEAD"]),
       fresh.length ? `new files: ${fresh.join(", ")}` : "",
     ].filter(Boolean).join("\n"),
-    diff: [range && git(m.repoPath, ["diff", range]), git(m.repoPath, ["diff", "HEAD"]), newFileText(m.repoPath, fresh)].filter(Boolean).join("\n"),
+    diff: [
+      range && git(m.repoPath, ["diff", range, "--", ".", ...NO_SECRETS]),
+      git(m.repoPath, ["diff", "HEAD", "--", ".", ...NO_SECRETS]),
+      newFileText(m.repoPath, fresh),
+    ].filter(Boolean).join("\n"),
   };
 }
 
@@ -768,14 +776,30 @@ async function callTool(name, args = {}) {
   }
 }
 
-// ---- JSON-RPC over stdio -------------------------------------------------------
+// ---- JSON-RPC (shared by stdio and HTTP) ---------------------------------------
 
-const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
+// Remote mode (claude.ai over Tailscale Funnel): read-only unless the user
+// allowed proposals, and every tool result passes through redact().
+const REMOTE = { on: false, allowWrites: false };
+const WRITE_TOOLS = new Set(["save_plan", "send_to_coder", "ask_brainstorm", "answer_question", "set_goal"]);
+
+function toolsFor() {
+  if (!REMOTE.on || REMOTE.allowWrites) return TOOLS;
+  return TOOLS.filter((t) => !WRITE_TOOLS.has(t.name));
+}
+
+/** Strip anything that looks like a credential before it leaves the Mac. */
+export function redact(text) {
+  return String(text)
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted private key]")
+    .replace(/\b(sk-[A-Za-z0-9_-]{16,}|sk-ant-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{10,})\b/g, "[redacted]")
+    .replace(/\b([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL)[A-Z0-9_]*)(\s*[=:]\s*)(["']?)[^\s"'`]{6,}\3/gi, "$1$2$3[redacted]$3");
+}
 
 async function handle(req) {
-  const { id, method, params = {} } = req;
-  const reply = (result) => id !== undefined && send({ jsonrpc: "2.0", id, result });
-  const fail = (code, message) => id !== undefined && send({ jsonrpc: "2.0", id, error: { code, message } });
+  const { id, method, params = {} } = req ?? {};
+  const reply = (result) => (id === undefined ? null : { jsonrpc: "2.0", id, result });
+  const fail = (code, message) => (id === undefined ? null : { jsonrpc: "2.0", id, error: { code, message } });
 
   switch (method) {
     case "initialize":
@@ -785,21 +809,31 @@ async function handle(req) {
         serverInfo: SERVER,
         instructions:
           "Grill Me bridge. In the Claude app you are the user's brainstorm partner and reviewer; Claude Code sessions are the coders. " +
-          "Start with catch_up (or whats_new). Save decisions the user makes with notes/save_plan so the coders see them.  Explain code changes (get_diff) in plain English. Turn agreed plans into save_plan. " +
+          "Start with catch_up (or whats_new). Save decisions the user makes with notes/save_plan so the coders see them. Explain code changes (get_diff) in plain English. Turn agreed plans into save_plan. " +
           "Before send_to_coder, grill the user: make them explain the plan back and push back on vague answers. " +
-          "In a Claude Code session: read get_plan before starting, and use ask_brainstorm for product/design calls.",
+          "In a Claude Code session: read get_plan before starting, and use ask_brainstorm for product/design calls." +
+          (REMOTE.on && !REMOTE.allowWrites ? " This connection is read-only: you can see everything but not change anything." : ""),
       });
     case "ping":
       return reply({});
     case "tools/list":
-      return reply({ tools: TOOLS });
-    case "tools/call":
+      return reply({ tools: toolsFor() });
+    case "tools/call": {
+      const name = params.name;
+      const args = params.arguments ?? {};
+      if (!toolsFor().some((t) => t.name === name)) {
+        return reply({ content: [{ type: "text", text: `Tool ${name} isn't available on this connection (read-only). Turn on "Allow proposals" in Grill Me to use it.` }], isError: true });
+      }
+      if (REMOTE.on && !REMOTE.allowWrites && name === "notes" && args.action === "add") {
+        return reply({ content: [{ type: "text", text: "This connection is read-only — adding notes is off." }], isError: true });
+      }
       try {
-        const text = await callTool(params.name, params.arguments ?? {});
-        return reply({ content: [{ type: "text", text }] });
+        const text = await callTool(name, args);
+        return reply({ content: [{ type: "text", text: REMOTE.on ? redact(text) : text }] });
       } catch (e) {
         return reply({ content: [{ type: "text", text: String(e?.message ?? e) }], isError: true });
       }
+    }
     case "prompts/list":
       return reply({ prompts: SKILLS.map(([name, title, description]) => ({ name, title, description })) });
     case "prompts/get": {
@@ -809,14 +843,98 @@ async function handle(req) {
       return reply({ description: s[2], messages: [{ role: "user", content: { type: "text", text: body } }] });
     }
     default:
-      if (method?.startsWith("notifications/")) return;
+      if (method?.startsWith("notifications/")) return null;
       return fail(-32601, `Method not found: ${method}`);
   }
 }
 
-if (!cliMode(process.argv.slice(2))) createInterface({ input: process.stdin }).on("line", (line) => {
-  if (!line.trim()) return;
-  let req;
-  try { req = JSON.parse(line); } catch { return send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
-  handle(req).catch((e) => process.stderr.write(`[grill-me mcp] ${e?.stack ?? e}\n`));
-});
+// ---- stdio (Claude app + Claude Code, local) -------------------------------------
+
+const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
+
+function serveStdio() {
+  createInterface({ input: process.stdin }).on("line", (line) => {
+    if (!line.trim()) return;
+    let req;
+    try { req = JSON.parse(line); } catch { return send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
+    handle(req).then((msg) => { if (msg) send(msg); }).catch((e) => process.stderr.write(`[grill-me mcp] ${e?.stack ?? e}\n`));
+  });
+}
+
+// ---- HTTP (claude.ai over Tailscale Funnel) ---------------------------------------
+// Streamable-HTTP MCP, JSON responses only. Loopback only — Funnel is the
+// sole way in. The URL carries a 64-hex secret (/mcp/<secret>); anything
+// else is a 404 so the endpoint doesn't reveal itself. Rate-limited and
+// every request is logged to ~/.grillme/remote-access.jsonl.
+
+const ACCESS_LOG = join(ROOT, "remote-access.jsonl");
+const RATE_PER_MIN = 120;
+const MAX_BODY = 1_000_000;
+
+async function serveHttp(port, secretFile) {
+  const { createServer } = await import("node:http");
+  const { timingSafeEqual } = await import("node:crypto");
+  const { appendFileSync, statSync: st, renameSync: mv } = await import("node:fs");
+  const secret = Buffer.from(readFileSync(secretFile, "utf8").trim());
+  if (!/^[0-9a-f]{64}$/.test(secret.toString())) throw new Error("bad secret file");
+  const hits = [];
+
+  const log = (entry) => {
+    try {
+      if (existsSync(ACCESS_LOG) && st(ACCESS_LOG).size > 1_000_000) mv(ACCESS_LOG, `${ACCESS_LOG}.1`);
+      appendFileSync(ACCESS_LOG, `${JSON.stringify({ ts: Date.now(), ...entry })}\n`);
+    } catch { /* logging never breaks serving */ }
+  };
+  const authed = (path, auth) => {
+    const fromPath = path.startsWith("/mcp/") ? path.slice(5).split("/")[0] : "";
+    const fromHeader = /^Bearer\s+(\S+)$/i.exec(auth ?? "")?.[1] ?? "";
+    const given = Buffer.from(fromPath || fromHeader);
+    return given.length === secret.length && timingSafeEqual(given, secret);
+  };
+  const end = (res, code, body, type = "application/json") => {
+    res.writeHead(code, { "Content-Type": type, "Cache-Control": "no-store" });
+    res.end(body);
+  };
+
+  createServer((req, res) => {
+    const path = (req.url ?? "").split("?")[0];
+    const who = req.headers["tailscale-funnel-request"] ? "funnel" : "local";
+    const now = Date.now();
+    while (hits.length && now - hits[0] > 60_000) hits.shift();
+    if (hits.length >= RATE_PER_MIN) { log({ who, status: 429 }); return end(res, 429, '{"error":"slow down"}'); }
+    hits.push(now);
+    if (!(path === "/mcp" || path.startsWith("/mcp/")) || !authed(path, req.headers.authorization)) {
+      log({ who, status: 404, path: path.slice(0, 5) });
+      return end(res, 404, "Not found", "text/plain");
+    }
+    if (req.method === "GET" || req.method === "DELETE") return end(res, 405, '{"error":"POST only"}');
+    if (req.method !== "POST") return end(res, 405, '{"error":"POST only"}');
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => { size += c.length; if (size > MAX_BODY) req.destroy(); else chunks.push(c); });
+    req.on("end", async () => {
+      let body;
+      try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return end(res, 400, '{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}'); }
+      const batch = Array.isArray(body) ? body : [body];
+      const out = [];
+      for (const msg of batch.slice(0, 20)) {
+        const r = await handle(msg).catch((e) => ({ jsonrpc: "2.0", id: msg?.id ?? null, error: { code: -32603, message: String(e?.message ?? e) } }));
+        log({ who, status: 200, method: msg?.method, tool: msg?.params?.name });
+        if (r) out.push(r);
+      }
+      if (!out.length) { res.writeHead(202); return res.end(); }
+      end(res, 200, JSON.stringify(Array.isArray(body) ? out : out[0]));
+    });
+  }).listen(port, "127.0.0.1", () => process.stderr.write(`[grill-me mcp] remote on 127.0.0.1:${port}\n`));
+}
+
+const argv = process.argv.slice(2);
+if (argv.includes("--http")) {
+  REMOTE.on = true;
+  REMOTE.allowWrites = argv.includes("--allow-writes");
+  const i = argv.indexOf("--http");
+  const j = argv.indexOf("--secret-file");
+  serveHttp(Number(argv[i + 1]) || 4519, argv[j + 1]).catch((e) => { process.stderr.write(`[grill-me mcp] ${e}\n`); process.exit(1); });
+} else if (!cliMode(argv)) {
+  serveStdio();
+}
