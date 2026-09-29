@@ -21,7 +21,28 @@ use std::time::{Duration, Instant};
 
 pub(crate) const REMOTE_PORT: u16 = 4519;
 
-static SERVER: Mutex<Option<(Child, bool)>> = Mutex::new(None);
+/// The running server + how it was started (allow proposals, share chats).
+static SERVER: Mutex<Option<(Child, bool, bool)>> = Mutex::new(None);
+
+fn pid_path() -> PathBuf {
+    crate::grillme_root().join("remote.pid")
+}
+
+/// Kill a server left behind by a crashed/force-quit app (recorded in the
+/// pidfile) — but only if that pid really is our remote server.
+fn kill_stale() {
+    let Ok(pid) = std::fs::read_to_string(pid_path()) else { return };
+    let pid = pid.trim();
+    if pid.is_empty() || !pid.bytes().all(|b| b.is_ascii_digit()) {
+        return;
+    }
+    let cmdline = Command::new("/bin/ps").args(["-p", pid, "-o", "command="]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    if cmdline.contains("grillme-mcp.mjs") && cmdline.contains("--http") {
+        let _ = Command::new("/bin/kill").arg(pid).status();
+    }
+    let _ = std::fs::remove_file(pid_path());
+}
 
 fn secret_path() -> PathBuf {
     crate::grillme_root().join("remote-secret")
@@ -53,11 +74,12 @@ fn secret(rotate: bool) -> Result<String, String> {
     Ok(s)
 }
 
-fn server_running() -> Option<bool> {
+/// (allow_writes, share_chats) of the live server, if any.
+fn server_running() -> Option<(bool, bool)> {
     let mut g = crate::lock_or_recover(&SERVER);
     match g.as_mut() {
-        Some((c, writes)) => match c.try_wait() {
-            Ok(None) => Some(*writes),
+        Some((c, writes, share)) => match c.try_wait() {
+            Ok(None) => Some((*writes, *share)),
             _ => {
                 *g = None;
                 None
@@ -67,15 +89,22 @@ fn server_running() -> Option<bool> {
     }
 }
 
-fn stop_server() {
-    if let Some((mut c, _)) = crate::lock_or_recover(&SERVER).take() {
+fn stop_locked(g: &mut Option<(Child, bool, bool)>) {
+    if let Some((mut c, _, _)) = g.take() {
         let _ = c.kill();
         let _ = c.wait();
     }
+    kill_stale();
 }
 
-fn start_server(allow_writes: bool) -> Result<(), String> {
-    stop_server();
+fn stop_server() {
+    stop_locked(&mut crate::lock_or_recover(&SERVER));
+}
+
+fn start_server(allow_writes: bool, share_chats: bool) -> Result<(), String> {
+    // one lock across stop → spawn → health check, so two starts can't race
+    let mut g = crate::lock_or_recover(&SERVER);
+    stop_locked(&mut g);
     crate::bridge::install();
     let node = crate::bridge::node_path().ok_or("Node.js not found (brew install node)")?;
     secret(false)?;
@@ -90,12 +119,16 @@ fn start_server(allow_writes: bool) -> Result<(), String> {
     if allow_writes {
         cmd.arg("--allow-writes");
     }
+    if !share_chats {
+        cmd.arg("--no-transcripts");
+    }
     let mut child = cmd.spawn().map_err(|e| format!("couldn't start the connection: {e}"))?;
     std::thread::sleep(Duration::from_millis(400));
     if let Ok(Some(status)) = child.try_wait() {
         return Err(format!("connection server exited ({status}) — is port {REMOTE_PORT} in use?"));
     }
-    *crate::lock_or_recover(&SERVER) = Some((child, allow_writes));
+    let _ = std::fs::write(pid_path(), child.id().to_string());
+    *g = Some((child, allow_writes, share_chats));
     Ok(())
 }
 
@@ -140,10 +173,21 @@ fn first_url(text: &str) -> Option<String> {
     text.split_whitespace().find(|w| w.starts_with("https://login.tailscale.com")).map(|w| w.trim_end_matches(['.', ',']).to_string())
 }
 
+fn funnel_text() -> String {
+    tailscale_timed(&["funnel", "status"], 8).map(|(_, out)| out).unwrap_or_default()
+}
+
+fn points_at_us(out: &str) -> bool {
+    out.contains(&format!("127.0.0.1:{REMOTE_PORT}")) || out.contains(&format!("localhost:{REMOTE_PORT}"))
+}
+
+/// Something else (not ours) is already served on the tailnet — don't clobber it.
+fn someone_elses(out: &str) -> bool {
+    out.contains("proxy http") && !points_at_us(out)
+}
+
 fn funnel_on() -> bool {
-    tailscale_timed(&["funnel", "status"], 8)
-        .map(|(_, out)| out.contains(&format!("127.0.0.1:{REMOTE_PORT}")) || out.contains(&format!("localhost:{REMOTE_PORT}")))
-        .unwrap_or(false)
+    points_at_us(&funnel_text())
 }
 
 fn public_host() -> Option<String> {
@@ -154,7 +198,9 @@ fn public_host() -> Option<String> {
 #[tauri::command(async)]
 pub(crate) fn remote_status() -> Value {
     let writes = server_running();
-    let funnel = writes.is_some() && funnel_on();
+    // report the real Funnel state even with no tracked server (e.g. a
+    // leftover from a crash) so the UI can offer "Turn off"
+    let funnel = funnel_on();
     let url = if funnel {
         match (public_host(), secret(false)) {
             (Some(h), Ok(s)) => Some(format!("https://{h}/mcp/{s}")),
@@ -163,12 +209,20 @@ pub(crate) fn remote_status() -> Value {
     } else {
         None
     };
-    json!({ "server": writes.is_some(), "allowWrites": writes.unwrap_or(false), "funnel": funnel, "url": url })
+    let url = if writes.is_some() { url } else { None };
+    json!({
+        "server": writes.is_some(),
+        "allowWrites": writes.map(|w| w.0).unwrap_or(false),
+        "shareChats": writes.map(|w| w.1).unwrap_or(true),
+        "funnel": funnel,
+        "url": url,
+        "stale": funnel && writes.is_none(),
+    })
 }
 
 /// Go online: start the loopback server, then publish it with Funnel.
 #[tauri::command(async)]
-pub(crate) fn remote_start(allow_writes: bool) -> Result<Value, String> {
+pub(crate) fn remote_start(allow_writes: bool, share_chats: Option<bool>) -> Result<Value, String> {
     let ts = crate::tailscale::tailscale_status();
     if ts["installed"] != true {
         return Err("Install Tailscale first (tailscale.com/download/mac).".into());
@@ -176,7 +230,10 @@ pub(crate) fn remote_start(allow_writes: bool) -> Result<Value, String> {
     if ts["running"] != true {
         return Err("Turn Tailscale on first.".into());
     }
-    start_server(allow_writes)?;
+    if someone_elses(&funnel_text()) {
+        return Err("Tailscale is already serving something else on this Mac — turn that off first (tailscale serve status).".into());
+    }
+    start_server(allow_writes, share_chats.unwrap_or(true))?;
     let (ok, out) = tailscale_timed(&["funnel", "--bg", &REMOTE_PORT.to_string()], 25)?;
     if !ok || out.to_lowercase().contains("not enabled") {
         stop_server();
@@ -188,7 +245,10 @@ pub(crate) fn remote_start(allow_writes: bool) -> Result<Value, String> {
 /// Go offline: take the Funnel down and stop the server.
 #[tauri::command(async)]
 pub(crate) fn remote_stop() -> Result<(), String> {
-    let _ = tailscale_timed(&["funnel", "--https=443", "off"], 10);
+    // only take down the Funnel if it's ours
+    if funnel_on() {
+        let _ = tailscale_timed(&["funnel", "--https=443", "off"], 10);
+    }
     stop_server();
     Ok(())
 }
@@ -197,9 +257,11 @@ pub(crate) fn remote_stop() -> Result<(), String> {
 #[tauri::command(async)]
 pub(crate) fn remote_rotate() -> Result<Value, String> {
     let running = server_running();
+    // the server re-reads the secret per request, so rotation applies at
+    // once; restart anyway to shed any live connections on the old one
     secret(true)?;
-    if let Some(writes) = running {
-        start_server(writes)?;
+    if let Some((writes, share)) = running {
+        start_server(writes, share)?;
     }
     Ok(remote_status())
 }
@@ -213,7 +275,7 @@ pub(crate) fn remote_log(limit: usize) -> Vec<Value> {
 
 /// App exit: never leave the door open with nothing behind it.
 pub(crate) fn shutdown() {
-    if server_running().is_some() {
+    if server_running().is_some() && funnel_on() {
         let _ = tailscale_timed(&["funnel", "--https=443", "off"], 5);
     }
     stop_server();

@@ -3352,7 +3352,9 @@ fn start_api_server(app: tauri::AppHandle) {
                 }
                 ("POST", "/bridge/push") => {
                     // Claude bridge writes (from the grill-me MCP server).
-                    // Everything lands pending — the user approves in the app.
+                    // Handoffs, plans and answers land PENDING (approved in
+                    // the app). Notes/goal/questions are context and are never
+                    // accepted from the remote (claude.ai) connection.
                     let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
                     let kind = v["kind"].as_str().unwrap_or("");
                     match bridge::push(kind, &v["item"]) {

@@ -10,7 +10,7 @@ import { Icon } from "./Icon";
 // chats, projects, and your sessions in one place.
 // ---------------------------------------------------------------------------
 
-export interface RemoteStatus { server: boolean; allowWrites: boolean; funnel: boolean; url: string | null }
+export interface RemoteStatus { server: boolean; allowWrites: boolean; shareChats: boolean; funnel: boolean; url: string | null; stale?: boolean }
 
 export const useRemote = create<{ status: RemoteStatus | null }>(() => ({ status: null }));
 
@@ -32,8 +32,13 @@ export function useRemoteAutostart() {
       await refreshRemote();
       if (st.appSettings.remoteOn === true && !useRemote.getState().status?.url) {
         const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("remote_start", { allowWrites: st.appSettings.remoteWrites === true }).catch(() => {});
+        await invoke("remote_start", { allowWrites: st.appSettings.remoteWrites === true, shareChats: st.appSettings.remoteShareChats !== false })
+          .catch((e) => st.toast(`claude.ai connection didn't reopen: ${e}`, "warn"));
         await refreshRemote();
+        // never reopen silently — say so every launch
+        if (useRemote.getState().status?.url) {
+          st.toast(`claude.ai connection is on (${st.appSettings.remoteWrites === true ? "can propose" : "read-only"}) — turn it off in the Claude panel`);
+        }
       }
     })();
   }, []);
@@ -49,6 +54,7 @@ export function ClaudeConnect() {
   const toast = useApp((s) => s.toast);
   const setAppSetting = useApp((s) => s.setAppSetting);
   const writes = useApp((s) => s.appSettings.remoteWrites === true);
+  const shareChats = useApp((s) => s.appSettings.remoteShareChats !== false);
   const [busy, setBusy] = useState(false);
   const [enableLink, setEnableLink] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -65,13 +71,13 @@ export function ClaudeConnect() {
     setBusy(true);
     setEnableLink(null);
     try {
-      const r = await call<RemoteStatus & { needsEnable?: boolean; link?: string; message?: string }>("remote_start", { allowWrites: writes });
+      const r = await call<RemoteStatus & { needsEnable?: boolean; link?: string; message?: string }>("remote_start", { allowWrites: writes, shareChats });
       if (r.needsEnable) {
         setEnableLink(r.link ?? "https://login.tailscale.com/admin/acls");
       } else {
         setAppSetting("remoteOn", true);
         useRemote.setState({ status: r });
-        toast("claude.ai can now see your sessions (read-only)");
+        toast(`claude.ai can now see your sessions (${writes ? "can propose — each needs your OK" : "read-only"})`);
       }
     } catch (e) {
       toast(`${e}`, "warn");
@@ -97,18 +103,28 @@ export function ClaudeConnect() {
     }
   };
 
-  const setWrites = async (on: boolean) => {
-    setAppSetting("remoteWrites", on);
-    if (status?.server) {
-      const r = await call<RemoteStatus>("remote_start", { allowWrites: on }).catch(() => null);
-      if (r) useRemote.setState({ status: r });
-    }
+  const restartWith = async (w: boolean, share: boolean) => {
+    if (!status?.server) return;
+    const r = await call<RemoteStatus>("remote_start", { allowWrites: w, shareChats: share }).catch(() => null);
+    if (r) useRemote.setState({ status: r });
   };
+  const setWrites = async (on: boolean) => { setAppSetting("remoteWrites", on); await restartWith(on, shareChats); };
+  const setShare = async (on: boolean) => { setAppSetting("remoteShareChats", on); await restartWith(writes, on); };
 
   const openConnectors = () => void call("claudeai_navigate", { url: "https://claude.ai/settings/connectors" }).catch(() => {});
   const loadLog = async () => setLog(await call<typeof log>("remote_log", { limit: 30 }).catch(() => []));
 
   if (!native()) return null;
+
+  if (status?.stale) {
+    return (
+      <div className="flex-none border-b border-line px-3 py-2.5 flex items-center gap-2 text-[12px]">
+        <span className="w-2 h-2 rounded-full bg-warn flex-none" />
+        <span className="flex-1 text-dim">A claude.ai connection was left open from last time.</span>
+        <button className="composer-btn h-7 text-[12px]" disabled={busy} onClick={() => void disconnect()}>Turn off</button>
+      </div>
+    );
+  }
 
   if (!status?.url) {
     return (
@@ -152,9 +168,13 @@ export function ClaudeConnect() {
             <button className="composer-btn h-7 text-[11.5px]" onClick={() => void loadLog()}>Access log</button>
             <button className="composer-btn h-7 text-[11.5px]" disabled={busy} onClick={() => void disconnect()}>Turn off</button>
           </span>
-          <label className="flex items-center gap-2 cursor-pointer w-fit">
-            <input type="checkbox" className="accent-(--accent)" checked={writes} onChange={(e) => void setWrites(e.target.checked)} />
-            Allow proposals (plans, tasks for sessions) — each still needs your OK in Grill Me
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" className="accent-(--accent) mt-0.5" checked={shareChats} onChange={(e) => void setShare(e.target.checked)} />
+            <span>Share session conversations — the most useful part, but a secret you typed into a chat might not be caught by redaction</span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" className="accent-(--accent) mt-0.5" checked={writes} onChange={(e) => void setWrites(e.target.checked)} />
+            <span>Allow proposals — plans and tasks for sessions, each waiting for your OK in Grill Me (notes and the goal always stay off from here)</span>
           </label>
           {log.length ? (
             <div className="max-h-32 overflow-y-auto font-mono text-[10.5px] text-faint border border-line rounded-lg p-2">
