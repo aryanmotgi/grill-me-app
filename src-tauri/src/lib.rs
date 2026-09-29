@@ -137,6 +137,8 @@ fn git_state(repo_path: String) -> GitState {
         .map(|out| {
             out.lines()
                 .filter(|l| l.len() > 3)
+                // Grill Me's own installs (hooks, /ship, delegation) aren't the session's work
+                .filter(|l| !(l.starts_with("??") && is_grillme_managed(l[3..].trim())))
                 .map(|l| GitChange {
                     status: l[..2].trim().to_string(),
                     file: l[3..].trim().to_string(),
@@ -1907,6 +1909,11 @@ fn validate_member_id(id: &str) -> Result<(), String> {
 }
 
 /// Single-quote a string for POSIX sh: wrap in ' and escape embedded ' as '\''.
+/// Files Grill Me installs into every worktree — hidden from change lists.
+fn is_grillme_managed(path: &str) -> bool {
+    path == "CLAUDE.md" || path == "DELEGATION.md" || path == ".claude/" || path.starts_with(".claude/")
+}
+
 fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
@@ -4602,6 +4609,14 @@ mod tests {
         assert!(validate_member_id("x$(whoami)").is_err());
         assert!(validate_member_id("a b").is_err());
         assert!(validate_member_id("a'b").is_err());
+    }
+
+    #[test]
+    fn grillme_managed_paths() {
+        assert!(super::is_grillme_managed(".claude/"));
+        assert!(super::is_grillme_managed(".claude/settings.json"));
+        assert!(super::is_grillme_managed("DELEGATION.md"));
+        assert!(!super::is_grillme_managed("src/claude.ts"));
     }
 
     #[test]
