@@ -94,16 +94,49 @@ function baseBranch(repo) {
   return "";
 }
 
-/** Branch, commits beyond the base branch, file summary, and full diff. */
+// Files Grill Me itself installs into every worktree (hooks, /ship,
+// delegation playbook) — never count them as the session's work.
+const MANAGED = [".claude/", "CLAUDE.md", "DELEGATION.md"];
+const isManaged = (f) => MANAGED.some((m) => f === m || f.startsWith(m));
+
+/** New files the session created that git doesn't track yet. */
+function untracked(repo) {
+  return git(repo, ["ls-files", "--others", "--exclude-standard"]).split("\n").filter((f) => f && !isManaged(f));
+}
+
+/** Changed + new files, minus Grill Me's own. */
+function changedFiles(repo) {
+  return git(repo, ["status", "--porcelain"]).split("\n").filter(Boolean)
+    .filter((l) => !(l.startsWith("??") && isManaged(l.slice(3).trim())));
+}
+
+/** Small text contents of new files, so reviews and quizzes see them too. */
+function newFileText(repo, files) {
+  return files.slice(0, 10).map((f) => {
+    try {
+      const buf = readFileSync(join(repo, f));
+      if (buf.length > 4000 || buf.includes(0)) return `+++ new file ${f} (${buf.length} bytes, not shown)`;
+      return `+++ new file ${f}\n${buf.toString("utf8")}`;
+    } catch { return ""; }
+  }).filter(Boolean).join("\n");
+}
+
+/** Branch, commits beyond the base branch, file summary, and full diff
+ *  (including brand-new files). */
 function diffOf(m) {
   const base = baseBranch(m.repoPath);
   const branch = git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const range = base && base !== branch ? `${base}...HEAD` : "";
+  const fresh = untracked(m.repoPath);
   return {
     base, branch,
     log: range ? git(m.repoPath, ["log", "--oneline", "-20", `${base}..HEAD`]) : git(m.repoPath, ["log", "--oneline", "-20"]),
-    stat: [range && git(m.repoPath, ["diff", "--stat", range]), git(m.repoPath, ["diff", "--stat", "HEAD"])].filter(Boolean).join("\n"),
-    diff: [range && git(m.repoPath, ["diff", range]), git(m.repoPath, ["diff", "HEAD"])].filter(Boolean).join("\n"),
+    stat: [
+      range && git(m.repoPath, ["diff", "--stat", range]),
+      git(m.repoPath, ["diff", "--stat", "HEAD"]),
+      fresh.length ? `new files: ${fresh.join(", ")}` : "",
+    ].filter(Boolean).join("\n"),
+    diff: [range && git(m.repoPath, ["diff", range]), git(m.repoPath, ["diff", "HEAD"]), newFileText(m.repoPath, fresh)].filter(Boolean).join("\n"),
   };
 }
 
@@ -205,7 +238,7 @@ function sessionCard(m) {
   const { turns: ts, updated } = turns(m.repoPath);
   const last = ts[ts.length - 1];
   const working = updated && Date.now() - updated < 20_000;
-  const changed = git(m.repoPath, ["status", "--porcelain"]).split("\n").filter(Boolean).length;
+  const changed = changedFiles(m.repoPath).length;
   return [
     `### ${label(m)}  (id: ${m.id})`,
     `branch: ${git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]) || "?"} · ${changed} changed files · ${working ? "WORKING now" : `last active ${ago(updated)}`}`,
@@ -371,7 +404,7 @@ function checkInput(member) {
     decisions,
     openTasks: tasks,
     latestTurn: { ask: clip(last.ask, 1500), tools: last.tools.slice(-30), reply: clip(last.reply, 2500) },
-    changedFiles: git(m.repoPath, ["status", "--porcelain"]).split("\n").filter(Boolean).slice(0, 40),
+    changedFiles: changedFiles(m.repoPath).slice(0, 40),
   }, null, 1);
 }
 
