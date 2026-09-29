@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { useBridge } from "./BridgePanel";
 import { Markdown } from "./Markdown";
 import { Icon } from "./Icon";
+import { LessonsCard, PitchCard, QuizCard } from "./BrainTools";
 
 // ---------------------------------------------------------------------------
 // The project's shared brain (nav rail → Brain). One notebook that the Claude
@@ -25,9 +26,9 @@ function ago(ms: number): string {
 }
 
 async function digest(since: number): Promise<string> {
-  if (!native()) return "_The brain reads your sessions — open the native app._";
+  if (!native()) return "*The brain reads your sessions — open the native app.*";
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("brain_digest", { since }).catch((e) => `_Couldn't read the brain: ${e}_`);
+  return invoke<string>("brain_digest", { since }).catch((e) => `*Couldn't read the brain: ${e}*`);
 }
 
 /** "Welcome back" nudge when the app regains focus after a long break. */
@@ -198,6 +199,9 @@ export function BrainPage() {
           </div>
         </div>
 
+        <PitchCard />
+        <QuizCard />
+
         {/* right now */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
@@ -208,6 +212,7 @@ export function BrainPage() {
             {now === null ? <span className="text-faint">Loading…</span> : <Markdown text={now} />}
           </div>
         </div>
+        <LessonsCard />
       </div>
     </div>
   );
