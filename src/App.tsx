@@ -12,7 +12,6 @@ import { Inbox } from "./components/Inbox";
 import { ActivityTimeline } from "./components/ActivityTimeline";
 import { PreviewPane, TeamPanel } from "./components/TeamPanel";
 import { QuickSwitcher } from "./components/QuickSwitcher";
-import { GlobalSearch } from "./components/GlobalSearch";
 import { ConflictBanner, Toasts } from "./components/Chrome";
 import { SettingsModal } from "./components/Settings";
 import { ProjectPicker } from "./components/ProjectPicker";
@@ -176,8 +175,7 @@ export default function App() {
         const s = useApp.getState();
         if (s.activeProject && !blockingOverlayOpen(s)) {
           e.preventDefault();
-          if (s.view === "home") setView("session");
-          requestAnimationFrame(() => document.getElementById("global-search")?.focus());
+          useApp.setState({ crossSearchOpen: true });
         }
       }
       // Shift+C toggles full-bleed cinema mode. Guarded by !typing so it never
@@ -263,6 +261,9 @@ export default function App() {
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
+  // right file pane only when a file is actually open (Monocode keeps it hidden)
+  const openFileCount = useApp((s) => s.openFiles.length);
+  const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);
   // team just picked → TeamFlow screens until the setup flow completes
@@ -309,7 +310,6 @@ export default function App() {
             </div>
           ) : (
           <>
-          <GlobalSearch />
           <div className="flex-1 min-h-0 flex">
             <div className="min-w-0 flex" style={{ flexBasis: split && !focusMode ? `${panelSizes.split * 100}%` : "100%" }}>
               <SessionPane mate={active} />
@@ -364,11 +364,11 @@ export default function App() {
           {focusMode ? null : <StatusBar />}
         </main>
         {/* the new-session screen is full-width like Monocode's — no editor */}
-        {focusMode || view === "new" || !active ? null : (
+        {!showEditor ? null : (
           <DragHandle onDrag={(dx) => setPanelSize("right", Math.min(680, Math.max(240, panelSizes.right - dx)))}
             onDone={() => setPanelSize("right", panelSizes.right, true)} />
         )}
-        {focusMode || view === "new" || !active ? null : <EditorPane />}
+        {showEditor ? <EditorPane /> : null}
       </div>
       <QuickSwitcher />
       <SettingsModal />
