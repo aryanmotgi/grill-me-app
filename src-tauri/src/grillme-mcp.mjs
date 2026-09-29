@@ -245,6 +245,9 @@ function catchUp(since, { exclude, full = false } = {}) {
   if (full && b.goal) out.push(`**Goal:** ${b.goal}`);
   else if (b.goalTs && tsOf(b.goalTs) > since && b.goal) out.push(`**New goal:** ${b.goal}`);
 
+  const dl = deadlineLine(since, full);
+  if (dl) out.push(dl);
+
   const decisions = readJson(join(dir, "decisions.json"), []).filter((d) => full || tsOf(d.epochMs) > since);
   if (decisions.length) out.push(`**${full ? "Decisions" : "New decisions"}:**\n${decisions.slice(-12).map((d) => `- ${d.text}`).join("\n")}`);
 
@@ -281,6 +284,75 @@ function catchUp(since, { exclude, full = false } = {}) {
   return out.length ? `_Project: ${id}_\n\n${out.join("\n\n")}` : "";
 }
 
+// ---- deadline (hack clock) ------------------------------------------------------
+
+const THRESHOLDS_MIN = [720, 360, 180, 60, 30, 15];
+
+function fmtLeft(ms) {
+  if (ms <= 0) return "time's up";
+  const m = Math.floor(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m` : `${m}m`;
+}
+
+/** Full view: always show time left. Incremental: only when a threshold
+ *  (12h, 6h, 3h, 1h, 30m, 15m) was crossed since the reader last looked. */
+function deadlineLine(since, full) {
+  const end = Number(bridgeState().deadline) || 0;
+  if (!end) return "";
+  const now = Date.now();
+  const left = end - now;
+  if (full) return `**⏰ Deadline:** ${fmtLeft(left)} left.`;
+  const crossed = THRESHOLDS_MIN.some((t) => {
+    const at = end - t * 60000;
+    return since < at && at <= now;
+  }) || (since < end && end <= now);
+  return crossed ? `**⏰ ${fmtLeft(left)} left in the hackathon.** Prioritize the demo path; cut anything that isn't needed for it.` : "";
+}
+
+// ---- inputs for Grill Me's AI checks (Grill Me runs claude; these gather) ------
+
+/** Mismatch + board check for one session's latest turn. Empty when there's
+ *  nothing to compare against or no new turn since the last check. */
+function checkInput(member) {
+  const m = members().find((x) => x.id === member);
+  if (!m) return "";
+  const { dir } = projectDir();
+  const b = bridgeState();
+  const decisions = readJson(join(dir, "decisions.json"), []).slice(-15).map((d) => d.text);
+  const tasks = readJson(join(dir, "tasks.json"), []).filter((t) => t.status !== "done").slice(0, 25).map((t) => ({ id: t.id, title: t.title, status: t.status }));
+  if (!b.goal && !decisions.length && !tasks.length) return "";
+  const key = `check:${member}`;
+  const since = cursor(key);
+  const fresh = turns(m.repoPath).turns.filter((t) => tsOf(t.at) > since);
+  const last = fresh[fresh.length - 1];
+  if (!last) return "";
+  setCursor(key, Date.now());
+  return JSON.stringify({
+    session: label(m),
+    goal: b.goal ?? "",
+    decisions,
+    openTasks: tasks,
+    latestTurn: { ask: clip(last.ask, 1500), tools: last.tools.slice(-30), reply: clip(last.reply, 2500) },
+    changedFiles: git(m.repoPath, ["status", "--porcelain"]).split("\n").filter(Boolean).slice(0, 40),
+  }, null, 1);
+}
+
+function cutInput() {
+  const { dir } = projectDir();
+  const b = bridgeState();
+  const end = Number(b.deadline) || 0;
+  return JSON.stringify({
+    timeLeft: end ? fmtLeft(end - Date.now()) : "unknown",
+    goal: b.goal ?? "",
+    decisions: readJson(join(dir, "decisions.json"), []).slice(-15).map((d) => d.text),
+    openTasks: readJson(join(dir, "tasks.json"), []).filter((t) => t.status !== "done").map((t) => `[${t.status}] ${t.title}`),
+    sessions: members().map((m) => {
+      const t = turns(m.repoPath).turns.slice(-1)[0];
+      return { name: label(m), lastAsk: t ? clip(t.ask, 300) : "", lastReply: t ? clip(t.reply, 600) : "" };
+    }),
+  }, null, 1);
+}
+
 /** CLI modes (hooks and Grill Me call the script directly, not over MCP). */
 function cliMode(argv) {
   const flag = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
@@ -302,6 +374,14 @@ function cliMode(argv) {
     const text = catchUp(since, { full: since === 0 });
     setCursor(key, now);
     process.stdout.write(text);
+    return true;
+  }
+  if (argv.includes("--check-input")) {
+    process.stdout.write(checkInput(flag("--check-input")));
+    return true;
+  }
+  if (argv.includes("--cut-input")) {
+    process.stdout.write(cutInput());
     return true;
   }
   if (argv.includes("--digest")) {

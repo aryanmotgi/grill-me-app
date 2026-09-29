@@ -234,7 +234,7 @@ pub(crate) fn run_script(args: &[&str]) -> Result<String, String> {
 }
 
 /// Brain page digest: everything since `since` ms (0 = full picture).
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn brain_digest(since: u64) -> Result<String, String> {
     install();
     run_script(&["--digest", &since.to_string()])
@@ -251,6 +251,118 @@ pub(crate) fn sync_hook_command(member_id: &str, project_dir: &str) -> Option<St
         member_id,
         crate::sh_quote(project_dir)
     ))
+}
+
+
+// ---- AI checks: mismatch + board, and "what should we cut?" ---------------
+
+const CHECK_PROMPT: &str = "You check one coding session's latest turn against the team's plan. \
+The input JSON has the goal, decisions, open tasks (with ids), the session's latest turn (user ask, tools used, reply) and changed files. \
+Reply with ONLY a JSON object, no prose, no fences: \
+{\"mismatch\": boolean, \"reason\": string, \"doneTaskIds\": string[], \"startedTaskIds\": string[]}. \
+mismatch = true ONLY when the work clearly contradicts a decision or the goal (e.g. decision says Google login, session builds email login); \
+different-but-compatible work is NOT a mismatch. reason = one short sentence naming the decision and what the session did (empty if no mismatch). \
+doneTaskIds = ids of open tasks this turn clearly finished (never a task whose work is the mismatch); startedTaskIds = ids of not-started tasks it clearly began. \
+Only use ids from the input. When unsure, leave it out.";
+
+const CUT_PROMPT: &str = "You are the deadline coach for a hackathon team. The input JSON has the time left, goal, decisions, open tasks and what each session is doing. \
+Write a short markdown plan with exactly three sections: '## Must finish' (what the demo cannot work without), \
+'## Nice if time' and '## Cut' (what to drop now). Be blunt and specific, use the task names, and keep the whole thing under 150 words. \
+Output only the markdown.";
+
+/// One-shot claude call for Grill Me's own checks: no tools, no user
+/// settings/hooks, prompt via argv ("$@", never shell-interpreted), data on stdin.
+fn claude_quick(input: &str, prompt: &str, model: &str) -> Result<String, String> {
+    use std::io::Write as _;
+    use std::process::Stdio;
+    crate::preflight_claude()?;
+    let mut child = Command::new("/bin/zsh")
+        .args(["-lc", "exec claude \"$@\"", "zsh", "-p", prompt, "--tools", "", "--setting-sources", "", "--model", model])
+        .current_dir(root())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn claude: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().chars().take(300).collect());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// First {...} object in a model reply, tolerant of stray prose/fences.
+fn extract_json(text: &str) -> Option<Value> {
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    (end > start).then(|| serde_json::from_str(&text[start..=end]).ok()).flatten()
+}
+
+fn id_list(v: &Value, allowed: &[String]) -> Vec<String> {
+    v.as_array()
+        .map(|a| a.iter().filter_map(|x| x.as_str()).filter(|x| allowed.iter().any(|y| y == x)).take(20).map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// After a session's turn: does it contradict the plan, and which tasks did
+/// it finish/start? A mismatch is also written to the brain as a note, so
+/// the session (via its sync hook) and the Claude side both see it.
+#[tauri::command(async)]
+pub(crate) fn brain_check(app: tauri::AppHandle, member_id: String) -> Result<Value, String> {
+    use tauri::Emitter;
+    crate::validate_member_id(&member_id)?;
+    install();
+    let input = run_script(&["--check-input", &member_id])?;
+    if input.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    let parsed: Value = serde_json::from_str(&input).unwrap_or_default();
+    let session = parsed["session"].as_str().unwrap_or(&member_id).to_string();
+    let allowed: Vec<String> = parsed["openTasks"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|t| t["id"].as_str().map(str::to_owned)).collect())
+        .unwrap_or_default();
+    let reply = claude_quick(&input, CHECK_PROMPT, "haiku")?;
+    let r = extract_json(&reply).ok_or("check returned no JSON")?;
+    let reason: String = r["reason"].as_str().unwrap_or("").trim().chars().take(300).collect();
+    let mismatch = r["mismatch"].as_bool().unwrap_or(false) && !reason.is_empty();
+    if mismatch {
+        push("note", &json!({ "text": format!("⚠ Mismatch in {session}: {reason}"), "by": "Mismatch check" }))?;
+        let _ = app.emit("bridge-changed", ());
+    }
+    Ok(json!({
+        "session": session,
+        "mismatch": mismatch,
+        "reason": reason,
+        "doneTaskIds": id_list(&r["doneTaskIds"], &allowed),
+        "startedTaskIds": id_list(&r["startedTaskIds"], &allowed),
+    }))
+}
+
+/// "What should we cut?" — must / nice / cut plan against the hack clock.
+#[tauri::command(async)]
+pub(crate) fn brain_cut() -> Result<String, String> {
+    install();
+    let input = run_script(&["--cut-input"])?;
+    claude_quick(&input, CUT_PROMPT, "sonnet")
+}
+
+/// Hack clock end (epoch ms; 0 clears) — the brain tells sessions time left.
+#[tauri::command]
+pub(crate) fn bridge_set_deadline(ms: u64) -> Result<(), String> {
+    let _g = crate::lock_or_recover(&BRIDGE_LOCK);
+    let mut v = load();
+    v["deadline"] = if ms == 0 { Value::Null } else { json!(ms) };
+    save(&v)
+}
+
+/// A note from the Grill Me UI (e.g. saving the cut plan to the brain).
+#[tauri::command]
+pub(crate) fn bridge_add_note(text: String, by: String) -> Result<(), String> {
+    push("note", &json!({ "text": text, "by": by })).map(|_| ())
 }
 
 #[tauri::command]
@@ -322,7 +434,7 @@ pub(crate) fn bridge_status() -> Value {
 
 /// Register the grill-me MCP server with the Claude desktop app (its config
 /// file, backed up first) and Claude Code (user scope). Returns a summary.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn bridge_connect() -> Result<String, String> {
     install();
     let node = node_path().ok_or("Node.js not found — install it (brew install node) and try again.")?;
@@ -387,6 +499,20 @@ mod tests {
         trim(&mut list);
         assert_eq!(list.len(), LIST_CAP);
         assert!(list.iter().all(|x| x["id"] != "old"));
+    }
+
+    #[test]
+    fn extracts_json_from_chatty_replies() {
+        let v = extract_json("Sure!\n```json\n{\"mismatch\": true, \"reason\": \"x\"}\n```").unwrap();
+        assert_eq!(v["mismatch"], true);
+        assert!(extract_json("no json here").is_none());
+    }
+
+    #[test]
+    fn id_list_only_keeps_known_ids() {
+        let allowed = vec!["t1".to_string(), "t2".to_string()];
+        assert_eq!(id_list(&json!(["t1", "evil", 3, "t2"]), &allowed), vec!["t1", "t2"]);
+        assert!(id_list(&json!("t1"), &allowed).is_empty());
     }
 
     #[test]

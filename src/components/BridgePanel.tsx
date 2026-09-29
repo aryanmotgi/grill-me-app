@@ -8,6 +8,7 @@ import {
   type BridgeHandoff, type BridgePlan, type BridgeState,
 } from "../lib/bridge";
 import { Icon } from "./Icon";
+import type { Task } from "../types";
 
 // ---------------------------------------------------------------------------
 // Claude bridge UI. The grill-me MCP server lets the Claude app (brainstorm)
@@ -48,6 +49,36 @@ async function refreshConn() {
   useBridge.setState({ conn });
 }
 
+/** After a session's turn: mismatch check + board update (Claude, fast model).
+ *  Throttled per session; off via Brain → Smart checks. */
+const lastCheck: Record<string, number> = {};
+const CHECK_EVERY_MS = 3 * 60_000;
+
+async function runBrainCheck(memberId: string) {
+  const st = useApp.getState();
+  if (st.appSettings.brainChecks === false) return;
+  const now = Date.now();
+  if (now - (lastCheck[memberId] ?? 0) < CHECK_EVERY_MS) return;
+  lastCheck[memberId] = now;
+  const { invoke } = await import("@tauri-apps/api/core");
+  const r = await invoke<{ session: string; mismatch: boolean; reason: string; doneTaskIds: string[]; startedTaskIds: string[] } | null>(
+    "brain_check", { memberId },
+  ).catch(() => null);
+  if (!r) return;
+  if (r.mismatch) st.toast(`⚠ ${r.session} may be off-plan: ${r.reason}`, "warn");
+  const done = new Set(r.doneTaskIds);
+  const started = new Set(r.startedTaskIds);
+  const changed: Task[] = useApp.getState().tasks.flatMap((t): Task[] => {
+    if (done.has(t.id) && t.status !== "done") return [{ ...t, status: "done" }];
+    if (started.has(t.id) && t.status === "not-started") return [{ ...t, status: "in-progress", startedAt: Date.now() }];
+    return [];
+  });
+  if (!changed.length) return;
+  useApp.setState((s) => ({ tasks: s.tasks.map((t) => changed.find((c) => c.id === t.id) ?? t) }));
+  await upsertShared("tasks.json", changed);
+  st.toast(`Board: ${changed.map((t) => `“${t.title}” → ${t.status === "done" ? "done" : "in progress"}`).join(", ")}`);
+}
+
 /** Mount once (App): live bridge state + the "coder finished" ping. */
 export function useBridgeFeed() {
   const lastPing = useRef<Record<string, number>>({});
@@ -68,6 +99,7 @@ export function useBridgeFeed() {
       const conn = useBridge.getState().conn;
       for (const t of s.teammates) {
         const was = prev.get(t.id);
+        if (was === "working" && t.status === "idle") void runBrainCheck(t.id);
         if (was === "working" && t.status === "idle" && (conn?.desktop || conn?.code)) {
           const now = Date.now();
           if (now - (lastPing.current[t.id] ?? 0) > 120_000) {
