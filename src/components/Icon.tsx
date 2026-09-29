@@ -85,6 +85,18 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M5.5 7h5M5.5 9.5h3" />
     </>
   ),
+  panelLeft: (
+    <>
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <path d="M6 2.5v11" />
+    </>
+  ),
+  panelRight: (
+    <>
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <path d="M10 2.5v11" />
+    </>
+  ),
   bolt: <path d="M9 1.8 3.8 9h3.7L7 14.2 12.2 7H8.5Z" />,
   upload: (
     <>

@@ -6,6 +6,7 @@ import { useBridge } from "./BridgePanel";
 import { ChatRows, Working } from "./ChatView";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
+import { PanelControls } from "./Dock";
 
 // ---------------------------------------------------------------------------
 // The Claude view (nav rail → Claude), two tabs:
@@ -48,7 +49,7 @@ const STARTERS = [
   "Grill me on what I'm building.",
 ];
 
-function GrillChat() {
+function GrillChat({ compact = false }: { compact?: boolean }) {
   const activeProject = useApp((s) => s.activeProject) ?? "default";
   const toast = useApp((s) => s.toast);
   const [chats, setChats] = useState<ChatMeta[]>([]);
@@ -148,8 +149,8 @@ function GrillChat() {
 
   return (
     <div className="flex-1 min-h-0 flex">
-      {/* chat list */}
-      <aside className="w-[220px] flex-none border-r border-line flex flex-col">
+      {/* chat list (full view only — the dock uses a picker instead) */}
+      {compact ? null : <aside className="w-[220px] flex-none border-r border-line flex flex-col">
         <button className="m-2 h-8 rounded-lg flex items-center gap-2 px-3 text-[12.5px] text-ink bg-raised hover:bg-raised/80 cursor-pointer"
           onClick={() => { setChatId(null); setLines([]); }}>
           <Icon name="plus" size={12} /> New chat
@@ -165,12 +166,24 @@ function GrillChat() {
             </button>
           ))}
         </div>
-      </aside>
+      </aside>}
 
       {/* conversation */}
       <div className="flex-1 min-w-0 flex flex-col">
+        {compact ? (
+          <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line flex-none">
+            <select className="composer-btn h-7 flex-1 min-w-0 text-[12px]" value={chatId ?? ""}
+              onChange={(e) => setChatId(e.target.value || null)}>
+              <option value="">New chat</option>
+              {projectChats.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+            <button className="composer-btn h-7 text-[12px]" title="New chat" onClick={() => { setChatId(null); setLines([]); }}>
+              <Icon name="plus" size={11} />
+            </button>
+          </div>
+        ) : null}
         <div ref={scroller} className="flex-1 min-h-0 overflow-y-auto">
-          <div className="max-w-[780px] mx-auto px-6 py-6 flex flex-col gap-3 select-text">
+          <div className={`max-w-[780px] mx-auto flex flex-col gap-3 select-text ${compact ? "px-4 py-4" : "px-6 py-6"}`}>
             {rows.length === 0 && !busy ? (
               <div className="py-12 flex flex-col items-center gap-3 text-center">
                 <AgentLogo agent="claude" size={24} />
@@ -187,7 +200,7 @@ function GrillChat() {
           </div>
         </div>
 
-        <div className="max-w-[780px] w-full mx-auto px-6 pb-4">
+        <div className={`max-w-[780px] w-full mx-auto pb-4 ${compact ? "px-3" : "px-6"}`}>
           <div className="composer-card relative rounded-xl">
             <textarea
               rows={2}
@@ -201,7 +214,7 @@ function GrillChat() {
               <button className={`composer-btn w-8 justify-center ${menu ? "on" : ""}`} title="Hackathon playbooks" onClick={() => setMenu(!menu)}>
                 <Icon name="plus" size={13} />
               </button>
-              <span className="text-[11px] text-faint">Uses your Claude plan · can't edit code — it hands off to your sessions</span>
+              {compact ? null : <span className="text-[11px] text-faint">Uses your Claude plan · can't edit code — it hands off to your sessions</span>}
               <span className="flex-1" />
               {busy ? (
                 <button className="w-8 h-8 rounded-lg flex items-center justify-center bg-raised text-ink cursor-pointer" title="Stop" onClick={() => void stop()}>
@@ -271,6 +284,28 @@ function ClaudeAi() {
     <div ref={box} className="flex-1 min-h-0 flex items-center justify-center text-faint text-[12px]">
       {native() ? (hidden ? "claude.ai is tucked away while this menu is open" : "Loading claude.ai…") : "claude.ai needs the native app"}
     </div>
+  );
+}
+
+/** The Claude chat docked as a side panel next to your sessions. */
+export function ClaudeDock({ edge, side, width }: { edge: boolean; side: "left" | "right"; width: number }) {
+  const [tab, setTab] = useState<"chat" | "web">("chat");
+  return (
+    <aside style={{ width }} className={`flex-none bg-panel flex flex-col overflow-hidden border-line ${side === "left" ? "border-r" : "border-l"}`}>
+      <div data-tauri-drag-region className={`flex items-center gap-1 h-12 pr-2 flex-none border-b border-line ${edge ? "pl-[84px]" : "pl-3"}`}>
+        {([["chat", "Chat"], ["web", "claude.ai"]] as const).map(([id, label]) => (
+          <button key={id}
+            className={`px-3 h-7 rounded-lg text-[12.5px] cursor-pointer transition-colors ${tab === id ? "bg-raised text-ink" : "text-dim hover:text-ink"}`}
+            title={id === "chat" ? "Brainstorm with Claude — sees this project's sessions" : "Your claude.ai chats and projects (can't see your code)"}
+            onClick={() => setTab(id)}>
+            {label}
+          </button>
+        ))}
+        <span data-tauri-drag-region className="flex-1 h-full" />
+        <PanelControls id="claude" />
+      </div>
+      {tab === "chat" ? <GrillChat compact /> : <ClaudeAi />}
+    </aside>
   );
 }
 

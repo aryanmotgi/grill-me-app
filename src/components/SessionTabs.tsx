@@ -5,6 +5,7 @@ import { Icon } from "./Icon";
 import { GrillFlame } from "./GrillMark";
 import { EditableTitle } from "./EditableTitle";
 import { TestBadge } from "./Automations";
+import { DockToggles } from "./Dock";
 
 // ---------------------------------------------------------------------------
 // Monocode-style top tab strip: every open session is a two-line tab
@@ -14,7 +15,7 @@ import { TestBadge } from "./Automations";
 // The strip doubles as window-drag chrome under the overlay titlebar.
 // ---------------------------------------------------------------------------
 
-export function SessionTabs() {
+export function SessionTabs({ padLeft = false }: { padLeft?: boolean }) {
   const teammates = useApp((s) => s.teammates);
   const members = useApp((s) => s.members);
   const activeId = useApp((s) => s.activeId);
@@ -30,7 +31,8 @@ export function SessionTabs() {
   const active = teammates.find((t) => t.id === activeId);
 
   return (
-    <div data-tauri-drag-region className="flex items-center gap-1 h-12 px-2 flex-none border-b border-line demo-hide">
+    <div data-tauri-drag-region className={`flex items-center gap-1 h-12 pr-2 flex-none border-b border-line demo-hide ${padLeft ? "pl-[84px]" : "pl-2"}`}>
+      <DockToggles side="left" />
       <div data-tauri-drag-region className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 min-w-0 h-full">
         {shown.map((t) => {
           const on = view === "session" && t.id === activeId;
@@ -82,6 +84,7 @@ export function SessionTabs() {
           <Icon name="push" size={12} /> Review & ship
         </button>
       ) : null}
+      <DockToggles side="right" />
     </div>
   );
 }

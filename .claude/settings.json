@@ -32,6 +32,16 @@
         "matcher": "Bash"
       }
     ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "'/opt/homebrew/bin/node' '/Users/aryanmotgi/.grillme/bin/grillme-mcp.mjs' --sync Aryan --project '/Users/aryanmotgi/.grillme'",
+            "type": "command"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -47,6 +57,14 @@
         "hooks": [
           {
             "command": "sh -c 'IN=$(cat); printf \"%s\\n\" \"{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"Aryan\\\",\\\"event\\\":\\\"prompt\\\"}\" >> '\\''/Users/aryanmotgi/.grillme/events.jsonl'\\'''",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "'/opt/homebrew/bin/node' '/Users/aryanmotgi/.grillme/bin/grillme-mcp.mjs' --sync Aryan --project '/Users/aryanmotgi/.grillme'",
             "type": "command"
           }
         ]
