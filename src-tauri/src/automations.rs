@@ -43,7 +43,20 @@ fn tree_signature(repo: &Path) -> String {
     format!("{:x}", h.finish())
 }
 
+/// Folders an app commonly lives in inside a repo (monorepo-ish layouts).
+const APP_DIRS: [&str; 7] = ["", "frontend", "web", "app", "client", "apps/web", "packages/web"];
+
+/// Prefix a command with `cd <dir> &&` when it lives in a subfolder.
+fn in_dir(dir: &str, cmd: &str) -> String {
+    if dir.is_empty() { cmd.to_string() } else { format!("cd {dir} && {cmd}") }
+}
+
+/// Test command for the repo root, else the first app subfolder that has one.
 pub(crate) fn detect(repo: &Path) -> Option<String> {
+    APP_DIRS.iter().find_map(|d| detect_in(&repo.join(d)).map(|c| in_dir(d, &c)))
+}
+
+fn detect_in(repo: &Path) -> Option<String> {
     if let Ok(pkg) = std::fs::read_to_string(repo.join("package.json")) {
         let v: Value = serde_json::from_str(&pkg).unwrap_or_default();
         if let Some(t) = v["scripts"]["test"].as_str() {
@@ -242,12 +255,15 @@ pub(crate) fn dev_servers() -> Vec<Value> {
         .collect()
 }
 
-/// The repo's dev-server script, if package.json has one.
+/// The repo's dev-server script (root or a common app subfolder).
 #[tauri::command]
 pub(crate) fn detect_dev_cmd(repo_path: String) -> Option<String> {
-    let pkg = std::fs::read_to_string(PathBuf::from(repo_path).join("package.json")).ok()?;
-    let v: Value = serde_json::from_str(&pkg).ok()?;
-    ["dev", "start", "serve"].into_iter().find(|k| v["scripts"][k].is_string()).map(|k| format!("npm run {k}"))
+    let repo = PathBuf::from(repo_path);
+    APP_DIRS.iter().find_map(|d| {
+        let pkg = std::fs::read_to_string(repo.join(d).join("package.json")).ok()?;
+        let v: Value = serde_json::from_str(&pkg).ok()?;
+        ["dev", "start", "serve"].into_iter().find(|k| v["scripts"][k].is_string()).map(|k| in_dir(d, &format!("npm run {k}")))
+    })
 }
 
 // ---- Claude plan usage -----------------------------------------------------
@@ -283,6 +299,12 @@ mod tests {
         assert_eq!(detect(&dir), None);
         std::fs::write(dir.join("package.json"), r#"{"scripts":{"test":"vitest run"}}"#).unwrap();
         assert_eq!(detect(&dir).as_deref(), Some("npm test --silent"));
+        // an app in a subfolder is found too
+        std::fs::remove_file(dir.join("package.json")).unwrap();
+        std::fs::create_dir_all(dir.join("frontend")).unwrap();
+        std::fs::write(dir.join("frontend/package.json"), r#"{"scripts":{"test":"vitest run","dev":"vite"}}"#).unwrap();
+        assert_eq!(detect(&dir).as_deref(), Some("cd frontend && npm test --silent"));
+        assert_eq!(detect_dev_cmd(dir.to_string_lossy().into_owned()).as_deref(), Some("cd frontend && npm run dev"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
