@@ -638,7 +638,8 @@ export const useApp = create<AppState>((set, get) => ({
   members: [],
   standupLines: [],
   ciRuns: [],
-  view: "home",
+  // open on the new-session screen ("What are we grilling in X?"), Monocode-style
+  view: "new",
   setView: (view) => set({ view }),
   openFiles: [],
   activeFile: null,

@@ -215,7 +215,7 @@ function ExplainSession({ mate }: { mate: Teammate }) {
         onClick={toggle}
         title="Plain-English summary of what this session is doing right now"
       >
-        <Icon name="spark" size={11} /> explain
+        <Icon name="spark" size={11} /> Explain
       </button>
       {open ? (
         <div
@@ -285,6 +285,52 @@ async function exportTranscript(mate: Teammate, toast: (t: string, k?: "info" | 
   }
 }
 
+/** The rarer per-session tools, tucked behind one "⋯" button. */
+function SessionMore({ recording, helpPending, onRecord, onHelp, onExport, onHandoff }: {
+  recording: boolean;
+  helpPending: boolean;
+  onRecord: () => void;
+  onHelp: () => void;
+  onExport: () => void;
+  onHandoff: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const item = (icon: string, label: string, hint: string, run: () => void) => (
+    <button
+      className="flex items-center gap-2.5 w-full px-3 py-1.5 rounded-md text-[12px] text-dim hover:text-ink hover:bg-raised text-left cursor-pointer"
+      title={hint}
+      onClick={() => { setOpen(false); run(); }}
+    >
+      <Icon name={icon} size={12} /> {label}
+    </button>
+  );
+  return (
+    <div className="relative">
+      <button
+        className={`w-7 h-6 rounded-md flex items-center justify-center text-[14px] leading-none cursor-pointer transition-colors ${
+          open ? "bg-raised text-ink" : "text-faint hover:text-ink hover:bg-raised"
+        }`}
+        aria-expanded={open}
+        title="More session tools"
+        onClick={() => setOpen(!open)}
+      >
+        ⋯
+      </button>
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-40 w-52 rounded-lg bg-overlay hairline shadow-2xl p-1 rise">
+            {item("record", recording ? "Stop recording" : "Record", "Save this session's raw terminal output for replay (~/.grillme/recordings)", onRecord)}
+            {item("help", helpPending ? "Got help — clear flag" : "Request help", "Flag this session as stuck — pings the team", onHelp)}
+            {item("download", "Export transcript", "Save the scrollback as a Markdown file", onExport)}
+            {item("team", "Hand off", "Summarize this session and send a where-I-am note to a teammate", onHandoff)}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function SessionPane({ mate }: { mate: Teammate }) {
   const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor, requestHelp, resolveHelp, toast } = useApp();
   const helpPending = useApp((s) => isHelpPending(s.messages, mate.id));
@@ -310,51 +356,34 @@ export function SessionPane({ mate }: { mate: Teammate }) {
           </button>
         ) : null}
         <span className="flex-1 min-w-[8px]" />
-        <div className="flex demo-hide items-center min-w-0 overflow-x-auto no-scrollbar">
+        <div className="flex demo-hide items-center gap-1.5 min-w-0">
+          {/* view switcher: one quiet segmented control, Monocode-style */}
+          <div className="flex items-center rounded-lg bg-raised/60 p-0.5">
+            {([
+              ["terminal", "Terminal"],
+              ["shell", "Shell"],
+              ["changes", `Changes${mate.changes.length ? ` ${mate.changes.length}` : ""}`],
+              ["audit", "Audit"],
+            ] as const).map(([id, label]) => (
+              <button key={id}
+                className={`px-2.5 h-6 rounded-md text-[11.5px] cursor-pointer transition-colors ${
+                  tab === id ? "bg-raised text-ink" : "text-faint hover:text-dim"
+                }`}
+                title={id === "audit" ? "Timestamped log of every command this session ran" : undefined}
+                onClick={() => setTab(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
           <ExplainSession mate={mate} />
-          <button className={`btn ml-1 ${tab === "terminal" ? "active" : ""}`} onClick={() => setTab("terminal")}>
-            terminal
-          </button>
-          <button className={`btn ${tab === "shell" ? "active" : ""} ml-1`} onClick={() => setTab("shell")}>
-            shell
-          </button>
-          <button className={`btn ${tab === "changes" ? "active" : ""} ml-1`} onClick={() => setTab("changes")}>
-            changes {mate.changes.length}
-          </button>
-          <button className={`btn ${tab === "audit" ? "active" : ""} ml-1`} onClick={() => setTab("audit")}
-            title="Audit: timestamped log of every command this session actually executed, for tracing incidents">
-            audit
-          </button>
-          <button
-            className={`btn ml-1 ${mate.recording ? "active" : ""}`}
-            onClick={() => toggleRecording(mate.id)}
-            title="Record: saves this session's raw terminal output to a file for later replay (~/.grillme/recordings)"
-          >
-            {mate.recording ? "stop rec" : "rec"}
-          </button>
-          <button
-            className={`btn ml-1 ${helpPending ? "active" : ""}`}
-            onClick={() => (helpPending ? resolveHelp(mate.id) : requestHelp(mate.id))}
-            title={helpPending
-              ? "Clear the help flag — use once a teammate has eyes on this session"
-              : "Flag this session as stuck — pings the team and shows on everyone's home"}
-          >
-            <Icon name="help" size={11} /> {helpPending ? "got help" : "request help"}
-          </button>
-          <button
-            className="btn ml-1"
-            onClick={() => exportTranscript(mate, toast)}
-            title="Export transcript: save this session's terminal scrollback as a Markdown file"
-          >
-            <Icon name="download" size={11} /> export
-          </button>
-          <button
-            className="btn ml-1"
-            onClick={() => setHandoffFor(mate.id)}
-            title="Hand off: summarize this session (Claude) and send a where-I-am / what's-next note to a teammate"
-          >
-            hand off
-          </button>
+          <SessionMore
+            recording={mate.recording}
+            helpPending={helpPending}
+            onRecord={() => toggleRecording(mate.id)}
+            onHelp={() => (helpPending ? resolveHelp(mate.id) : requestHelp(mate.id))}
+            onExport={() => exportTranscript(mate, toast)}
+            onHandoff={() => setHandoffFor(mate.id)}
+          />
         </div>
       </div>
 
