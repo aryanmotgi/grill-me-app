@@ -23,6 +23,24 @@ export async function refreshRemote() {
   useRemote.setState({ status });
 }
 
+/** Every (re)start goes through one queue and reads the CURRENT settings
+ *  when it runs — overlapping toggles can't leave the server in a mode the
+ *  UI doesn't show. The shown status always comes from the server after. */
+let startChain: Promise<unknown> = Promise.resolve();
+export function queueRemoteStart<T>(): Promise<T> {
+  const run = startChain.then(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const st = useApp.getState().appSettings;
+    try {
+      return await invoke<T>("remote_start", { allowWrites: st.remoteWrites === true, shareChats: st.remoteShareChats !== false });
+    } finally {
+      await refreshRemote();
+    }
+  });
+  startChain = run.catch(() => {});
+  return run;
+}
+
 /** Mount once (App): re-open the connection at launch if it was on. */
 export function useRemoteAutostart() {
   useEffect(() => {
@@ -31,10 +49,7 @@ export function useRemoteAutostart() {
     void (async () => {
       await refreshRemote();
       if (st.appSettings.remoteOn === true && !useRemote.getState().status?.url) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("remote_start", { allowWrites: st.appSettings.remoteWrites === true, shareChats: st.appSettings.remoteShareChats !== false })
-          .catch((e) => st.toast(`claude.ai connection didn't reopen: ${e}`, "warn"));
-        await refreshRemote();
+        await queueRemoteStart().catch((e) => st.toast(`claude.ai connection didn't reopen: ${e}`, "warn"));
         // never reopen silently — say so every launch
         if (useRemote.getState().status?.url) {
           st.toast(`claude.ai connection is on (${st.appSettings.remoteWrites === true ? "can propose" : "read-only"}) — turn it off in the Claude panel`);
@@ -71,12 +86,11 @@ export function ClaudeConnect() {
     setBusy(true);
     setEnableLink(null);
     try {
-      const r = await call<RemoteStatus & { needsEnable?: boolean; link?: string; message?: string }>("remote_start", { allowWrites: writes, shareChats });
+      const r = await queueRemoteStart<RemoteStatus & { needsEnable?: boolean; link?: string; message?: string }>();
       if (r.needsEnable) {
         setEnableLink(r.link ?? "https://login.tailscale.com/admin/acls");
       } else {
         setAppSetting("remoteOn", true);
-        useRemote.setState({ status: r });
         toast(`claude.ai can now see your sessions (${writes ? "can propose — each needs your OK" : "read-only"})`);
       }
     } catch (e) {
@@ -103,13 +117,13 @@ export function ClaudeConnect() {
     }
   };
 
-  const restartWith = async (w: boolean, share: boolean) => {
-    if (!status?.server) return;
-    const r = await call<RemoteStatus>("remote_start", { allowWrites: w, shareChats: share }).catch(() => null);
-    if (r) useRemote.setState({ status: r });
+  // settings are saved first; the queued restart reads them when it runs
+  const restart = async () => {
+    if (!useRemote.getState().status?.server) return;
+    await queueRemoteStart().catch((e) => toast(`${e}`, "warn"));
   };
-  const setWrites = async (on: boolean) => { setAppSetting("remoteWrites", on); await restartWith(on, shareChats); };
-  const setShare = async (on: boolean) => { setAppSetting("remoteShareChats", on); await restartWith(writes, on); };
+  const setWrites = async (on: boolean) => { setAppSetting("remoteWrites", on); await restart(); };
+  const setShare = async (on: boolean) => { setAppSetting("remoteShareChats", on); await restart(); };
 
   const openConnectors = () => void call("claudeai_navigate", { url: "https://claude.ai/settings/connectors" }).catch(() => {});
   const loadLog = async () => setLog(await call<typeof log>("remote_log", { limit: 30 }).catch(() => []));
