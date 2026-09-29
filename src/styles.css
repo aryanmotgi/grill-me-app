@@ -770,3 +770,28 @@ select.btn, .btn[type] {
   border: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
 }
+/* grill mode: the one place the brand ember tints a control */
+.composer-btn.grill-on {
+  background: color-mix(in srgb, #e0793a 18%, transparent);
+  color: #f0b27f;
+}
+/* quick-start chips under the new-session composer */
+.starter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--dim);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+.starter-chip:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}

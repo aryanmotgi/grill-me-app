@@ -2,6 +2,7 @@ import { useApp } from "../store";
 import { visibleSessions } from "../lib/sessionNav";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
+import { GrillFlame } from "./GrillMark";
 
 // ---------------------------------------------------------------------------
 // Monocode-style top tab strip: every open session is a two-line tab
@@ -22,6 +23,7 @@ export function SessionTabs() {
   const setView = useApp((s) => s.setView);
   const shipSession = useApp((s) => s.shipSession);
 
+  const insertSnippet = useApp((s) => s.insertSnippet);
   const shown = visibleSessions(teammates, appMode, ownId);
   const active = teammates.find((t) => t.id === activeId);
 
@@ -66,6 +68,15 @@ export function SessionTabs() {
           <Icon name="plus" size={13} />
         </button>
       </div>
+      {active && view === "session" && (members.find((m) => m.id === active.id)?.agent ?? "claude") === "claude" ? (
+        <button
+          className="flex items-center gap-1.5 px-3 my-1.5 mr-1.5 rounded-md text-dim hover:text-ink hover:bg-raised text-[11.5px] cursor-pointer flex-none"
+          title="Type /grillme --orient into this session: where am I, what's next, grill my understanding (press Enter to send)"
+          onClick={() => void insertSnippet("/grillme --orient")}
+        >
+          <GrillFlame px={1.5} /> Grill me
+        </button>
+      ) : null}
       {active && view === "session" ? (
         <button
           className="flex items-center gap-1.5 px-3 my-1.5 mr-2 rounded-md bg-accent text-accent-ink text-[11px] font-semibold cursor-pointer hover:brightness-110 flex-none"

@@ -2,6 +2,7 @@ import { useApp, type MainView } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { Icon } from "./Icon";
 import { projectColor } from "../lib/projectColor";
+import { GrillWordmark } from "./GrillMark";
 
 // ---------------------------------------------------------------------------
 // Monocode-style far-left nav rail: Search / Inbox / team surfaces up top,
@@ -62,7 +63,10 @@ export function NavRail() {
   return (
     <nav className="w-[220px] flex-none bg-panel border-r border-line flex flex-col overflow-hidden">
       {/* drag strip clears the overlay traffic lights */}
-      <div data-tauri-drag-region className="h-10 flex-none" />
+      <div data-tauri-drag-region className="h-10 flex-none flex items-center justify-end pr-3">
+        {/* brand sits right of the traffic lights; clicks pass through to drag */}
+        <span className="pointer-events-none"><GrillWordmark /></span>
+      </div>
       <div className="px-2 flex flex-col gap-0.5">
         <button
           className="flex items-center gap-2.5 w-full h-9 px-2.5 mb-1.5 rounded-lg border border-line bg-raised/40 text-faint hover:text-dim cursor-pointer transition-colors"

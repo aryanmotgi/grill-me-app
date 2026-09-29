@@ -4,6 +4,7 @@ import type { AgentId } from "../data/sources/git";
 import { SKILL_LOADERS } from "../data/skills";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
+import { GrillFlame } from "./GrillMark";
 
 // ---------------------------------------------------------------------------
 // Monocode-style "What should we work on?" screen — the center view for a
@@ -25,20 +26,33 @@ export function promptSlug(text: string, taken: string[]): string {
 
 const PLAN_PREFIX = "Before writing any code, propose a short plan and wait for my approval.\n\n";
 
-// 7x7 pixel sprites for the banner (1 = lit)
+/** Grill modes route the first message through the /grillme coaching skill:
+ *  "grill" orients + grills your understanding before building; "hack" runs
+ *  it in hackathon mode against the hours left on the clock. */
+type GrillMode = "" | "grill" | "hack";
+export function grillPrefix(mode: GrillMode, hoursLeft: number | null): string {
+  if (mode === "grill") return "/grillme ";
+  if (mode === "hack") return `/grillme --hackathon ${Math.max(1, Math.ceil(hoursLeft ?? 24))} `;
+  return "";
+}
+
+// pixel sprites for the banner (x = lit) — grill-themed, drawn in the
+// muted banner gray; the one ember flame is the brand mark.
 const SPRITES: Record<string, string[]> = {
-  invader: ["0100010", "0011100", "0111110", "1101011", "1111111", "0101010", "1000001"],
-  ghost: ["0011100", "0111110", "1101011", "1111111", "1111111", "1111111", "1010101"],
-  chomp: ["0011110", "0111111", "1111100", "1111000", "1111100", "0111111", "0011110"],
-  bot: ["0010100", "0111110", "1101011", "1111111", "0111110", "0100010", "0110110"],
+  kettle: [".xxxxxxx.", "xxxxxxxxx", "x.x.x.x.x", "xxxxxxxxx", ".xxxxxxx.", "..x...x..", ".x.....x."],
+  burger: ["..xxxxx..", ".xxxxxxx.", "xxxxxxxxx", ".........", "xxxxxxxxx", ".........", ".xxxxxxx."],
+  sausage: ["....x....", "....x....", ".xxxxxxx.", "xxxxxxxxx", ".xxxxxxx.", "....x....", "....x...."],
+  spatula: ["xxxx.....", "xxxx.....", "xxxx.....", "...x.....", "....x....", ".....x...", "......xx."],
+  invader: [".x...x.", "..xxx..", ".xxxxx.", "xx.x.xx", "xxxxxxx", ".x.x.x.", "x.....x"],
 };
 
-function Sprite({ name, x, y, px = 4 }: { name: string; x: string; y: number; px?: number }) {
+function Sprite({ name, x, y, px = 4 }: { name: string; x: string; y: string; px?: number }) {
   const rows = SPRITES[name];
+  const w = rows[0].length;
   return (
-    <svg className="absolute pixel-sprite" style={{ left: x, top: y }} width={7 * px} height={7 * px} aria-hidden>
+    <svg className="absolute pixel-sprite" style={{ left: x, top: y }} width={w * px} height={rows.length * px} aria-hidden>
       {rows.flatMap((r, j) =>
-        [...r].map((c, i) => (c === "1" ? <rect key={`${i}-${j}`} x={i * px} y={j * px} width={px - 0.5} height={px - 0.5} /> : null)),
+        [...r].map((c, i) => (c === "x" ? <rect key={`${i}-${j}`} x={i * px} y={j * px} width={px - 0.5} height={px - 0.5} /> : null)),
       )}
     </svg>
   );
@@ -47,10 +61,12 @@ function Sprite({ name, x, y, px = 4 }: { name: string; x: string; y: number; px
 function PixelBanner() {
   return (
     <div className="pixel-banner relative h-[34vh] min-h-[200px] flex-none overflow-hidden" aria-hidden>
-      <Sprite name="invader" x="58%" y={34} />
-      <Sprite name="ghost" x="30%" y={96} />
-      <Sprite name="chomp" x="76%" y={120} />
-      <Sprite name="bot" x="47%" y={150} px={3} />
+      <Sprite name="kettle" x="56%" y="16%" />
+      <Sprite name="burger" x="28%" y="40%" />
+      <Sprite name="sausage" x="78%" y="48%" />
+      <Sprite name="spatula" x="44%" y="62%" px={3} />
+      <Sprite name="invader" x="12%" y="18%" px={3} />
+      <span className="absolute" style={{ left: "66%", top: "58%" }}><GrillFlame px={4} dim /></span>
     </div>
   );
 }
@@ -86,6 +102,9 @@ export function NewSession() {
   const [text, setText] = useState("");
   const [agent, setAgent] = useState<AgentId>("claude");
   const [plan, setPlan] = useState(false);
+  const [grill, setGrill] = useState<GrillMode>("");
+  const hackEndsAt = useApp((s) => s.appSettings.hackathonEndsAt as number | undefined);
+  const hoursLeft = hackEndsAt ? (hackEndsAt - Date.now()) / 3_600_000 : null;
   const [menu, setMenu] = useState<"" | "add" | "agent">("");
   const [busy, setBusy] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -111,7 +130,11 @@ export function NewSession() {
     const body = text.trim();
     if (!body || busy) return;
     setBusy(true);
-    await spawnFromTemplate(slug, slug, branch, (plan ? PLAN_PREFIX : "") + body, agent);
+    // the slash command must lead the message for Claude Code to run the skill
+    const brief = agent === "claude" && grill
+      ? grillPrefix(grill, hoursLeft) + (plan ? PLAN_PREFIX : "") + body
+      : (plan ? PLAN_PREFIX : "") + body;
+    await spawnFromTemplate(slug, slug, branch, brief, agent);
     setBusy(false);
     // spawn registered the member → it's now the active tab; else keep the draft
     if (useApp.getState().members.some((m) => m.id === slug)) {
@@ -134,7 +157,7 @@ export function NewSession() {
     <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
       <PixelBanner />
       <div className="w-full max-w-[820px] mx-auto px-6 pb-16 pt-[6vh]">
-        <h1 className="text-[20px] font-medium text-ink mb-4 px-1">What should we work on in {projectName}?</h1>
+        <h1 className="text-[20px] font-medium text-ink mb-4 px-1">What are we grilling in {projectName}?</h1>
 
         <div className="composer-card relative rounded-xl">
           <div className="flex items-center gap-4 px-4 pt-3 text-[12px] text-faint">
@@ -167,6 +190,13 @@ export function NewSession() {
             <button className="composer-btn" title="Agent for this session" onClick={() => setMenu(menu === "agent" ? "" : "agent")}>
               <AgentLogo agent={agent} size={14} /> {agentName} <Icon name="chevron" size={10} className="rotate-90 opacity-60" />
             </button>
+            {agent === "claude" ? (
+              <button className={`composer-btn ${grill ? "grill-on" : ""}`}
+                title={grill ? "Grill mode on — the /grillme coach orients and grills you before building. Click to turn off." : "Grill mode: run this through the /grillme coach first"}
+                onClick={() => setGrill(grill ? "" : "grill")}>
+                <GrillFlame px={1.5} dim={!grill} /> {grill === "hack" ? "Hackathon grill" : "Grill"}
+              </button>
+            ) : null}
             {plan ? (
               <button className="composer-btn on" title="Plan mode on — click to turn off" onClick={() => setPlan(false)}>
                 <Icon name="bulb" size={13} /> Plan mode <Icon name="cross" size={9} className="opacity-60" />
@@ -214,7 +244,29 @@ export function NewSession() {
             </div>
           ) : null}
         </div>
+
+        <div className="flex flex-wrap gap-2 mt-4 px-1">
+          <Starter icon={<GrillFlame px={1.5} />} label="Grill me on this" hint="Orient, grill my understanding, then plan — via /grillme"
+            onClick={() => { setAgent("claude"); setGrill("grill"); ta.current?.focus(); }} />
+          <Starter icon={<Icon name="clock" size={13} />} label="Hackathon mode"
+            hint={`/grillme --hackathon — scoped to ${hoursLeft !== null && hoursLeft > 0 ? `${Math.ceil(hoursLeft)}h left on the clock` : "24h (set the clock in the status bar)"}`}
+            onClick={() => { setAgent("claude"); setGrill("hack"); ta.current?.focus(); }} />
+          <Starter icon={<Icon name="swap" size={13} />} label="Fan out a checklist" hint="Paste a checklist → one session per independent item"
+            onClick={() => useApp.getState().setView("tasks")} />
+          <Starter icon={<Icon name="doc" size={13} />} label="From template" hint="Branch prefix + a saved starting brief"
+            onClick={() => useApp.setState({ sessionTemplatesOpen: true })} />
+          <Starter icon={<Icon name="team" size={13} />} label="Standup" hint="AI Done / Doing / Blocked from git + tasks"
+            onClick={() => useApp.setState({ standupOpen: true })} />
+        </div>
       </div>
     </div>
+  );
+}
+
+function Starter({ icon, label, hint, onClick }: { icon: React.ReactNode; label: string; hint: string; onClick: () => void }) {
+  return (
+    <button className="starter-chip" title={hint} onClick={onClick}>
+      {icon} {label}
+    </button>
   );
 }
