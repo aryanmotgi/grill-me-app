@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp, ptyIdFor } from "../store";
 import type { Teammate } from "../types";
-import { modelLabel, parseTranscript, toRows, type ChatItem } from "../lib/chat";
+import { modelLabel, parseTranscript, toRows, type ChatItem, type ChatRow } from "../lib/chat";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
@@ -112,7 +112,7 @@ function ToolGroup({ tools }: { tools: Extract<ChatItem, { kind: "tool" }>[] }) 
   );
 }
 
-function Working({ since, model }: { since: number | undefined; model: string }) {
+export function Working({ since, model }: { since: number | undefined; model: string }) {
   const [start] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -128,6 +128,43 @@ function Working({ since, model }: { since: number | undefined; model: string })
       <span className="chat-pulse"><AgentLogo agent="claude" size={12} /></span>
       <span>{model} working for <span className="text-dim num">{s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`}</span></span>
     </div>
+  );
+}
+
+/** The conversation rows (bubbles, replies, tool groups, "worked for") —
+ *  shared by session chat and the Grill Me Chat panel. */
+export function ChatRows({ rows }: { rows: ChatRow[] }) {
+  return (
+    <>
+      {rows.map((row) => {
+        if (row.kind === "tools") return <ToolGroup key={row.id} tools={row.tools} />;
+        if (row.kind === "worked") {
+          return (
+            <div key={row.id} className="flex items-center gap-2 text-[12.5px] text-faint pb-2">
+              <AgentLogo agent="claude" size={12} />
+              <span>{row.model} worked for <span className="num">{row.seconds < 60 ? `${row.seconds}s` : `${Math.floor(row.seconds / 60)}m ${row.seconds % 60}s`}</span></span>
+            </div>
+          );
+        }
+        const it = row.item;
+        return it.kind === "user" ? (
+          <div key={it.id} className="flex justify-end pt-2">
+            <div className="chat-bubble max-w-[78%] whitespace-pre-wrap break-words">
+              {it.text}
+              {it.images ? <div className="text-[11px] text-faint mt-1">{it.images} image{it.images > 1 ? "s" : ""} attached</div> : null}
+            </div>
+          </div>
+        ) : it.kind === "assistant" ? (
+          <div key={it.id} className="chat-reply text-[13.5px] leading-[1.65] text-dim">
+            <Markdown text={it.text} />
+          </div>
+        ) : it.kind === "tool" ? (
+          <ToolRow key={it.id} item={it} />
+        ) : (
+          <div key={it.id} className="text-[11.5px] text-faint text-center py-1">{it.text}</div>
+        );
+      })}
+    </>
   );
 }
 
@@ -187,34 +224,7 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
             <p className="text-faint text-[12px]">Send one below — the conversation shows up here.</p>
           </div>
         ) : (
-          rows.map((row) => {
-            if (row.kind === "tools") return <ToolGroup key={row.id} tools={row.tools} />;
-            if (row.kind === "worked") {
-              return (
-                <div key={row.id} className="flex items-center gap-2 text-[12.5px] text-faint pb-2">
-                  <AgentLogo agent="claude" size={12} />
-                  <span>{row.model} worked for <span className="num">{row.seconds < 60 ? `${row.seconds}s` : `${Math.floor(row.seconds / 60)}m ${row.seconds % 60}s`}</span></span>
-                </div>
-              );
-            }
-            const it = row.item;
-            return it.kind === "user" ? (
-              <div key={it.id} className="flex justify-end pt-2">
-                <div className="chat-bubble max-w-[78%] whitespace-pre-wrap break-words">
-                  {it.text}
-                  {it.images ? <div className="text-[11px] text-faint mt-1">{it.images} image{it.images > 1 ? "s" : ""} attached</div> : null}
-                </div>
-              </div>
-            ) : it.kind === "assistant" ? (
-              <div key={it.id} className="chat-reply text-[13.5px] leading-[1.65] text-dim">
-                <Markdown text={it.text} />
-              </div>
-            ) : it.kind === "tool" ? (
-              <ToolRow key={it.id} item={it} />
-            ) : (
-              <div key={it.id} className="text-[11.5px] text-faint text-center py-1">{it.text}</div>
-            );
-          })
+          <ChatRows rows={rows} />
         )}
 
         {mate.status === "working" ? <Working since={lastUserTs} model={lastModel} /> : null}

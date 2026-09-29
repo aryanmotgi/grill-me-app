@@ -42,6 +42,7 @@ import { CheckpointRunner } from "./components/CheckpointRunner";
 import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { NewSession } from "./components/NewSession";
+import { ClaudePanel } from "./components/ClaudePanel";
 import { StatusBar } from "./components/StatusBar";
 import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -299,6 +300,8 @@ export default function App() {
           {focusMode ? null : <SessionTabs />}
           {view === "home" ? (
             <HomeDashboard />
+          ) : view === "claude" ? (
+            <ClaudePanel />
           ) : view === "new" || !active ? (
             <NewSession />
           ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" || view === "preview" ? (

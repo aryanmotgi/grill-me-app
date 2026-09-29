@@ -4,6 +4,7 @@ use std::process::Command;
 
 mod room;
 mod bridge;
+mod claude_panel;
 
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.
@@ -4415,6 +4416,11 @@ pub fn run() {
             bridge::bridge_resolve,
             bridge::bridge_status,
             bridge::bridge_connect,
+            claude_panel::brainstorm_send,
+            claude_panel::brainstorm_stop,
+            claude_panel::brainstorm_history,
+            claude_panel::claudeai_show,
+            claude_panel::claudeai_hide,
             ci_state,
             pr_list,
             pr_merge,
