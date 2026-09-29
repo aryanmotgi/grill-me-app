@@ -14,7 +14,13 @@ import { ChatView } from "./ChatView";
 import { useApp as useVitals } from "../store";
 import { fmtFullTime, fmtMem, fmtTokens } from "../lib/format";
 
+/** cpu/mem/tokens line under a session — opt-in (Settings → Appearance). */
 function VitalsStrip({ mateId }: { mateId: string }) {
+  const show = useVitals((s) => s.appSettings.showVitals === true);
+  return show ? <VitalsStripInner mateId={mateId} /> : null;
+}
+
+function VitalsStripInner({ mateId }: { mateId: string }) {
   const res = useVitals((s) => s.resources[s.activeProject && s.activeProject !== "default" ? `${s.activeProject}:${mateId}` : mateId]);
   const mate = useVitals((s) => s.teammates.find((t) => t.id === mateId));
   const tok = mate?.usage.tokens;

@@ -109,6 +109,7 @@ export function Sparkline({ id }: { id: string }) {
 function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder }) {
   const { activeId, setActive, splitId, setSplit, toggleDnd, toast, members, setWatchOpen, clearCap, patchTeammate, setAppSetting } = useApp();
   const presence = useApp((s) => normalizePresence(s.appSettings.presence));
+  const appMode = useApp((s) => s.appMode);
   const navSelId = useApp((s) => s.navSelId);
   // authoritative on the real process state so the button can also resume a
   // session the feed paused (idle auto-pause or a cost-cap stop)
@@ -251,8 +252,8 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
         </div>
       ) : null}
 
-      {/* row actions — active row always, others on hover; keeps the list quiet */}
-      <div className={`mt-1.5 pl-4 gap-1.5 items-center demo-hide ${isActive ? "flex" : "hidden group-hover:flex group-focus-within:flex"}`}>
+      {/* row actions — on hover/focus only; keeps the list quiet */}
+      <div className="mt-1.5 pl-4 gap-1.5 items-center demo-hide hidden group-hover:flex group-focus-within:flex">
         <button
           className={`btn ${inSplit ? "active" : ""}`}
           onClick={(e) => { e.stopPropagation(); setSplit(inSplit ? null : mate.id); }}
@@ -297,7 +298,7 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
         >
           {paused ? "resume" : "pause"}
         </button> : null}
-        <span className="text-faint text-[10px]" title={mate.permission === "edit" ? "You can jump into this session" : "View-only for you"}>
+        <span className={`text-faint text-[10px] ${appMode === "solo" ? "hidden" : ""}`} title={mate.permission === "edit" ? "You can jump into this session" : "View-only for you"}>
           {mate.permission === "edit" ? <><Icon name="swap" size={10} /> can jump in</> : <><Icon name="eye" size={10} /> view-only</>}
         </span>
       </div>

@@ -250,6 +250,19 @@ pub(crate) fn detect_dev_cmd(repo_path: String) -> Option<String> {
     ["dev", "start", "serve"].into_iter().find(|k| v["scripts"][k].is_string()).map(|k| format!("npm run {k}"))
 }
 
+// ---- Claude plan usage -----------------------------------------------------
+
+/// Plan usage (5-hour session + weekly) from the cache Claude Code's status
+/// line writes. Grill Me never reads credentials itself — no cache, no meter.
+#[tauri::command]
+pub(crate) fn plan_usage() -> Option<Value> {
+    let path = Path::new("/tmp/claude/statusline-usage-cache.json");
+    let age = path.metadata().ok()?.modified().ok()?.elapsed().ok()?.as_secs();
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let pick = |k: &str| json!({ "pct": v[k]["utilization"].as_f64(), "resetsAt": v[k]["resets_at"] });
+    Some(json!({ "session": pick("five_hour"), "week": pick("seven_day"), "ageSecs": age }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

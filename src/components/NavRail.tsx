@@ -51,6 +51,8 @@ export function NavRail() {
   const setSettingsOpen = useApp((s) => s.setSettingsOpen);
   const setSwitcherOpen = useApp((s) => s.setSwitcherOpen);
   const unanswered = messages.filter((m) => !m.answered).length;
+  const moreSetting = useApp((s) => s.appSettings.navMoreOpen === true);
+  const moreOpen = moreSetting || ["automations", "tasks", "inbox", "feed", "team"].includes(view);
 
   const go = (v: MainView) => setView(view === v ? "session" : v);
 
@@ -83,20 +85,31 @@ export function NavRail() {
           onClick={() => go("home")} />
         <NavItem icon="note" label="Brain" active={view === "brain"} title="Shared project brain: goal, where was I, what's happening"
           onClick={() => go("brain")} />
-        <NavItem icon="layout" label="Preview" active={view === "preview"} title="Live preview of the app you're building"
-          onClick={() => go("preview")} />
-        <NavItem icon="bolt" label="Automations" active={view === "automations"} title="Things Grill Me does for you: tests, checks, reminders, phone pings"
-          onClick={() => go("automations")} />
         <NavItem icon="claude" label="Claude" active={view === "claude"} title="Brainstorm with Claude (sees your sessions) + claude.ai"
           onClick={() => go("claude")} />
-        {surfaceVisible(appMode, "rail-inbox-tab") ? (
-          <NavItem icon="inbox" label="Inbox" badge={unanswered} active={view === "inbox"}
-            onClick={() => go("inbox")} />
-        ) : null}
-        <NavItem icon="check" label="Tasks" active={view === "tasks"} onClick={() => go("tasks")} />
-        <NavItem icon="clock" label="Feed" active={view === "feed"} onClick={() => go("feed")} />
-        {surfaceVisible(appMode, "rail-team-tab") ? (
-          <NavItem icon="team" label="Team" active={view === "team"} onClick={() => go("team")} />
+        <NavItem icon="eye" label="Preview" active={view === "preview"} title="Live preview of the app you're building"
+          onClick={() => go("preview")} />
+
+        {/* the rest folds away so the rail stays calm; opens itself when one is active */}
+        <button className="flex items-center gap-2 px-2.5 h-7 mt-1 text-[12px] text-faint hover:text-dim cursor-pointer"
+          aria-expanded={moreOpen} onClick={() => setAppSetting("navMoreOpen", !moreOpen)}>
+          <Icon name="chevron" size={9} className={`transition-transform ${moreOpen ? "rotate-90" : ""}`} />
+          More{!moreOpen && unanswered ? <span className="text-warn num ml-1">{unanswered}</span> : null}
+        </button>
+        {moreOpen ? (
+          <>
+            <NavItem icon="bolt" label="Automations" active={view === "automations"} title="Things Grill Me does for you: tests, checks, reminders, phone pings"
+              onClick={() => go("automations")} />
+            <NavItem icon="check" label="Tasks" active={view === "tasks"} onClick={() => go("tasks")} />
+            {surfaceVisible(appMode, "rail-inbox-tab") ? (
+              <NavItem icon="inbox" label="Inbox" badge={unanswered} active={view === "inbox"}
+                onClick={() => go("inbox")} />
+            ) : null}
+            <NavItem icon="clock" label="Feed" active={view === "feed"} onClick={() => go("feed")} />
+            {surfaceVisible(appMode, "rail-team-tab") ? (
+              <NavItem icon="team" label="Team" active={view === "team"} onClick={() => go("team")} />
+            ) : null}
+          </>
         ) : null}
       </div>
 
