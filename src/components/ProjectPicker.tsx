@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { useApp } from "../store";
 import { isTauri } from "../data/sources/git";
+import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 
 interface Project {
   id: string;
@@ -19,7 +20,6 @@ interface CardStats {
   needsInput: boolean;
 }
 
-const ACCENTS = ["#ffb454", "#7fd962", "#73b8ff", "#f07178", "#d2a6ff", "#95e6cb"];
 
 function ago(ts?: number) {
   if (!ts) return null;
@@ -43,9 +43,6 @@ export function ProjectPicker() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stats, setStats] = useState<Record<string, CardStats>>({});
   const [discovered, setDiscovered] = useState<string[]>([]);
-  const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-  const [color, setColor] = useState(ACCENTS[0]);
   const [cloneUrl, setCloneUrl] = useState("");
   const [cloning, setCloning] = useState(false);
 
@@ -103,26 +100,7 @@ export function ProjectPicker() {
     setTimeout(() => location.reload(), 150);
   };
 
-  const register = async (projName: string, projPath: string, projColor?: string) => {
-    const id = projName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const next = [...projects, { id, name: projName.trim(), path: projPath.trim(), color: projColor }];
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("projects_write", { content: JSON.stringify(next, null, 2) });
-    await invoke("set_active_project", { id });
-    await invoke("team_config_write", {
-      cfg: { teammates: [{ id: "me", name: "Me", repoPath: projPath.trim(), permission: "edit" }] },
-    }).catch(() => {});
-    setProjects(next);
-  };
-
-  const browse = async () => {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const dir = await open({ directory: true, title: "Pick a project repo" });
-    if (typeof dir === "string") {
-      setPath(dir);
-      if (!name) setName(dir.split("/").pop() ?? "");
-    }
-  };
+  const warn = (msg: string) => toast(msg, "warn");
 
   const clone = async () => {
     const url = cloneUrl.trim();
@@ -138,8 +116,8 @@ export function ProjectPicker() {
         : await import("@tauri-apps/api/path").then(({ homeDir }) => homeDir());
       const dest = `${parent.replace(/\/+$/, "")}/${repo}`;
       await invoke("git_clone", { url, dest });
-      await register(repo, dest, ACCENTS[projects.length % ACCENTS.length]);
       setCloneUrl("");
+      await openProjectAt(dest, warn);
     } catch (e) {
       toast(`Clone failed: ${e}`, "warn");
     } finally {
@@ -192,7 +170,7 @@ export function ProjectPicker() {
               <div key={d} className="flex items-center gap-2 px-3 py-1.5 text-[11px]">
                 <span className="font-mono text-faint text-[10px] truncate">{d}</span>
                 <span className="flex-1" />
-                <button className="btn" onClick={() => register(d.split("/").pop() ?? d, d, ACCENTS[projects.length % ACCENTS.length])}>
+                <button className="btn" onClick={() => void openProjectAt(d, warn)}>
                   <Icon name="plus" size={9} /> add
                 </button>
               </div>
@@ -202,28 +180,17 @@ export function ProjectPicker() {
 
         <div className="flex flex-col gap-1.5 border-t border-line pt-4">
           <div className="panel-label">add project</div>
-          <div className="flex gap-1.5">
-            <input className="flex-1 bg-raised hairline rounded-sm px-3 py-2 text-[12px] outline-none focus:border-accent"
-              placeholder="project name" value={name} onChange={(e) => setName(e.target.value)} />
-            <button className="btn" onClick={browse}>browse…</button>
-          </div>
-          <input className="bg-raised hairline rounded-sm px-3 py-2 font-mono text-[11px] outline-none focus:border-accent"
-            placeholder="/absolute/path/to/repo" value={path} onChange={(e) => setPath(e.target.value)} />
-          <div className="flex items-center gap-2">
-            <span className="text-faint text-[10px]">accent</span>
-            {ACCENTS.map((c) => (
-              <button key={c} className="w-4 h-4 rounded-full cursor-pointer"
-                aria-label={`Accent color ${c}`} title={`Accent ${c}`}
-                style={{ background: c, boxShadow: color === c ? `0 0 0 2px var(--bg), 0 0 0 4px ${c}` : "none" }}
-                onClick={() => setColor(c)} />
-            ))}
-            <span className="flex-1" />
-            <button className="btn primary" disabled={!name.trim() || !path.trim()}
-              title={!name.trim() || !path.trim() ? "Enter a project name and path first" : "Add this project"}
-              onClick={() => { register(name, path, color); setName(""); setPath(""); }}>
-              <Icon name="plus" size={10} /> add
-            </button>
-          </div>
+          <button
+            className="flex items-center gap-3 px-4 py-3 rounded-md hairline bg-panel hover:bg-raised cursor-pointer text-left transition-colors"
+            title="Opens Finder — pick an existing folder, or use New Folder to start a fresh project"
+            onClick={() => void addProjectFromFinder(warn)}
+          >
+            <Icon name="folder" size={16} />
+            <span className="flex flex-col">
+              <span className="text-[13px] text-ink">Open folder…</span>
+              <span className="text-[11px] text-faint">Pick a folder in Finder, or make a new one — the project sticks to it</span>
+            </span>
+          </button>
           <div className="flex gap-1.5 mt-1">
             <input className="flex-1 bg-raised hairline rounded-sm px-3 py-2 font-mono text-[11px] outline-none focus:border-accent"
               placeholder="or clone: https://github.com/org/repo" value={cloneUrl}
