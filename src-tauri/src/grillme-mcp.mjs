@@ -968,7 +968,9 @@ async function serveHttp(port, secretFile) {
 
   const server = createServer((req, res) => {
     const path = (req.url ?? "").split("?")[0];
-    const who = req.headers["tailscale-funnel-request"] ? "funnel" : "local";
+    // Funnel proxies from loopback; the forwarded-for header is the caller
+    const fwd = String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim();
+    const who = fwd || (req.headers["tailscale-funnel-request"] ? "funnel" : "local");
     // auth FIRST: strangers get their own bucket and always a plain 404, so
     // they can neither lock out the real client nor learn a server is here
     if (!(path === "/mcp" || path.startsWith("/mcp/")) || !authed(path, req.headers.authorization)) {
