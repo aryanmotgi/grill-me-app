@@ -5,6 +5,7 @@ use std::process::Command;
 mod room;
 mod bridge;
 mod claude_panel;
+mod automations;
 
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.
@@ -2477,7 +2478,7 @@ fn standup_claude_pipe(input: &str, prompt: &str) -> Result<String, String> {
 /// Auto-standup: real git + task/event signals → `claude -p` → per-teammate
 /// Done/Doing/Blocked markdown. Uses the active project's data dir + team
 /// roster, so it takes no arguments.
-#[tauri::command]
+#[tauri::command(async)]
 fn generate_standup() -> Result<String, String> {
     // Surface an honest "claude not installed" error before doing any work.
     preflight_claude()?;
@@ -4443,6 +4444,9 @@ pub fn run() {
             bridge::bridge_set_deadline,
             bridge::bridge_add_note,
             claude_panel::brainstorm_send,
+            automations::detect_test_cmd,
+            automations::run_tests,
+            automations::phone_ping,
             claude_panel::brainstorm_stop,
             claude_panel::brainstorm_history,
             claude_panel::claudeai_show,

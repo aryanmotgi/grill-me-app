@@ -83,6 +83,8 @@ export function NavRail() {
           onClick={() => go("home")} />
         <NavItem icon="note" label="Brain" active={view === "brain"} title="Shared project brain: goal, where was I, what's happening"
           onClick={() => go("brain")} />
+        <NavItem icon="bolt" label="Automations" active={view === "automations"} title="Things Grill Me does for you: tests, checks, reminders, phone pings"
+          onClick={() => go("automations")} />
         <NavItem icon="claude" label="Claude" active={view === "claude"} title="Brainstorm with Claude (sees your sessions) + claude.ai"
           onClick={() => go("claude")} />
         {surfaceVisible(appMode, "rail-inbox-tab") ? (

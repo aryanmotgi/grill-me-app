@@ -44,6 +44,7 @@ import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { NewSession } from "./components/NewSession";
 import { ClaudePanel } from "./components/ClaudePanel";
 import { BrainPage, useWelcomeBack } from "./components/BrainPage";
+import { AutomationsPage, useAutomations } from "./components/Automations";
 import { StatusBar } from "./components/StatusBar";
 import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -269,6 +270,7 @@ export default function App() {
   // Claude bridge: live pending requests + "coder finished" pings
   useBridgeFeed();
   useWelcomeBack();
+  useAutomations();
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);
@@ -302,6 +304,8 @@ export default function App() {
           {focusMode ? null : <SessionTabs />}
           {view === "home" ? (
             <HomeDashboard />
+          ) : view === "automations" ? (
+            <AutomationsPage />
           ) : view === "brain" ? (
             <BrainPage />
           ) : view === "claude" ? (
