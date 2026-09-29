@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { EditableTitle } from "./EditableTitle";
 import { useApp } from "../store";
 import { visibleSessions } from "../lib/sessionNav";
 import { applySessionOrder, moveId, reorderByDrop } from "../lib/sessionOrder";
@@ -196,8 +197,8 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
       </div>
 
       {/* line 2: the session title (what it's working on), bold like Monocode */}
-      <div className="mt-0.5 pl-4 text-[12.5px] font-semibold text-ink truncate" title={mate.taskLabel || mate.name}>
-        {mate.taskLabel || mate.name}
+      <div className="mt-0.5 pl-4 text-[12.5px] font-semibold text-ink truncate flex min-w-0">
+        <EditableTitle mate={mate} />
       </div>
 
       {/* line 3: who/where + working-tree size + quiet flags */}
