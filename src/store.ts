@@ -38,7 +38,7 @@ export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "previ
 /** What fills the center stage: the session terminal, the home dashboard, or
  *  one of the team surfaces opened from the nav rail (Monocode-style — team
  *  panels are full center views now, not a right-rail sidebar). */
-export type MainView = "home" | "new" | "claude" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
+export type MainView = "home" | "new" | "claude" | "brain" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
 
 /** One registered project workspace (projects.json via projects_list). */
 export interface ProjectInfo {

@@ -23,6 +23,8 @@ export interface BridgeQuestion {
 export interface BridgeNote { id: string; ts: number; text: string; by?: string }
 export interface BridgeState {
   handoffs: BridgeHandoff[]; plans: BridgePlan[]; questions: BridgeQuestion[]; notes: BridgeNote[];
+  /** the project's one-line goal in the shared brain */
+  goal?: string;
 }
 
 export const EMPTY_BRIDGE: BridgeState = { handoffs: [], plans: [], questions: [], notes: [] };
@@ -31,7 +33,10 @@ export function parseBridge(raw: string): BridgeState {
   try {
     const v = JSON.parse(raw);
     const arr = <T,>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);
-    return { handoffs: arr(v.handoffs), plans: arr(v.plans), questions: arr(v.questions), notes: arr(v.notes) };
+    return {
+      handoffs: arr(v.handoffs), plans: arr(v.plans), questions: arr(v.questions), notes: arr(v.notes),
+      ...(typeof v.goal === "string" ? { goal: v.goal } : {}),
+    };
   } catch {
     return EMPTY_BRIDGE;
   }

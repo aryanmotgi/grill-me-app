@@ -11,7 +11,7 @@
 // ~/.grillme/bin/grillme-mcp.mjs — edit the source in src-tauri/src/.
 // ---------------------------------------------------------------------------
 
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, renameSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, basename, resolve } from "node:path";
@@ -30,6 +30,12 @@ function readJson(path, fallback) {
 }
 
 function projectDir() {
+  // hooks + Grill Me pass the project explicitly (a session belongs to its
+  // project no matter which one is open in the app)
+  const forced = process.env.GRILLME_PROJECT_DIR;
+  if (forced && existsSync(forced)) {
+    return { id: forced === ROOT ? "default" : basename(forced), dir: forced };
+  }
   const settings = readJson(join(ROOT, "settings.json"), {});
   const id = typeof settings.activeProject === "string" ? settings.activeProject : "";
   if (id && id !== "default" && /^[a-z0-9-]+$/.test(id) && existsSync(join(ROOT, "projects", id))) {
@@ -207,6 +213,106 @@ async function push(kind, item) {
   return res.json();
 }
 
+
+// ---- shared brain: catch-up digests -------------------------------------------
+// One notebook per project: goal + decisions + notes + plans + what every
+// session did. `catchUp(since)` renders everything new since a moment; the
+// cursors file remembers each reader's "last seen" (a hook per session, a
+// Grill Me Chat per chat, the Claude app).
+
+const CURSORS = () => join(projectDir().dir, "brain-cursors.json");
+
+function cursor(key) {
+  const v = readJson(CURSORS(), {})[key];
+  return typeof v === "number" ? v : 0;
+}
+
+function setCursor(key, ms) {
+  const all = readJson(CURSORS(), {});
+  all[key] = ms;
+  const tmp = `${CURSORS()}.${process.pid}.tmp`;
+  try { writeFileSync(tmp, JSON.stringify(all, null, 2)); renameSync(tmp, CURSORS()); } catch { /* best effort */ }
+}
+
+const tsOf = (x) => (typeof x === "number" ? x : Date.parse(x ?? "") || 0);
+
+/** Markdown of everything new since `since` (ms). Empty string = nothing new.
+ *  `exclude` = a member id whose own turns to skip (it already knows them). */
+function catchUp(since, { exclude, full = false } = {}) {
+  const { dir, id } = projectDir();
+  const b = bridgeState();
+  const out = [];
+  if (full && b.goal) out.push(`**Goal:** ${b.goal}`);
+  else if (b.goalTs && tsOf(b.goalTs) > since && b.goal) out.push(`**New goal:** ${b.goal}`);
+
+  const decisions = readJson(join(dir, "decisions.json"), []).filter((d) => full || tsOf(d.epochMs) > since);
+  if (decisions.length) out.push(`**${full ? "Decisions" : "New decisions"}:**\n${decisions.slice(-12).map((d) => `- ${d.text}`).join("\n")}`);
+
+  const notes = (b.notes ?? []).filter((n) => full || tsOf(n.ts) > since);
+  if (notes.length) out.push(`**${full ? "Notes" : "New notes"}:**\n${notes.slice(-12).map((n) => `- ${n.text}${n.by ? ` (${n.by})` : ""}`).join("\n")}`);
+
+  const plans = (b.plans ?? []).filter((p) => p.status === "applied" && (full || tsOf(p.ts) > since));
+  if (plans.length) out.push(`**${full ? "Plans" : "New plans"}:**\n${plans.slice(-5).map((p) => `- ${p.title}: ${p.tasks.map((t) => t.title).join("; ")}`).join("\n")}`);
+
+  if (full) {
+    const tasks = readJson(join(dir, "tasks.json"), []).filter((t) => t.status !== "done");
+    if (tasks.length) out.push(`**Open tasks:**\n${tasks.slice(0, 15).map((t) => `- [${t.status}] ${t.title}`).join("\n")}`);
+  }
+
+  const activity = [];
+  for (const m of members()) {
+    if (m.id === exclude) continue;
+    const fresh = turns(m.repoPath).turns.filter((t) => full ? true : tsOf(t.at) > since);
+    const recent = full ? fresh.slice(-1) : fresh.slice(-4);
+    for (const t of recent) {
+      activity.push(`- **${label(m)}**: asked "${clip(t.ask, 140)}"${t.tools.length ? ` → ${clip(t.tools.slice(-5).join(", "), 160)}` : ""}${t.reply ? ` → ${clip(t.reply.replace(/\s+/g, " "), 220)}` : ""}`);
+    }
+    if (!full && since) {
+      const log = git(m.repoPath, ["log", "--oneline", `--since=@${Math.floor(since / 1000)}`, "-8"]);
+      if (log) activity.push(`- **${label(m)}** commits:\n${log.split("\n").map((l) => `  - ${l}`).join("\n")}`);
+    }
+  }
+  if (activity.length) out.push(`**${full ? "Sessions" : "Session activity"}:**\n${activity.join("\n")}`);
+
+  const openQ = (b.questions ?? []).filter((q) => !q.answered);
+  if (openQ.length && (full || openQ.some((q) => tsOf(q.ts) > since))) {
+    out.push(`**Open questions for the brainstorm side:**\n${openQ.map((q) => `- ${q.fromTitle ?? q.from}: ${q.question}`).join("\n")}`);
+  }
+  return out.length ? `_Project: ${id}_\n\n${out.join("\n\n")}` : "";
+}
+
+/** CLI modes (hooks and Grill Me call the script directly, not over MCP). */
+function cliMode(argv) {
+  const flag = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
+  if (flag("--project")) process.env.GRILLME_PROJECT_DIR = flag("--project");
+  const now = Date.now();
+  if (argv.includes("--sync")) {
+    // Claude Code hook (SessionStart / UserPromptSubmit): stdout becomes context
+    const member = flag("--sync");
+    const key = `hook:${member}`;
+    const since = cursor(key);
+    const text = catchUp(since, { exclude: member, full: since === 0 || argv.includes("--full") });
+    setCursor(key, now);
+    if (text) process.stdout.write(`<grill-me-sync>\nShared project brain from Grill Me — new since your last message (from the brainstorm side and other sessions). Use it; don't repeat it back.\n\n${text}\n</grill-me-sync>\n`);
+    return true;
+  }
+  if (argv.includes("--catchup-chat")) {
+    const key = `chat:${flag("--catchup-chat")}`;
+    const since = cursor(key);
+    const text = catchUp(since, { full: since === 0 });
+    setCursor(key, now);
+    process.stdout.write(text);
+    return true;
+  }
+  if (argv.includes("--digest")) {
+    // Grill Me's Brain page: read-only, no cursor
+    const since = Number(flag("--digest")) || 0;
+    process.stdout.write(catchUp(since, { full: since === 0 }) || "Nothing new.");
+    return true;
+  }
+  return false;
+}
+
 // ---- skills (hackathon playbooks, shared with Grill Me's composer) ----------
 
 const SKILLS = [
@@ -299,6 +405,16 @@ const TOOLS = [
     name: "notes",
     description: "Shared scratchpad both sides can read and add to (ideas, constraints, links). action=read or add.",
     inputSchema: { type: "object", required: ["action"], properties: { action: { type: "string", enum: ["read", "add"] }, text: { type: "string" } } },
+  },
+  {
+    name: "catch_up",
+    description: "Everything new in this project since you last asked (or in the last `hours`): goal, decisions, notes, plans, what each session did, commits. Call at the start of a conversation and whenever the user returns.",
+    inputSchema: { type: "object", properties: { hours: { type: "number", description: "Look back this many hours instead of since last call" } } },
+  },
+  {
+    name: "set_goal",
+    description: "Set the project's one-line goal in the shared brain (what we're building and for whom). Both sides see it.",
+    inputSchema: { type: "object", required: ["goal"], properties: { goal: { type: "string" } } },
   },
   {
     name: "team_status",
@@ -401,6 +517,17 @@ async function callTool(name, args = {}) {
       const n = bridgeState().notes;
       return n.length ? n.slice(-30).map((x) => `- ${x.text}${x.by ? ` (${x.by})` : ""}`).join("\n") : "No notes yet.";
     }
+    case "catch_up": {
+      const key = "app";
+      const since = args.hours ? Date.now() - Number(args.hours) * 3_600_000 : cursor(key);
+      const text = catchUp(since, { full: since === 0 });
+      setCursor(key, Date.now());
+      return text || "Nothing new since last time.";
+    }
+    case "set_goal": {
+      await push("goal", { goal: String(args.goal) });
+      return "Goal saved to the shared brain.";
+    }
     case "team_status": {
       const settings = readJson(join(ROOT, "settings.json"), {});
       if (settings.appMode !== "team") return "Grill Me is in solo mode — no teammates.";
@@ -433,7 +560,7 @@ async function handle(req) {
         serverInfo: SERVER,
         instructions:
           "Grill Me bridge. In the Claude app you are the user's brainstorm partner and reviewer; Claude Code sessions are the coders. " +
-          "Start with whats_new. Explain code changes (get_diff) in plain English. Turn agreed plans into save_plan. " +
+          "Start with catch_up (or whats_new). Save decisions the user makes with notes/save_plan so the coders see them.  Explain code changes (get_diff) in plain English. Turn agreed plans into save_plan. " +
           "Before send_to_coder, grill the user: make them explain the plan back and push back on vague answers. " +
           "In a Claude Code session: read get_plan before starting, and use ask_brainstorm for product/design calls.",
       });
@@ -462,7 +589,7 @@ async function handle(req) {
   }
 }
 
-createInterface({ input: process.stdin }).on("line", (line) => {
+if (!cliMode(process.argv.slice(2))) createInterface({ input: process.stdin }).on("line", (line) => {
   if (!line.trim()) return;
   let req;
   try { req = JSON.parse(line); } catch { return send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
