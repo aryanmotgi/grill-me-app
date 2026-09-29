@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod room;
+mod bridge;
 
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.
@@ -3224,7 +3225,10 @@ fn generate_token() -> String {
 
 fn start_api_server(app: tauri::AppHandle) {
     use std::io::{BufRead, BufReader, Write as _};
+    use tauri::Emitter;
     let token = api_token();
+    // Claude bridge: MCP server script + hackathon skill playbooks
+    bridge::install();
     // install the CLI next to the hook helper
     let bin = grillme_root().join("bin");
     let _ = std::fs::create_dir_all(&bin);
@@ -3323,6 +3327,19 @@ fn start_api_server(app: tauri::AppHandle) {
                     match pty_write(id, data) {
                         Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
                         Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
+                    }
+                }
+                ("POST", "/bridge/push") => {
+                    // Claude bridge writes (from the grill-me MCP server).
+                    // Everything lands pending — the user approves in the app.
+                    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+                    let kind = v["kind"].as_str().unwrap_or("");
+                    match bridge::push(kind, &v["item"]) {
+                        Ok(entry) => {
+                            let _ = app.emit("bridge-changed", ());
+                            respond(&mut stream, 200, &entry.to_string());
+                        }
+                        Err(e) => respond(&mut stream, 400, &serde_json::json!({ "error": e }).to_string()),
                     }
                 }
                 ("POST", "/new") => {
@@ -4394,6 +4411,10 @@ pub fn run() {
             git_revert_file,
             usage_stats,
             transcript_tail,
+            bridge::bridge_read,
+            bridge::bridge_resolve,
+            bridge::bridge_status,
+            bridge::bridge_connect,
             ci_state,
             pr_list,
             pr_merge,

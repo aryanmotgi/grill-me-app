@@ -43,6 +43,7 @@ import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { NewSession } from "./components/NewSession";
 import { StatusBar } from "./components/StatusBar";
+import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
 
@@ -263,6 +264,8 @@ export default function App() {
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
   // right file pane only when a file is actually open (Monocode keeps it hidden)
   const openFileCount = useApp((s) => s.openFiles.length);
+  // Claude bridge: live pending requests + "coder finished" pings
+  useBridgeFeed();
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);
@@ -395,6 +398,7 @@ export default function App() {
       <DecisionsLog />
       <Cheatsheet />
       <CheckpointRunner />
+      <BridgePanel />
       <Toasts />
     </div>
   );
