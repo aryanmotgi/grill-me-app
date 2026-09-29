@@ -230,7 +230,7 @@ pub(crate) fn bridge_resolve(list: String, id: String, status: String) -> Result
 
 // ---- connect to Claude app + Claude Code -----------------------------------
 
-fn node_path() -> Option<String> {
+pub(crate) fn node_path() -> Option<String> {
     for c in ["/opt/homebrew/bin/node", "/usr/local/bin/node"] {
         if std::path::Path::new(c).exists() {
             return Some(c.into());

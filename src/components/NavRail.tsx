@@ -1,6 +1,7 @@
 import { useApp, type MainView } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { Icon } from "./Icon";
+import { AgentLogo } from "./AgentLogo";
 import { ProjectIcon } from "./ProjectIcon";
 import { GrillWordmark } from "./GrillMark";
 import { addProjectFromFinder } from "../lib/addProject";
@@ -30,7 +31,7 @@ function NavItem({ icon, label, badge, active, onClick, title, kbd }: {
       title={title ?? label}
       onClick={onClick}
     >
-      <Icon name={icon} size={15} />
+      {icon === "claude" ? <AgentLogo agent="claude" size={15} /> : <Icon name={icon} size={15} />}
       <span className="text-[13px] flex-1">{label}</span>
       {badge ? <span className="text-warn text-[10.5px] num">{badge}</span> : null}
       {kbd ? <span className="text-faint text-[11px]">{kbd}</span> : null}
@@ -80,6 +81,8 @@ export function NavRail() {
         </button>
         <NavItem icon="layout" label="Home" active={view === "home"} title="Mission control (⌘H)"
           onClick={() => go("home")} />
+        <NavItem icon="claude" label="Claude" active={view === "claude"} title="Brainstorm with Claude (sees your sessions) + claude.ai"
+          onClick={() => go("claude")} />
         {surfaceVisible(appMode, "rail-inbox-tab") ? (
           <NavItem icon="inbox" label="Inbox" badge={unanswered} active={view === "inbox"}
             onClick={() => go("inbox")} />
