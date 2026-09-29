@@ -7,6 +7,7 @@ mod bridge;
 mod claude_panel;
 mod automations;
 mod tailscale;
+mod remote;
 
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.
@@ -3220,7 +3221,7 @@ fn is_strong_token(t: &str) -> bool {
     t.len() == 64 && t.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-fn generate_token() -> String {
+pub(crate) fn generate_token() -> String {
     // 32 random bytes from the OS CSPRNG, hex-encoded.
     use std::io::Read as _;
     let mut buf = [0u8; 32];
@@ -3351,7 +3352,9 @@ fn start_api_server(app: tauri::AppHandle) {
                 }
                 ("POST", "/bridge/push") => {
                     // Claude bridge writes (from the grill-me MCP server).
-                    // Everything lands pending — the user approves in the app.
+                    // Handoffs, plans and answers land PENDING (approved in
+                    // the app). Notes/goal/questions are context and are never
+                    // accepted from the remote (claude.ai) connection.
                     let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
                     let kind = v["kind"].as_str().unwrap_or("");
                     match bridge::push(kind, &v["item"]) {
@@ -4375,6 +4378,7 @@ pub fn run() {
             // the pty children too — not just ⌘Q — so no `claude` is orphaned.
             if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
                 kill_all_ptys();
+                remote::shutdown();
             }
         })
         .setup(|app| {
@@ -4455,10 +4459,16 @@ pub fn run() {
             automations::plan_usage,
             tailscale::tailscale_status,
             tailscale::tailscale_up,
+            remote::remote_status,
+            remote::remote_start,
+            remote::remote_stop,
+            remote::remote_rotate,
+            remote::remote_log,
             claude_panel::brainstorm_stop,
             claude_panel::brainstorm_history,
             claude_panel::claudeai_show,
             claude_panel::claudeai_hide,
+            claude_panel::claudeai_navigate,
             ci_state,
             pr_list,
             pr_merge,
@@ -4511,6 +4521,7 @@ pub fn run() {
             // the event loop), reap all pty children before the process dies.
             if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
                 kill_all_ptys();
+                remote::shutdown();
             }
         });
 }

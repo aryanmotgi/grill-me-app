@@ -44,6 +44,7 @@ import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { NewSession } from "./components/NewSession";
 import { ClaudeDock, ClaudePanel } from "./components/ClaudePanel";
 import { togglePanel, useLayout } from "./components/Dock";
+import { useRemoteAutostart } from "./components/ClaudeConnect";
 import { leftEdgePanel, panelsOn } from "./lib/layout";
 import { BrainPage, useWelcomeBack } from "./components/BrainPage";
 import { AutomationsPage, useAutomations } from "./components/Automations";
@@ -314,6 +315,7 @@ export default function App() {
   useBridgeFeed();
   useWelcomeBack();
   useAutomations();
+  useRemoteAutostart();
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);

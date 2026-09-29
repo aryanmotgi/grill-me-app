@@ -212,6 +212,17 @@ pub(crate) async fn claudeai_show(app: AppHandle, x: f64, y: f64, w: f64, h: f64
     Ok(())
 }
 
+/// Point the claude.ai view at a claude.ai page (e.g. Settings → Connectors).
+/// Only claude.ai URLs — this view must never become a general browser.
+#[tauri::command]
+pub(crate) async fn claudeai_navigate(app: AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("https://claude.ai/") {
+        return Err("only claude.ai pages".into());
+    }
+    let wv = app.get_webview(CLAUDEAI).ok_or("open the claude.ai tab first")?;
+    wv.navigate(url.parse().map_err(|e| format!("{e}"))?).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub(crate) async fn claudeai_hide(app: AppHandle) -> Result<(), String> {
     if let Some(wv) = app.get_webview(CLAUDEAI) {

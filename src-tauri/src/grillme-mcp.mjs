@@ -11,7 +11,7 @@
 // ~/.grillme/bin/grillme-mcp.mjs — edit the source in src-tauri/src/.
 // ---------------------------------------------------------------------------
 
-import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, renameSync, lstatSync, realpathSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, basename, resolve } from "node:path";
@@ -99,9 +99,14 @@ function baseBranch(repo) {
 const MANAGED = [".claude/", "CLAUDE.md", "DELEGATION.md"];
 const isManaged = (f) => MANAGED.some((m) => f === m || f.startsWith(m));
 
+// Secret-bearing files never leave the Mac in a diff, stat, or new-file
+// preview. Diffs are built only from files whose names pass this test.
+const SECRET_FILE = /(^|\/)(\.env[^/]*|\.dev\.vars|[^/]*\.(pem|key|p12|pfx|keystore|jks|tfvars|tfstate)|id_[a-z0-9]+[^/]*|\.(npmrc|pypirc|netrc|git-credentials|htpasswd)|credentials[^/]*|[^/]*service[-_]?account[^/]*\.json|secrets?\.[^/]*|[^/]*\.secret[^/]*)$/i;
+const safeName = (f) => !!f && !SECRET_FILE.test(f);
+
 /** New files the session created that git doesn't track yet. */
 function untracked(repo) {
-  return git(repo, ["ls-files", "--others", "--exclude-standard"]).split("\n").filter((f) => f && !isManaged(f));
+  return git(repo, ["ls-files", "--others", "--exclude-standard"]).split("\n").filter((f) => f && !isManaged(f) && !SECRET_FILE.test(f));
 }
 
 /** Changed + new files, minus Grill Me's own. */
@@ -110,11 +115,18 @@ function changedFiles(repo) {
     .filter((l) => !(l.startsWith("??") && isManaged(l.slice(3).trim())));
 }
 
-/** Small text contents of new files, so reviews and quizzes see them too. */
+/** Small text contents of new files, so reviews and quizzes see them too.
+ *  Symlinks are skipped (a link to ~/.grillme/… must not print its target)
+ *  and anything resolving outside the repo or to a secret-named file too. */
 function newFileText(repo, files) {
+  const root = realpathSync(repo);
   return files.slice(0, 10).map((f) => {
     try {
-      const buf = readFileSync(join(repo, f));
+      const full = join(repo, f);
+      if (lstatSync(full).isSymbolicLink()) return `+++ new file ${f} (symlink, not shown)`;
+      const real = realpathSync(full);
+      if (!real.startsWith(`${root}/`) || !safeName(real)) return "";
+      const buf = readFileSync(real);
       if (buf.length > 4000 || buf.includes(0)) return `+++ new file ${f} (${buf.length} bytes, not shown)`;
       return `+++ new file ${f}\n${buf.toString("utf8")}`;
     } catch { return ""; }
@@ -124,19 +136,30 @@ function newFileText(repo, files) {
 /** Branch, commits beyond the base branch, file summary, and full diff
  *  (including brand-new files). */
 function diffOf(m) {
-  const base = baseBranch(m.repoPath);
-  const branch = git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const repo = m.repoPath;
+  const base = baseBranch(repo);
+  const branch = git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const range = base && base !== branch ? `${base}...HEAD` : "";
-  const fresh = untracked(m.repoPath);
+  const fresh = untracked(repo);
+  // list changed files first, drop secret-named ones, then diff only the rest
+  const names = (args) => git(repo, ["diff", "--name-only", ...args]).split("\n").filter(safeName).slice(0, 200);
+  const part = (args, mode) => {
+    const files = names(args);
+    return files.length ? git(repo, ["diff", ...mode, ...args, "--", ...files]) : "";
+  };
   return {
     base, branch,
-    log: range ? git(m.repoPath, ["log", "--oneline", "-20", `${base}..HEAD`]) : git(m.repoPath, ["log", "--oneline", "-20"]),
-    stat: [
-      range && git(m.repoPath, ["diff", "--stat", range]),
-      git(m.repoPath, ["diff", "--stat", "HEAD"]),
+    log: range ? git(repo, ["log", "--oneline", "-20", `${base}..HEAD`]) : git(repo, ["log", "--oneline", "-20"]),
+    stat: R([
+      range && part([range], ["--stat"]),
+      part(["HEAD"], ["--stat"]),
       fresh.length ? `new files: ${fresh.join(", ")}` : "",
-    ].filter(Boolean).join("\n"),
-    diff: [range && git(m.repoPath, ["diff", range]), git(m.repoPath, ["diff", "HEAD"]), newFileText(m.repoPath, fresh)].filter(Boolean).join("\n"),
+    ].filter(Boolean).join("\n")),
+    diff: R([
+      range && part([range], []),
+      part(["HEAD"], []),
+      newFileText(repo, fresh),
+    ].filter(Boolean).join("\n")),
   };
 }
 
@@ -169,9 +192,19 @@ function transcriptFile(repo) {
 }
 
 function tailLines(path, bytes = 1_500_000) {
-  const buf = readFileSync(path);
-  const start = Math.max(0, buf.length - bytes);
-  const text = buf.subarray(start).toString("utf8");
+  // read only the tail — transcripts grow to hundreds of MB
+  const fd = openSync(path, "r");
+  let buf;
+  let start;
+  try {
+    const size = fstatSync(fd).size;
+    start = Math.max(0, size - bytes);
+    buf = Buffer.alloc(size - start);
+    readSync(fd, buf, 0, buf.length, start);
+  } finally {
+    closeSync(fd);
+  }
+  const text = buf.toString("utf8");
   const lines = text.split("\n");
   if (start > 0) lines.shift();
   return lines.filter(Boolean);
@@ -198,8 +231,16 @@ function userText(raw) {
   return t || null;
 }
 
-/** Turns: [{ ask, at, tools: [..], reply }] oldest first. */
+/** In remote mode, redact raw text where it's read (before any clipping,
+ *  so a truncated token can't slip under a pattern's minimum length). */
+function R(text) {
+  return REMOTE.on ? redact(text) : text;
+}
+
+/** Turns: [{ ask, at, tools: [..], reply }] oldest first. Remote mode can
+ *  withhold conversations entirely (--no-transcripts). */
 function turns(repo) {
+  if (REMOTE.on && REMOTE.noTranscripts) return { turns: [], updated: null };
   const tf = transcriptFile(repo);
   if (!tf) return { turns: [], updated: null };
   const out = [];
@@ -216,11 +257,11 @@ function turns(repo) {
         const t = c.filter((x) => x.type === "text").map((x) => userText(x.text ?? "")).filter(Boolean);
         if (t.length) text = t.join("\n");
       }
-      if (text) { cur = { ask: text, at: o.timestamp, tools: [], reply: "" }; out.push(cur); }
+      if (text) { cur = { ask: R(text), at: o.timestamp, tools: [], reply: "" }; out.push(cur); }
     } else if (o.type === "assistant" && Array.isArray(c) && cur) {
       for (const x of c) {
-        if (x.type === "text" && x.text?.trim()) cur.reply = x.text.trim();
-        if (x.type === "tool_use") cur.tools.push(toolSummary(x.name, x.input));
+        if (x.type === "text" && x.text?.trim()) cur.reply = R(x.text.trim());
+        if (x.type === "tool_use") cur.tools.push(R(toolSummary(x.name, x.input)));
       }
     }
   }
@@ -428,7 +469,7 @@ function readme() {
   const m = members()[0];
   if (!m) return "";
   for (const f of ["README.md", "readme.md", "README"]) {
-    try { return clip(readFileSync(join(m.repoPath, f), "utf8"), 3000); } catch { /* next */ }
+    try { return clip(R(readFileSync(join(m.repoPath, f), "utf8")), 3000); } catch { /* next */ }
   }
   return "";
 }
@@ -743,7 +784,7 @@ async function callTool(name, args = {}) {
       return n.length ? n.slice(-30).map((x) => `- ${x.text}${x.by ? ` (${x.by})` : ""}`).join("\n") : "No notes yet.";
     }
     case "catch_up": {
-      const key = "app";
+      const key = REMOTE.on ? "remote" : "app";
       const since = args.hours ? Date.now() - Number(args.hours) * 3_600_000 : cursor(key);
       const text = catchUp(since, { full: since === 0 });
       setCursor(key, Date.now());
@@ -768,14 +809,41 @@ async function callTool(name, args = {}) {
   }
 }
 
-// ---- JSON-RPC over stdio -------------------------------------------------------
+// ---- JSON-RPC (shared by stdio and HTTP) ---------------------------------------
 
-const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
+// Remote mode (claude.ai over Tailscale Funnel): read-only unless the user
+// allowed proposals, and every tool result passes through redact().
+const REMOTE = { on: false, allowWrites: false, noTranscripts: false };
+const WRITE_TOOLS = new Set(["save_plan", "send_to_coder", "ask_brainstorm", "answer_question", "set_goal"]);
+// Writes that land as PENDING items the user approves in Grill Me. The rest
+// (goal, notes, questions) flow straight into every session's context, so
+// they're never allowed from the internet — even with proposals on.
+const REMOTE_PROPOSALS = new Set(["save_plan", "send_to_coder", "answer_question"]);
+
+function toolsFor() {
+  if (!REMOTE.on) return TOOLS;
+  return TOOLS.filter((t) => !WRITE_TOOLS.has(t.name) || (REMOTE.allowWrites && REMOTE_PROPOSALS.has(t.name)));
+}
+
+/** Strip anything that looks like a credential before it leaves the Mac. */
+export function redact(text) {
+  return String(text)
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, "[redacted private key]")
+    // well-known token shapes
+    .replace(/\b(sk-[A-Za-z0-9_-]{16,}|sk-ant-[A-Za-z0-9_-]{16,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{15,}|hf_[A-Za-z0-9]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|xapp-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|ya29\.[0-9A-Za-z_-]{20,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|AC[a-f0-9]{32}|SK[a-f0-9]{32}|[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27,}|eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{10,})\b/g, "[redacted]")
+    // credentials inside URLs: scheme://user:pass@host
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/[^:\s\/@]+):[^@\s\/]+@/gi, "$1:[redacted]@")
+    // Authorization: Bearer / Basic, curl -u user:pass
+    .replace(/\b(Bearer|Basic|Token)\s+[A-Za-z0-9._~+\/=-]{8,}/g, "$1 [redacted]")
+    .replace(/(\s-u\s+|\s--user\s+)(["']?)[^\s:"']+:[^\s"']+\2/g, "$1$2[redacted]$2")
+    // NAME=value / "name": "value" / name is value, for secret-ish names
+    .replace(/\b([A-Za-z0-9_.-]*(?:key|secret|token|passw(?:or)?d|pwd|credential|auth)[A-Za-z0-9_.-]*)(["']?\s*(?:[=:]|\s+is\s+)\s*)(["']?)[^\s"'`,;]{6,}\3/gi, "$1$2$3[redacted]$3");
+}
 
 async function handle(req) {
-  const { id, method, params = {} } = req;
-  const reply = (result) => id !== undefined && send({ jsonrpc: "2.0", id, result });
-  const fail = (code, message) => id !== undefined && send({ jsonrpc: "2.0", id, error: { code, message } });
+  const { id, method, params = {} } = req ?? {};
+  const reply = (result) => (id === undefined ? null : { jsonrpc: "2.0", id, result });
+  const fail = (code, message) => (id === undefined ? null : { jsonrpc: "2.0", id, error: { code, message } });
 
   switch (method) {
     case "initialize":
@@ -785,21 +853,31 @@ async function handle(req) {
         serverInfo: SERVER,
         instructions:
           "Grill Me bridge. In the Claude app you are the user's brainstorm partner and reviewer; Claude Code sessions are the coders. " +
-          "Start with catch_up (or whats_new). Save decisions the user makes with notes/save_plan so the coders see them.  Explain code changes (get_diff) in plain English. Turn agreed plans into save_plan. " +
+          "Start with catch_up (or whats_new). Save decisions the user makes with notes/save_plan so the coders see them. Explain code changes (get_diff) in plain English. Turn agreed plans into save_plan. " +
           "Before send_to_coder, grill the user: make them explain the plan back and push back on vague answers. " +
-          "In a Claude Code session: read get_plan before starting, and use ask_brainstorm for product/design calls.",
+          "In a Claude Code session: read get_plan before starting, and use ask_brainstorm for product/design calls." +
+          (REMOTE.on && !REMOTE.allowWrites ? " This connection is read-only: you can see everything but not change anything." : ""),
       });
     case "ping":
       return reply({});
     case "tools/list":
-      return reply({ tools: TOOLS });
-    case "tools/call":
+      return reply({ tools: toolsFor() });
+    case "tools/call": {
+      const name = params.name;
+      const args = params.arguments ?? {};
+      if (!toolsFor().some((t) => t.name === name)) {
+        return reply({ content: [{ type: "text", text: `Tool ${name} isn't available on this connection.` }], isError: true });
+      }
+      if (REMOTE.on && name === "notes" && String(args.action).toLowerCase() !== "read") {
+        return reply({ content: [{ type: "text", text: "Adding notes isn't available over this connection." }], isError: true });
+      }
       try {
-        const text = await callTool(params.name, params.arguments ?? {});
-        return reply({ content: [{ type: "text", text }] });
+        const text = await callTool(name, args);
+        return reply({ content: [{ type: "text", text: REMOTE.on ? redact(text) : text }] });
       } catch (e) {
         return reply({ content: [{ type: "text", text: String(e?.message ?? e) }], isError: true });
       }
+    }
     case "prompts/list":
       return reply({ prompts: SKILLS.map(([name, title, description]) => ({ name, title, description })) });
     case "prompts/get": {
@@ -809,14 +887,132 @@ async function handle(req) {
       return reply({ description: s[2], messages: [{ role: "user", content: { type: "text", text: body } }] });
     }
     default:
-      if (method?.startsWith("notifications/")) return;
+      if (method?.startsWith("notifications/")) return null;
       return fail(-32601, `Method not found: ${method}`);
   }
 }
 
-if (!cliMode(process.argv.slice(2))) createInterface({ input: process.stdin }).on("line", (line) => {
-  if (!line.trim()) return;
-  let req;
-  try { req = JSON.parse(line); } catch { return send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
-  handle(req).catch((e) => process.stderr.write(`[grill-me mcp] ${e?.stack ?? e}\n`));
-});
+// ---- stdio (Claude app + Claude Code, local) -------------------------------------
+
+const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
+
+function serveStdio() {
+  createInterface({ input: process.stdin }).on("line", (line) => {
+    if (!line.trim()) return;
+    let req;
+    try { req = JSON.parse(line); } catch { return send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
+    handle(req).then((msg) => { if (msg) send(msg); }).catch((e) => process.stderr.write(`[grill-me mcp] ${e?.stack ?? e}\n`));
+  });
+}
+
+// ---- HTTP (claude.ai over Tailscale Funnel) ---------------------------------------
+// Streamable-HTTP MCP, JSON responses only. Loopback only — Funnel is the
+// sole way in. The URL carries a 64-hex secret (/mcp/<secret>); anything
+// else is a 404 so the endpoint doesn't reveal itself. Rate-limited and
+// every request is logged to ~/.grillme/remote-access.jsonl.
+
+const ACCESS_LOG = join(ROOT, "remote-access.jsonl");
+const RATE_PER_MIN = 120;
+const MAX_BODY = 1_000_000;
+
+/** Remote responses: every text that leaves the Mac goes through redact(),
+ *  and internal errors become generic (no paths, no stack traces). */
+function scrubOutgoing(msg) {
+  if (!msg) return msg;
+  if (msg.error) return { ...msg, error: { code: msg.error.code, message: msg.error.code === -32601 || msg.error.code === -32602 ? msg.error.message : "Internal error" } };
+  const r = msg.result;
+  if (r?.content) r.content = r.content.map((c) => (c.type === "text" ? { ...c, text: redact(c.text) } : c));
+  if (r?.messages) r.messages = r.messages.map((m) => (m.content?.type === "text" ? { ...m, content: { ...m.content, text: redact(m.content.text) } } : m));
+  return msg;
+}
+
+async function serveHttp(port, secretFile) {
+  const { createServer } = await import("node:http");
+  const { timingSafeEqual } = await import("node:crypto");
+  const { appendFileSync, statSync: st, renameSync: mv } = await import("node:fs");
+  // re-read on every request, so "New secret" takes effect even if this
+  // process somehow outlived the app that started it
+  const secretNow = () => {
+    const s = readFileSync(secretFile, "utf8").trim();
+    return /^[0-9a-f]{64}$/.test(s) ? Buffer.from(s) : null;
+  };
+  if (!secretNow()) throw new Error("bad secret file");
+  const authedHits = [];
+  const strangerHits = [];
+  const within = (arr, limit) => {
+    const now = Date.now();
+    while (arr.length && now - arr[0] > 60_000) arr.shift();
+    if (arr.length >= limit) return false;
+    arr.push(now);
+    return true;
+  };
+
+  const log = (entry) => {
+    try {
+      if (existsSync(ACCESS_LOG) && st(ACCESS_LOG).size > 1_000_000) mv(ACCESS_LOG, `${ACCESS_LOG}.1`);
+      appendFileSync(ACCESS_LOG, `${JSON.stringify({ ts: Date.now(), ...entry })}\n`);
+    } catch { /* logging never breaks serving */ }
+  };
+  const authed = (path, auth) => {
+    const secret = secretNow();
+    if (!secret) return false;
+    const fromPath = path.startsWith("/mcp/") ? path.slice(5).split("/")[0] : "";
+    const fromHeader = /^Bearer\s+(\S+)$/i.exec(auth ?? "")?.[1] ?? "";
+    const given = Buffer.from(fromPath || fromHeader);
+    return given.length === secret.length && timingSafeEqual(given, secret);
+  };
+  const end = (res, code, body, type = "application/json") => {
+    res.writeHead(code, { "Content-Type": type, "Cache-Control": "no-store" });
+    res.end(body);
+  };
+
+  const server = createServer((req, res) => {
+    const path = (req.url ?? "").split("?")[0];
+    const who = req.headers["tailscale-funnel-request"] ? "funnel" : "local";
+    // auth FIRST: strangers get their own bucket and always a plain 404, so
+    // they can neither lock out the real client nor learn a server is here
+    if (!(path === "/mcp" || path.startsWith("/mcp/")) || !authed(path, req.headers.authorization)) {
+      if (within(strangerHits, 60)) log({ who, status: 404 });
+      return end(res, 404, "Not found", "text/plain");
+    }
+    if (!within(authedHits, RATE_PER_MIN)) { log({ who, status: 429 }); return end(res, 429, '{"error":"slow down"}'); }
+    if (req.method !== "POST") return end(res, 405, '{"error":"POST only"}');
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => { size += c.length; if (size > MAX_BODY) req.destroy(); else chunks.push(c); });
+    req.on("end", async () => {
+      let body;
+      try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return end(res, 400, '{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}'); }
+      // one message per request: batches would multiply the rate limit
+      if (Array.isArray(body)) return end(res, 400, '{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Batches are not supported"}}');
+      const r = await handle(body).catch(() => ({ jsonrpc: "2.0", id: body?.id ?? null, error: { code: -32603, message: "Internal error" } }));
+      log({ who, status: 200, method: body?.method, tool: body?.params?.name });
+      if (!r) { res.writeHead(202); return res.end(); }
+      end(res, 200, JSON.stringify(scrubOutgoing(r)));
+    });
+  });
+  server.requestTimeout = 30_000;
+  server.headersTimeout = 10_000;
+  server.maxConnections = 16;
+  server.listen(port, "127.0.0.1", () => process.stderr.write(`[grill-me mcp] remote on 127.0.0.1:${port}\n`));
+
+  // never outlive Grill Me: if the parent goes away, close the door
+  const parent = process.ppid;
+  setInterval(() => {
+    let alive = true;
+    try { process.kill(parent, 0); } catch { alive = false; }
+    if (!alive || process.ppid !== parent) process.exit(0);
+  }, 3000).unref();
+}
+
+const argv = process.argv.slice(2);
+if (argv.includes("--http")) {
+  REMOTE.on = true;
+  REMOTE.allowWrites = argv.includes("--allow-writes");
+  REMOTE.noTranscripts = argv.includes("--no-transcripts");
+  const i = argv.indexOf("--http");
+  const j = argv.indexOf("--secret-file");
+  serveHttp(Number(argv[i + 1]) || 4519, argv[j + 1]).catch((e) => { process.stderr.write(`[grill-me mcp] ${e}\n`); process.exit(1); });
+} else if (!cliMode(argv)) {
+  serveStdio();
+}

@@ -7,6 +7,7 @@ import { ChatRows, Working } from "./ChatView";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { PanelControls } from "./Dock";
+import { ClaudeConnect, useRemote } from "./ClaudeConnect";
 
 // ---------------------------------------------------------------------------
 // The Claude view (nav rail → Claude), two tabs:
@@ -288,23 +289,39 @@ function ClaudeAi() {
 }
 
 /** The Claude chat docked as a side panel next to your sessions. */
+/** The Claude panel docked beside your sessions. Once claude.ai is
+ *  connected to Grill Me it's one thing — your real Claude that also sees
+ *  your sessions. Until then, Grill Me Chat covers the code side. */
 export function ClaudeDock({ edge, side, width }: { edge: boolean; side: "left" | "right"; width: number }) {
-  const [tab, setTab] = useState<"chat" | "web">("chat");
+  const connected = !!useRemote((r) => r.status?.url);
+  const [pick, setPick] = useState<"chat" | "web">("web");
+  const tab = connected ? "web" : pick;
   return (
     <aside style={{ width }} className={`flex-none bg-panel flex flex-col overflow-hidden border-line ${side === "left" ? "border-r" : "border-l"}`}>
       <div data-tauri-drag-region className={`flex items-center gap-1 h-12 pr-2 flex-none border-b border-line ${edge ? "pl-[84px]" : "pl-3"}`}>
-        {([["chat", "Chat"], ["web", "claude.ai"]] as const).map(([id, label]) => (
-          <button key={id}
-            className={`px-3 h-7 rounded-lg text-[12.5px] cursor-pointer transition-colors ${tab === id ? "bg-raised text-ink" : "text-dim hover:text-ink"}`}
-            title={id === "chat" ? "Brainstorm with Claude — sees this project's sessions" : "Your claude.ai chats and projects (can't see your code)"}
-            onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
+        {connected ? (
+          <span className="flex items-center gap-2 px-1 text-[13px] text-ink"><span style={{ color: "#c88a6a" }}>✳</span> Claude</span>
+        ) : (
+          ([["web", "claude.ai"], ["chat", "Grill Me Chat"]] as const).map(([id, label]) => (
+            <button key={id}
+              className={`px-3 h-7 rounded-lg text-[12.5px] cursor-pointer transition-colors ${tab === id ? "bg-raised text-ink" : "text-dim hover:text-ink"}`}
+              title={id === "chat" ? "Local chat that sees your sessions (no claude.ai history)" : "Your claude.ai chats and projects"}
+              onClick={() => setPick(id)}>
+              {label}
+            </button>
+          ))
+        )}
         <span data-tauri-drag-region className="flex-1 h-full" />
         <PanelControls id="claude" />
       </div>
-      {tab === "chat" ? <GrillChat compact /> : <ClaudeAi />}
+      {tab === "web" ? (
+        <>
+          <ClaudeConnect />
+          <ClaudeAi />
+        </>
+      ) : (
+        <GrillChat compact />
+      )}
     </aside>
   );
 }
