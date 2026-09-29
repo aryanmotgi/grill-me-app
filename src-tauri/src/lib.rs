@@ -1951,6 +1951,16 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     obj.insert("Notification".into(), mk("notification"));
     obj.insert("Stop".into(), mk("stop"));
     obj.insert("UserPromptSubmit".into(), mk("prompt"));
+    // shared brain: every prompt (and session start) pulls in what's new from
+    // the brainstorm side + other sessions — stdout becomes context
+    if let Some(sync) = bridge::sync_hook_command(&member_id, &proj_s) {
+        bridge::install();
+        let entry = serde_json::json!({ "hooks": [{ "type": "command", "command": sync }] });
+        if let Some(arr) = obj.get_mut("UserPromptSubmit").and_then(|v| v.as_array_mut()) {
+            arr.push(entry.clone());
+        }
+        obj.insert("SessionStart".into(), serde_json::json!([entry]));
+    }
     let helper_hook = |mode: &str, matcher: &str| {
         serde_json::json!([{ "matcher": matcher, "hooks": [{ "type": "command",
             "command": format!("python3 {} {mode} {member_id} {}", sh_quote(&helper_s), sh_quote(&proj_s)) }] }])
@@ -4416,6 +4426,8 @@ pub fn run() {
             bridge::bridge_resolve,
             bridge::bridge_status,
             bridge::bridge_connect,
+            bridge::bridge_set_goal,
+            bridge::brain_digest,
             claude_panel::brainstorm_send,
             claude_panel::brainstorm_stop,
             claude_panel::brainstorm_history,

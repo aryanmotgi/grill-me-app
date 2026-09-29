@@ -16,6 +16,10 @@ describe("bridge helpers", () => {
     expect(parseBridge("nope")).toEqual(EMPTY_BRIDGE);
     expect(parseBridge('{"handoffs":5}').handoffs).toEqual([]);
   });
+  it("keeps the goal", () => {
+    expect(parseBridge('{"goal":"Ship it"}').goal).toBe("Ship it");
+    expect(parseBridge('{"goal":5}').goal).toBeUndefined();
+  });
   it("counts only pending work", () => {
     expect(pendingCount(state)).toBe(3);
   });

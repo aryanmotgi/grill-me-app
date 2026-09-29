@@ -43,6 +43,7 @@ import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { NewSession } from "./components/NewSession";
 import { ClaudePanel } from "./components/ClaudePanel";
+import { BrainPage, useWelcomeBack } from "./components/BrainPage";
 import { StatusBar } from "./components/StatusBar";
 import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -267,6 +268,7 @@ export default function App() {
   const openFileCount = useApp((s) => s.openFiles.length);
   // Claude bridge: live pending requests + "coder finished" pings
   useBridgeFeed();
+  useWelcomeBack();
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);
@@ -300,6 +302,8 @@ export default function App() {
           {focusMode ? null : <SessionTabs />}
           {view === "home" ? (
             <HomeDashboard />
+          ) : view === "brain" ? (
+            <BrainPage />
           ) : view === "claude" ? (
             <ClaudePanel />
           ) : view === "new" || !active ? (

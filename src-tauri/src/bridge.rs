@@ -126,6 +126,9 @@ fn trim(list: &mut Vec<Value>) {
 
 /// Apply one write from the MCP server (via the loopback API).
 pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
+    if kind == "goal" {
+        return set_goal(&text(item, "goal")?);
+    }
     let _g = crate::lock_or_recover(&BRIDGE_LOCK);
     let mut v = load();
     let ts = now_ms();
@@ -196,6 +199,58 @@ pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
     trim(arr);
     save(&v)?;
     Ok(entry)
+}
+
+/// The project's one-line goal in the shared brain.
+fn set_goal(goal: &str) -> Result<Value, String> {
+    let _g = crate::lock_or_recover(&BRIDGE_LOCK);
+    let mut v = load();
+    v["goal"] = json!(goal.chars().take(500).collect::<String>());
+    v["goalTs"] = json!(now_ms());
+    save(&v)?;
+    Ok(json!({ "goal": v["goal"] }))
+}
+
+#[tauri::command]
+pub(crate) fn bridge_set_goal(goal: String) -> Result<(), String> {
+    set_goal(goal.trim()).map(|_| ())
+}
+
+fn script_path() -> String {
+    root().join("bin/grillme-mcp.mjs").to_string_lossy().into_owned()
+}
+
+/// Run the grill-me script in a CLI mode for the ACTIVE project.
+pub(crate) fn run_script(args: &[&str]) -> Result<String, String> {
+    let node = node_path().ok_or("Node.js not found (brew install node)")?;
+    let out = Command::new(node)
+        .arg(script_path())
+        .args(args)
+        .env("GRILLME_PROJECT_DIR", crate::grillme_dir())
+        .current_dir(root())
+        .output()
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Brain page digest: everything since `since` ms (0 = full picture).
+#[tauri::command]
+pub(crate) fn brain_digest(since: u64) -> Result<String, String> {
+    install();
+    run_script(&["--digest", &since.to_string()])
+}
+
+/// Hook command a Claude Code session runs to receive shared-brain updates
+/// (stdout is added to its context). None when Node isn't installed.
+pub(crate) fn sync_hook_command(member_id: &str, project_dir: &str) -> Option<String> {
+    let node = node_path()?;
+    Some(format!(
+        "{} {} --sync {} --project {}",
+        crate::sh_quote(&node),
+        crate::sh_quote(&script_path()),
+        member_id,
+        crate::sh_quote(project_dir)
+    ))
 }
 
 #[tauri::command]

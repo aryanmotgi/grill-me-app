@@ -71,6 +71,14 @@ pub(crate) fn brainstorm_send(
         return Err("Still answering — wait for it or press stop.".into());
     }
     crate::preflight_claude()?;
+    // shared brain: prepend what changed since this chat's last message (the
+    // whole picture on a chat's first message)
+    let sync = crate::bridge::run_script(&["--catchup-chat", &chat_id]).unwrap_or_default();
+    let message = if sync.trim().is_empty() {
+        message.to_string()
+    } else {
+        format!("<grill-me-sync>\nWhat's new in the project since my last message (from Grill Me):\n\n{}\n</grill-me-sync>\n\n{message}", sync.trim())
+    };
     let node = crate::bridge::node_path().ok_or("Node.js not found (brew install node)")?;
     let script = crate::grillme_root().join("bin/grillme-mcp.mjs");
     let mcp = serde_json::json!({
