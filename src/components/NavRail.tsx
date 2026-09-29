@@ -1,7 +1,7 @@
 import { useApp, type MainView } from "../store";
 import { surfaceVisible } from "../lib/soloVisibility";
 import { Icon } from "./Icon";
-import { projectColor } from "../lib/projectColor";
+import { ProjectIcon } from "./ProjectIcon";
 import { GrillWordmark } from "./GrillMark";
 import { addProjectFromFinder } from "../lib/addProject";
 
@@ -106,8 +106,7 @@ export function NavRail() {
             title={p.id === activeProject ? `${p.path} — active` : `Switch to ${p.name}`}
             onClick={() => switchProject(p.id)}
           >
-            <span className="w-[15px] h-[15px] rounded-[4px] flex-none flex items-center justify-center text-[9px] font-semibold text-black/70"
-              style={{ background: p.color ?? projectColor(p.id) }}>{p.name.slice(0, 1).toUpperCase()}</span>
+            <ProjectIcon id={p.id} color={p.color} size={16} />
             <span className="text-[13px] truncate">{p.name}</span>
           </button>
         ))}

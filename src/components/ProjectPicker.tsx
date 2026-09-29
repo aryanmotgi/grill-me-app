@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
+import { ProjectIcon } from "./ProjectIcon";
 import { useApp } from "../store";
 import { isTauri } from "../data/sources/git";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
@@ -142,6 +143,7 @@ export function ProjectPicker() {
                 style={p.color ? { borderLeft: `3px solid ${p.color}` } : undefined}
                 onClick={() => choose(p)}>
                 {i < 9 ? <span className="font-mono text-faint text-[10px] w-3">{i + 1}</span> : null}
+                <ProjectIcon id={p.id} color={p.color} size={18} />
                 <span className="font-display font-semibold text-[13px]">{p.name}</span>
                 {st?.needsInput ? (
                   <span className="status-dot needs-input" title="A session here needs input" />
