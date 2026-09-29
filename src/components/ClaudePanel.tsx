@@ -10,10 +10,12 @@ import { PanelControls } from "./Dock";
 import { ClaudeConnect, useRemote } from "./ClaudeConnect";
 
 // ---------------------------------------------------------------------------
-// The Claude view (nav rail → Claude), two tabs:
-//   Grill Me Chat — brainstorm partner wired to your sessions through the
-//                   grill-me tools (plans, reviews, hands off; never edits code)
-//   claude.ai     — the real site, embedded, with your chats and projects
+// The Claude side panel (⌘J / nav rail → Claude):
+//   claude.ai     — the real site, embedded, with your chats and projects;
+//                   once connected (ClaudeConnect) it also sees your sessions
+//   Grill Me Chat — local brainstorm partner wired to your sessions through
+//                   the grill-me tools (plans, reviews, hand-offs; never edits
+//                   code) — shown only while claude.ai isn't connected
 // ---------------------------------------------------------------------------
 
 interface ChatMeta { id: string; title: string; project: string; ts: number }
@@ -323,27 +325,5 @@ export function ClaudeDock({ edge, side, width }: { edge: boolean; side: "left" 
         <GrillChat compact />
       )}
     </aside>
-  );
-}
-
-export function ClaudePanel() {
-  const [tab, setTab] = useState<"chat" | "web">("chat");
-  return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <div className="flex items-center gap-1 px-3 h-10 flex-none border-b border-line">
-        {([["chat", "Grill Me Chat"], ["web", "claude.ai"]] as const).map(([id, label]) => (
-          <button key={id}
-            className={`px-3 h-7 rounded-lg text-[12.5px] cursor-pointer transition-colors ${tab === id ? "bg-raised text-ink" : "text-dim hover:text-ink"}`}
-            onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-        <span className="flex-1" />
-        <span className="text-[11px] text-faint">
-          {tab === "chat" ? "Sees this project's sessions · every action needs your OK" : "Your chats and projects · can't see your code"}
-        </span>
-      </div>
-      {tab === "chat" ? <GrillChat /> : <ClaudeAi />}
-    </div>
   );
 }

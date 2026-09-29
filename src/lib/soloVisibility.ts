@@ -13,17 +13,17 @@ export type SoloSurface =
   | "session-count"
   /** SessionList rows for anyone who isn't members[0] */
   | "other-session-rows"
-  /** TopBar merge chip + "merge: name" queue text */
+  /** Merge chip + "merge: name" queue text */
   | "merge-chip"
-  /** TopBar "N working" counter */
+  /** "N working" counter */
   | "working-counter"
-  /** TopBar team waiting indicator (unanswered/blocked messages) */
+  /** Team waiting indicator (unanswered/blocked messages) */
   | "team-waiting"
-  /** TopBar/attention "needs you" for the own session — NEVER stripped */
+  /** Attention "needs you" for the own session — NEVER stripped */
   | "needs-you"
-  /** RightRail inbox tab */
+  /** Nav rail Inbox item */
   | "rail-inbox-tab"
-  /** RightRail team tab */
+  /** Nav rail Team item */
   | "rail-team-tab"
   /** HomeDashboard team pulse section */
   | "team-pulse";
@@ -56,7 +56,7 @@ const ALL_RAIL_TABS: readonly RailSurfaceTab[] = ["files", "tasks", "inbox", "ac
 
 /**
  * Rail tabs available in this mode, in ⌘1-⌘N order — the keyboard mapping
- * and the RightRail tab strip both derive from this so they can never
+ * and the nav rail both derive from this so they can never
  * disagree. Solo drops inbox + team; ⌘1-3 become tasks/activity/preview.
  */
 export function visibleRailTabs(mode: AppMode): RailSurfaceTab[] {

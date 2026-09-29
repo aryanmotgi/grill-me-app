@@ -53,6 +53,7 @@ export function DockToggles({ side }: { side: "left" | "right" }) {
         <button key={i.id}
           className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors ${layout[i.id].open ? "text-ink bg-raised/60" : "text-faint hover:text-ink hover:bg-raised/50"}`}
           title={`${layout[i.id].open ? "Hide" : "Show"} ${i.label} (${i.key})`}
+          data-tour={i.id === "claude" ? "claude" : undefined}
           onClick={() => setLayout(toggled(layout, i.id))}>
           {i.icon === "claude" ? <span className="text-[14px] leading-none" style={{ color: "#c88a6a" }}>✳</span> : <Icon name={i.icon} size={15} />}
         </button>

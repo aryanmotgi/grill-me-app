@@ -5,7 +5,7 @@ import type { Message } from "../types";
 // message tagged `help` (from = the flagged member). The flag is DERIVED, never
 // stored on the teammate: an OPEN (unanswered) help message means that member
 // needs eyes; answering/resolving it clears the flag. Pure so every attention
-// surface (home Needs-you hero, TopBar badge, session pane) shares one
+// surface (home Needs-you hero, status bar, session pane) shares one
 // definition and it's unit-testable without a backend.
 // ---------------------------------------------------------------------------
 

@@ -11,7 +11,7 @@ import { DockToggles } from "./Dock";
 // Monocode-style top tab strip: every open session is a two-line tab
 // (name + agent, then task/branch subtitle). Clicking a tab activates that
 // session in the center pane; "+" starts a new session. The right edge holds
-// review & ship for the active session (the old TopBar's primary action).
+// review & ship for the active session.
 // The strip doubles as window-drag chrome under the overlay titlebar.
 // ---------------------------------------------------------------------------
 
@@ -61,6 +61,7 @@ export function SessionTabs({ padLeft = false }: { padLeft?: boolean }) {
         <button
           className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised/50 cursor-pointer flex-none"
           title="New session"
+          data-tour="new-session"
           onClick={() => setView("new")}
         >
           <Icon name="plus" size={13} />
