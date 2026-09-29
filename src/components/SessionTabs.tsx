@@ -3,6 +3,7 @@ import { visibleSessions } from "../lib/sessionNav";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { GrillFlame } from "./GrillMark";
+import { EditableTitle } from "./EditableTitle";
 
 // ---------------------------------------------------------------------------
 // Monocode-style top tab strip: every open session is a two-line tab
@@ -46,10 +47,10 @@ export function SessionTabs() {
               <span className="flex flex-col justify-center min-w-0 text-left">
                 <span className="flex items-center gap-1.5 min-w-0">
                   <span className={`status-dot ${t.status} flex-none`} aria-hidden />
-                  <span className="text-[11.5px] font-semibold truncate">{t.name}</span>
+                  <EditableTitle mate={t} className="text-[11.5px] font-semibold" />
                 </span>
                 <span className="font-mono text-[9px] text-faint truncate">
-                  {t.taskLabel || t.branch}
+                  {t.branch}
                 </span>
               </span>
             </button>
