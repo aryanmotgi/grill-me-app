@@ -4439,6 +4439,7 @@ pub fn run() {
             bridge::brain_check,
             bridge::brain_cut,
             bridge::brain_pitch,
+            bridge::brain_kickoff,
             bridge::brain_quiz,
             bridge::brain_wrapup,
             bridge::bridge_set_deadline,

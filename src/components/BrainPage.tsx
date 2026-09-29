@@ -159,6 +159,18 @@ export function BrainPage() {
           </label>
         </div>
 
+        {!goal ? (
+          <button className="composer-card rounded-xl px-4 py-3.5 flex items-center gap-3 text-left cursor-pointer hover:border-accent/60"
+            onClick={() => void import("./Kickoff").then(({ useKickoff }) => useKickoff.getState().setOpen(true))}>
+            <Icon name="bolt" size={16} />
+            <span className="flex-1">
+              <span className="block text-[13.5px] text-ink font-medium">Start a hackathon</span>
+              <span className="block text-[12px] text-faint">Describe the idea — Claude drafts the goal and parallel tasks, then Grill Me starts a session for each.</span>
+            </span>
+            <Icon name="chevron" size={11} />
+          </button>
+        ) : null}
+
         {/* goal */}
         <div className="composer-card rounded-xl px-4 py-3">
           <div className="text-[11px] tracking-[0.1em] uppercase text-faint mb-1">Goal</div>

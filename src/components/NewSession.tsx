@@ -264,6 +264,8 @@ export function NewSession() {
         <div className="flex flex-wrap gap-2 mt-4 px-1">
           <Starter icon={<GrillFlame px={1.5} />} label="Grill me on this" hint="Orient, grill my understanding, then plan — via /grillme"
             onClick={() => { setAgent("claude"); setGrill("grill"); ta.current?.focus(); }} />
+          <Starter icon={<Icon name="bolt" size={13} />} label="Start a hackathon" hint="Idea → goal + parallel tasks → one session per task"
+            onClick={() => void import("./Kickoff").then(({ useKickoff }) => useKickoff.getState().setOpen(true))} />
           <Starter icon={<Icon name="clock" size={13} />} label="Hackathon mode"
             hint={`/grillme --hackathon — scoped to ${hoursLeft !== null && hoursLeft > 0 ? `${Math.ceil(hoursLeft)}h left on the clock` : "24h (set the clock in the status bar)"}`}
             onClick={() => { setAgent("claude"); setGrill("hack"); ta.current?.focus(); }} />
