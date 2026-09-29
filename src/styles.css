@@ -83,6 +83,31 @@ body,
   display: none;
 }
 
+/* ---- monocode gradient ground (default background style): a dark
+   graphite base with soft, heavily-blurred color pools — warm amber low-left,
+   cool teal/slate on the right — like Monocode sitting over a dim wallpaper.
+   Pure static CSS gradients (painted once, no blur filter, no animation).
+   Chrome surfaces go semi-transparent so the ground reads through the whole
+   window, not just the empty center. Terminal stays opaque. ---- */
+:root.bg-gradient[data-theme="monocode"] {
+  --bg: rgba(22, 23, 26, 0.30) !important;
+  --panel: rgba(26, 27, 31, 0.55) !important;
+  --raised: rgba(255, 255, 255, 0.06) !important;
+  --line: rgba(255, 255, 255, 0.075) !important;
+}
+:root.bg-gradient[data-theme="monocode"] #root {
+  background-color: #18191c;
+  background-image:
+    radial-gradient(38% 42% at 8% 88%, rgba(150, 102, 52, 0.22) 0%, transparent 70%),
+    radial-gradient(30% 34% at 34% 70%, rgba(120, 88, 58, 0.10) 0%, transparent 70%),
+    radial-gradient(26% 36% at 94% 14%, rgba(78, 118, 128, 0.20) 0%, transparent 70%),
+    radial-gradient(22% 30% at 92% 56%, rgba(70, 104, 120, 0.16) 0%, transparent 70%),
+    radial-gradient(34% 30% at 82% 94%, rgba(128, 96, 60, 0.12) 0%, transparent 70%),
+    radial-gradient(40% 40% at 50% 40%, rgba(40, 42, 48, 0.55) 0%, transparent 80%),
+    linear-gradient(180deg, #1c1d21 0%, #17181b 100%);
+  background-attachment: fixed;
+}
+
 /* ---- monocode glass (native macOS only — .vibrant is set by App when the
    Tauri window has under-window vibrancy). Surfaces go translucent so the
    desktop blurs through, exactly like the reference. !important because
@@ -687,4 +712,48 @@ select.btn, .btn[type] {
     0%, 55% { opacity: 1; }
     100% { opacity: 0.7; }
   }
+}
+
+/* ---- new-session screen (Monocode "What should we work on?") ---- */
+/* dot-grid banner: tiny square cells that fade out downward */
+.pixel-banner {
+  --cell: color-mix(in srgb, var(--ink) 5%, transparent);
+  background:
+    conic-gradient(from 90deg at 2px 2px, transparent 25%, var(--cell) 0) 0 0 / 11px 11px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 45%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 45%, transparent 100%);
+}
+.pixel-sprite rect {
+  fill: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.composer-card {
+  background: color-mix(in srgb, #1d1e22 72%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.composer-card:focus-within {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.composer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  transition: background 120ms ease;
+  white-space: nowrap;
+}
+.composer-btn:hover,
+.composer-btn.on {
+  background: rgba(255, 255, 255, 0.1);
+}
+.composer-menu {
+  background: #232428;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
 }

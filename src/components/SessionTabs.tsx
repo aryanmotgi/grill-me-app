@@ -53,15 +53,20 @@ export function SessionTabs() {
             </button>
           );
         })}
+        {view === "new" || shown.length === 0 ? (
+          <div className="flex items-center gap-2 px-3 my-1 ml-1 rounded-lg bg-raised text-ink text-[13px] flex-none">
+            <Icon name="spark" size={13} /> New session
+          </div>
+        ) : null}
         <button
-          className="px-3 text-dim hover:text-accent cursor-pointer text-[14px] flex-none"
-          title="New session (from a template: branch + starting brief)"
-          onClick={() => useApp.setState({ sessionTemplatesOpen: true })}
+          className="px-3 text-dim hover:text-ink cursor-pointer flex-none"
+          title="New session"
+          onClick={() => setView("new")}
         >
-          +
+          <Icon name="plus" size={13} />
         </button>
       </div>
-      {active ? (
+      {active && view === "session" ? (
         <button
           className="flex items-center gap-1.5 px-3 my-1.5 mr-2 rounded-md bg-accent text-accent-ink text-[11px] font-semibold cursor-pointer hover:brightness-110 flex-none"
           title={`Review & ship ${active.name}'s branch (⌘S)`}

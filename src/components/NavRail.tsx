@@ -11,25 +11,27 @@ import { projectColor } from "../lib/projectColor";
 // under the overlay titlebar.
 // ---------------------------------------------------------------------------
 
-function NavItem({ icon, label, badge, active, onClick, title }: {
+function NavItem({ icon, label, badge, active, onClick, title, kbd }: {
   icon: string;
   label: string;
   badge?: number;
   active?: boolean;
   onClick: () => void;
   title?: string;
+  kbd?: string;
 }) {
   return (
     <button
-      className={`flex items-center gap-2.5 w-full text-left px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+      className={`flex items-center gap-3 w-full text-left px-2.5 h-8 rounded-lg cursor-pointer transition-colors ${
         active ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"
       }`}
       title={title ?? label}
       onClick={onClick}
     >
-      <Icon name={icon} size={13} />
-      <span className="text-[12px] flex-1">{label}</span>
-      {badge ? <span className="text-warn text-[10px] num">{badge}</span> : null}
+      <Icon name={icon} size={15} />
+      <span className="text-[13px] flex-1">{label}</span>
+      {badge ? <span className="text-warn text-[10.5px] num">{badge}</span> : null}
+      {kbd ? <span className="text-faint text-[11px]">{kbd}</span> : null}
     </button>
   );
 }
@@ -58,16 +60,23 @@ export function NavRail() {
   };
 
   return (
-    <nav className="w-[200px] flex-none bg-panel border-r border-line flex flex-col overflow-hidden">
+    <nav className="w-[220px] flex-none bg-panel border-r border-line flex flex-col overflow-hidden">
       {/* drag strip clears the overlay traffic lights */}
-      <div data-tauri-drag-region className="h-9 flex-none" />
+      <div data-tauri-drag-region className="h-10 flex-none" />
       <div className="px-2 flex flex-col gap-0.5">
-        <NavItem icon="search" label="Search" title="Jump to a session or action (⌘K)"
-          onClick={() => setSwitcherOpen(true)} />
+        <button
+          className="flex items-center gap-2.5 w-full h-9 px-2.5 mb-1.5 rounded-lg border border-line bg-raised/40 text-faint hover:text-dim cursor-pointer transition-colors"
+          title="Jump to a session or action (⌘K)"
+          onClick={() => setSwitcherOpen(true)}
+        >
+          <Icon name="search" size={15} />
+          <span className="text-[13px] flex-1 text-left">Search</span>
+          <span className="text-[11px]">⌘K</span>
+        </button>
         <NavItem icon="layout" label="Home" active={view === "home"} title="Mission control (⌘H)"
           onClick={() => go("home")} />
         {surfaceVisible(appMode, "rail-inbox-tab") ? (
-          <NavItem icon="mail" label="Inbox" badge={unanswered} active={view === "inbox"}
+          <NavItem icon="inbox" label="Inbox" badge={unanswered} active={view === "inbox"}
             onClick={() => go("inbox")} />
         ) : null}
         <NavItem icon="check" label="Tasks" active={view === "tasks"} onClick={() => go("tasks")} />
@@ -77,33 +86,33 @@ export function NavRail() {
         ) : null}
       </div>
 
-      <div className="px-3 pt-4 pb-1 flex items-center justify-between">
-        <span className="panel-label">Projects</span>
-        <button className="text-faint hover:text-accent cursor-pointer text-[13px]" title="Add / manage projects (⌘P)"
-          onClick={() => setPickerOpen(true)}>+</button>
+      <div className="px-4 pt-5 pb-1.5 flex items-center justify-between">
+        <span className="text-[12.5px] text-faint">Projects</span>
+        <button className="text-faint hover:text-ink cursor-pointer" title="Add / manage projects (⌘P)"
+          onClick={() => setPickerOpen(true)}><Icon name="plus" size={13} /></button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-2 flex flex-col gap-0.5">
         {projects.map((p) => (
           <button
             key={p.id}
-            className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
+            className={`flex items-center gap-3 w-full text-left px-2.5 h-8 rounded-lg cursor-pointer transition-colors ${
               p.id === activeProject ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"
             }`}
             title={p.id === activeProject ? `${p.path} — active` : `Switch to ${p.name}`}
             onClick={() => switchProject(p.id)}
           >
-            <span className="w-2 h-2 rounded-full flex-none" style={{ background: p.color ?? projectColor(p.id) }} />
-            <span className="text-[12px] truncate">{p.name}</span>
+            <span className="w-[15px] h-[15px] rounded-[4px] flex-none flex items-center justify-center text-[9px] font-semibold text-black/70"
+              style={{ background: p.color ?? projectColor(p.id) }}>{p.name.slice(0, 1).toUpperCase()}</span>
+            <span className="text-[13px] truncate">{p.name}</span>
           </button>
         ))}
         {projects.length === 0 ? (
-          <span className="px-2 py-1 text-[11px] text-faint">no projects yet</span>
+          <span className="px-2 py-1 text-[12px] text-faint">No projects yet</span>
         ) : null}
       </div>
 
-      <div className="flex-none border-t border-line px-2 py-2 flex flex-col gap-0.5">
-        <NavItem icon="gear" label="Settings" title="Settings (⌘,)" onClick={() => setSettingsOpen(true)} />
-        <span className="px-3 text-[10px] text-faint num">grill me v0.1.0</span>
+      <div className="flex-none px-2 py-2 flex flex-col gap-0.5">
+        <NavItem icon="gear" label="Settings" kbd="⌘," title="Settings (⌘,)" onClick={() => setSettingsOpen(true)} />
       </div>
     </nav>
   );
