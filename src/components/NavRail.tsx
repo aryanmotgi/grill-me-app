@@ -3,6 +3,7 @@ import { surfaceVisible } from "../lib/soloVisibility";
 import { Icon } from "./Icon";
 import { projectColor } from "../lib/projectColor";
 import { GrillWordmark } from "./GrillMark";
+import { addProjectFromFinder } from "../lib/addProject";
 
 // ---------------------------------------------------------------------------
 // Monocode-style far-left nav rail: Search / Inbox / team surfaces up top,
@@ -91,9 +92,9 @@ export function NavRail() {
       </div>
 
       <div className="px-4 pt-5 pb-1.5 flex items-center justify-between">
-        <span className="text-[12.5px] text-faint">Projects</span>
-        <button className="text-faint hover:text-ink cursor-pointer" title="Add / manage projects (⌘P)"
-          onClick={() => setPickerOpen(true)}><Icon name="plus" size={13} /></button>
+        <button className="text-[12.5px] text-faint hover:text-dim cursor-pointer" title="Manage projects (⌘P)" onClick={() => setPickerOpen(true)}>Projects</button>
+        <button className="text-faint hover:text-ink cursor-pointer" title="Add a project — pick or create its folder in Finder (⌘P to manage)"
+          onClick={() => void addProjectFromFinder((m) => useApp.getState().toast(m, "warn"))}><Icon name="plus" size={13} /></button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-2 flex flex-col gap-0.5">
         {projects.map((p) => (
