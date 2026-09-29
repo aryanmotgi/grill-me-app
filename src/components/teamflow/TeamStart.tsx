@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "../../store";
 import { roomClient, startRoomFeed } from "../../data/sources/feeds";
 import type { RoomState } from "../../types";
+import { TailscaleCard, useTailscale } from "./TailscaleCard";
 
 /** The host's own requests go over loopback — never its LAN address. */
 const HOST_LOOPBACK = "127.0.0.1:4518";
@@ -34,6 +35,8 @@ export function TeamStart() {
   const [joinName, setJoinName] = useState("");
   const [code, setCode] = useState("");
   const [addr, setAddr] = useState("");
+  const [ts, reloadTs] = useTailscale();
+  const tsPeers = ts?.running ? (ts.peers ?? []).filter((p) => p.online && p.dnsName) : [];
   const [busy, setBusy] = useState(false);
 
   const create = async () => {
@@ -98,8 +101,8 @@ export function TeamStart() {
           <div className="bg-panel hairline rounded-md p-4 flex flex-col gap-3">
             <div className="text-[13px] font-semibold">Create a room</div>
             <div className="text-[11px] text-dim">
-              You host on this machine. Teammates on the same Wi-Fi join with
-              the code and address you get next.
+              You host on this machine. Teammates join with the code and address
+              you get next — same Wi-Fi, or anywhere over Tailscale.
             </div>
             <input
               className="bg-raised hairline rounded-sm px-3 py-2 text-[12px] outline-none focus:border-accent"
@@ -132,9 +135,22 @@ export function TeamStart() {
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
             />
+            {tsPeers.length ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10.5px] text-faint">Teammates on Tailscale — click the host:</span>
+                <div className="flex flex-wrap gap-1">
+                  {tsPeers.map((p) => (
+                    <button key={p.dnsName} className={`btn ${addr.startsWith(p.dnsName) ? "active" : ""}`}
+                      title={`${p.dnsName} (${p.os})`} onClick={() => setAddr(`${p.dnsName}:${ROOM_PORT}`)}>
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <input
               className="bg-raised hairline rounded-sm px-3 py-2 font-mono text-[11px] outline-none focus:border-accent"
-              placeholder="host address, e.g. 192.168.1.7:4518"
+              placeholder="host address, e.g. 192.168.1.7 or a Tailscale name"
               value={addr}
               onChange={(e) => setAddr(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && join()}
@@ -148,9 +164,7 @@ export function TeamStart() {
             </button>
           </div>
         </div>
-        <div className="text-[10px] text-faint mt-3">
-          works on the same network only — no internet relay in v1
-        </div>
+        <TailscaleCard st={ts} reload={reloadTs} />
       </div>
     </div>
   );
