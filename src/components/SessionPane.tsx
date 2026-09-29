@@ -10,6 +10,7 @@ import type { Teammate } from "../types";
 import { isHelpPending } from "../lib/help";
 import { XtermPane } from "./XtermPane";
 import { Composer } from "./Composer";
+import { ChatView } from "./ChatView";
 import { useApp as useVitals } from "../store";
 import { fmtFullTime, fmtMem, fmtTokens } from "../lib/format";
 
@@ -63,7 +64,7 @@ function PrDraft({ repoPath }: { repoPath?: string }) {
   );
 }
 
-type PaneTab = "terminal" | "shell" | "changes" | "audit";
+type PaneTab = "chat" | "terminal" | "shell" | "changes" | "audit";
 
 function ChangeRow({ file, summary, repoPath, onRevert }: {
   file: string; summary: string; repoPath?: string; onRevert: () => void;
@@ -334,11 +335,12 @@ function SessionMore({ recording, helpPending, onRecord, onHelp, onExport, onHan
 export function SessionPane({ mate }: { mate: Teammate }) {
   const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor, requestHelp, resolveHelp, toast } = useApp();
   const helpPending = useApp((s) => isHelpPending(s.messages, mate.id));
-  const [tab, setTab] = useState<PaneTab>("terminal");
   const member = members.find((m) => m.id === mate.id);
+  // Claude sessions open as chat (Monocode-style); other agents keep the TUI
+  const [tab, setTab] = useState<PaneTab>((member?.agent ?? "claude") === "claude" ? "chat" : "terminal");
 
   return (
-    <section className="flex-1 min-w-0 flex flex-col bg-term-bg">
+    <section className={`flex-1 min-w-0 flex flex-col ${tab === "chat" ? "" : "bg-term-bg"}`}>
       <div className="flex items-center gap-2 px-3 h-9 border-b border-line bg-panel flex-none">
         {/* the session tab strip above already shows name + branch — this row is
             just the live status dot + this pane's tools (no duplicate title). */}
@@ -360,6 +362,7 @@ export function SessionPane({ mate }: { mate: Teammate }) {
           {/* view switcher: one quiet segmented control, Monocode-style */}
           <div className="flex items-center rounded-lg bg-raised/60 p-0.5">
             {([
+              ["chat", "Chat"],
               ["terminal", "Terminal"],
               ["shell", "Shell"],
               ["changes", `Changes${mate.changes.length ? ` ${mate.changes.length}` : ""}`],
@@ -387,7 +390,20 @@ export function SessionPane({ mate }: { mate: Teammate }) {
         </div>
       </div>
 
-      {tab === "terminal" || tab === "shell" ? (
+      {tab === "chat" ? (
+        // browser dev has no worktrees — still render the chat (demo transcript)
+        member || !("__TAURI_INTERNALS__" in window) ? (
+          <div className="flex-1 min-h-0 flex flex-col bg-transparent">
+            <ChatView mate={mate} repoPath={member?.repoPath ?? "demo"} onOpenTerminal={() => setTab("terminal")} />
+            <div className="max-w-[860px] w-full mx-auto px-3"><Composer mateId={mate.id} /></div>
+            <VitalsStrip mateId={mate.id} />
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-faint text-[11px]">
+            no worktree configured for this session
+          </div>
+        )
+      ) : tab === "terminal" || tab === "shell" ? (
         member ? (
           <div className="flex-1 min-h-0 flex flex-col">
             <div className="flex-1 min-h-0">

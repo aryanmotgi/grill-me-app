@@ -795,3 +795,50 @@ select.btn, .btn[type] {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.14);
 }
+
+/* ---- chat view (Monocode-style session transcript) ---- */
+.chat-bubble {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.55;
+  padding: 9px 15px;
+  border-radius: 18px;
+}
+.chat-reply strong { color: var(--ink); }
+.md-code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+}
+.md-pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  overflow: auto;
+  white-space: pre;
+}
+.md-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.md-table th,
+.md-table td {
+  border: 1px solid var(--line);
+  padding: 5px 10px;
+  text-align: left;
+}
+.md-table th { color: var(--ink); font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) {
+  .chat-pulse { display: inline-flex; animation: chatPulse 1.6s ease-in-out infinite; }
+  @keyframes chatPulse { 50% { opacity: 0.35; } }
+}
