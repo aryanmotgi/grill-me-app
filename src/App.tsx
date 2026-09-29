@@ -45,6 +45,7 @@ import { NewSession } from "./components/NewSession";
 import { ClaudePanel } from "./components/ClaudePanel";
 import { BrainPage, useWelcomeBack } from "./components/BrainPage";
 import { AutomationsPage, useAutomations } from "./components/Automations";
+import { Kickoff } from "./components/Kickoff";
 import { StatusBar } from "./components/StatusBar";
 import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
 import { visibleRailTabs } from "./lib/soloVisibility";
@@ -410,6 +411,7 @@ export default function App() {
       <Cheatsheet />
       <CheckpointRunner />
       <BridgePanel />
+      <Kickoff />
       <Toasts />
     </div>
   );

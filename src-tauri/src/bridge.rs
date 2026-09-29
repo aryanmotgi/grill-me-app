@@ -369,6 +369,52 @@ decisions, notes, tasks and each session's commits and recent work. Reply with O
 {\"summary\": string (one sentence: what we built), \"stack\": string[], \"worked\": string[], \"mistakes\": string[], \"reuse\": string[] (setups, snippets, or services worth reusing)}. \
 Max 5 short items per list, grounded in the input.";
 
+const KICKOFF_PROMPT: &str = "You kick off a hackathon build. The input JSON has the team's idea, hours available, how many parallel coding sessions they can run, \
+the repo README (may be empty for a fresh project), lessons from past hackathons, and their brainstorm/breakdown playbooks. \
+Turn the idea into a sharp plan: a one-line goal (what, for whom, the wow moment), the key decision behind the approach, and up to `maxSessions` tasks \
+that can be built IN PARALLEL by separate AI coding sessions — each owning different files so they don't collide, the first task being the demo-path skeleton. \
+For each task write a self-contained brief for the coding agent (what to build, files it owns, done-when). Respect the hours: cut scope hard. \
+Reply with ONLY JSON, no prose, no fences: {\"goal\": string, \"decision\": string, \"tasks\": [{\"title\": string, \"files\": string[], \"brief\": string}]}.";
+
+/// One-click hackathon start: idea → goal, decision, parallel task briefs.
+#[tauri::command(async)]
+pub(crate) fn brain_kickoff(idea: String, hours: u32, max_sessions: u32) -> Result<Value, String> {
+    let idea = idea.trim();
+    if idea.is_empty() || idea.len() > 5000 {
+        return Err("describe the idea (under 5000 characters)".into());
+    }
+    install();
+    let mut input: Value = serde_json::from_str(&run_script(&["--kickoff-input"])?).unwrap_or_else(|_| json!({}));
+    input["idea"] = json!(idea);
+    input["hours"] = json!(hours.clamp(1, 72));
+    input["maxSessions"] = json!(max_sessions.clamp(1, 6));
+    let r = extract_json(&claude_quick(&input.to_string(), KICKOFF_PROMPT, "sonnet")?).ok_or("plan came back empty — try again")?;
+    let tasks: Vec<Value> = r["tasks"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| {
+                    let title = t["title"].as_str()?.trim();
+                    (!title.is_empty()).then(|| json!({
+                        "title": title.chars().take(120).collect::<String>(),
+                        "files": t["files"].as_array().map(|f| f.iter().filter_map(|x| x.as_str()).take(20).collect::<Vec<_>>()).unwrap_or_default(),
+                        "brief": t["brief"].as_str().unwrap_or("").chars().take(4000).collect::<String>(),
+                    }))
+                })
+                .take(max_sessions.clamp(1, 6) as usize)
+                .collect()
+        })
+        .unwrap_or_default();
+    if tasks.is_empty() {
+        return Err("plan had no tasks — try again with more detail".into());
+    }
+    Ok(json!({
+        "goal": r["goal"].as_str().unwrap_or("").chars().take(500).collect::<String>(),
+        "decision": r["decision"].as_str().unwrap_or("").chars().take(1000).collect::<String>(),
+        "tasks": tasks,
+    }))
+}
+
 /// Pitch: one-liner, demo script, Devpost text, judge Q&A — from real work.
 #[tauri::command(async)]
 pub(crate) fn brain_pitch() -> Result<String, String> {

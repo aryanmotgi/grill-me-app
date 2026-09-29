@@ -480,6 +480,16 @@ function wrapupInput() {
   }, null, 1);
 }
 
+function kickoffInput() {
+  return JSON.stringify({
+    readme: readme(),
+    pastLessons: lessonsText(projectDir().id, 5),
+    brainstormPlaybook: skillText("brainstorm") ?? "",
+    breakdownPlaybook: skillText("breakdown") ?? "",
+    existingSessions: members().map((m) => label(m)),
+  }, null, 1);
+}
+
 /** CLI modes (hooks and Grill Me call the script directly, not over MCP). */
 function cliMode(argv) {
   const flag = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
@@ -507,6 +517,7 @@ function cliMode(argv) {
     process.stdout.write(checkInput(flag("--check-input")));
     return true;
   }
+  if (argv.includes("--kickoff-input")) { process.stdout.write(kickoffInput()); return true; }
   if (argv.includes("--pitch-input")) { process.stdout.write(pitchInput()); return true; }
   if (argv.includes("--quiz-input")) { process.stdout.write(quizInput(flag("--quiz-input"))); return true; }
   if (argv.includes("--wrapup-input")) { process.stdout.write(wrapupInput()); return true; }
