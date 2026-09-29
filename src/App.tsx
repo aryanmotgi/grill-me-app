@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp, ptyIdFor } from "./store";
 import { applyTheme, themes } from "./theme/themes";
 import { NavRail } from "./components/NavRail";
@@ -42,7 +42,9 @@ import { CheckpointRunner } from "./components/CheckpointRunner";
 import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
 import { NewSession } from "./components/NewSession";
-import { ClaudePanel } from "./components/ClaudePanel";
+import { ClaudeDock, ClaudePanel } from "./components/ClaudePanel";
+import { togglePanel, useLayout } from "./components/Dock";
+import { leftEdgePanel, panelsOn } from "./lib/layout";
 import { BrainPage, useWelcomeBack } from "./components/BrainPage";
 import { AutomationsPage, useAutomations } from "./components/Automations";
 import { Kickoff } from "./components/Kickoff";
@@ -119,6 +121,15 @@ export default function App() {
       if (mod && e.key === "/") {
         e.preventDefault();
         useApp.setState({ featureIndexOpen: !useApp.getState().featureIndexOpen });
+      }
+      // dock toggles: ⌘B sessions, ⌘⇧B sidebar, ⌘J Claude chat
+      if (mod && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        togglePanel(e.shiftKey ? "nav" : "workspace");
+      }
+      if (mod && e.key === "j") {
+        e.preventDefault();
+        togglePanel("claude");
       }
       if (mod && e.key === ",") {
         e.preventDefault();
@@ -268,6 +279,35 @@ export default function App() {
 
   const active = teammates.find((t) => t.id === activeId) ?? teammates[0];
   const split = splitId ? teammates.find((t) => t.id === splitId) : undefined;
+  // dockable side panels (rail, sessions, Claude chat): open/closed + side
+  const [layout, setLayout] = useLayout();
+  const [claudeW, setClaudeW] = useState(layout.claudeWidth);
+  const claudeWRef = useRef(claudeW);
+  claudeWRef.current = claudeW;
+  useEffect(() => { setClaudeW(layout.claudeWidth); }, [layout.claudeWidth]);
+  const edgePanel = leftEdgePanel(layout);
+  const dockSide = (side: "left" | "right") =>
+    panelsOn(layout, side).map((id) => {
+      const edge = edgePanel === id;
+      // resize handles sit on each panel's inner edge; dragging outward grows it
+      const sign = side === "left" ? 1 : -1;
+      if (id === "nav") return <NavRail key={id} side={side} />;
+      if (id === "workspace") {
+        const handle = (
+          <DragHandle key={`${id}-h`} onDrag={(dx) => setPanelSize("left", Math.min(480, Math.max(180, panelSizes.left + sign * dx)))}
+            onDone={() => setPanelSize("left", panelSizes.left, true)} />
+        );
+        const panel = <WorkspacePanel key={id} edge={edge} side={side} />;
+        return side === "left" ? [panel, handle] : [handle, panel];
+      }
+      const handle = (
+        <DragHandle key={`${id}-h`} onDrag={(dx) => setClaudeW((w) => Math.min(760, Math.max(300, w + sign * dx)))}
+          onDone={() => setLayout({ ...layout, claudeWidth: claudeWRef.current })} />
+      );
+      const panel = <ClaudeDock key={id} edge={edge} side={side} width={claudeW} />;
+      return side === "left" ? [panel, handle] : [handle, panel];
+    });
+
   // right file pane only when a file is actually open (Monocode keeps it hidden)
   const openFileCount = useApp((s) => s.openFiles.length);
   // Claude bridge: live pending requests + "coder finished" pings
@@ -297,14 +337,9 @@ export default function App() {
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
       <ConflictBanner />
       <div className="flex-1 min-h-0 flex">
-        {focusMode ? null : <NavRail />}
-        {focusMode ? null : <WorkspacePanel />}
-        {focusMode ? null : (
-          <DragHandle onDrag={(dx) => setPanelSize("left", Math.min(480, Math.max(180, panelSizes.left + dx)))}
-            onDone={() => setPanelSize("left", panelSizes.left, true)} />
-        )}
+        {focusMode ? null : dockSide("left")}
         <main className="flex-1 min-w-0 flex flex-col">
-          {focusMode ? null : <SessionTabs />}
+          {focusMode ? null : <SessionTabs padLeft={edgePanel === null} />}
           {view === "home" ? (
             <HomeDashboard />
           ) : view === "preview" ? (
@@ -387,6 +422,7 @@ export default function App() {
             onDone={() => setPanelSize("right", panelSizes.right, true)} />
         )}
         {showEditor ? <EditorPane /> : null}
+        {focusMode ? null : dockSide("right")}
       </div>
       <QuickSwitcher />
       <SettingsModal />

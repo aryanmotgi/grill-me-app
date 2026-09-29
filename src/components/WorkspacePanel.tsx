@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { SessionList } from "./SessionList";
 import { DirNode } from "./FilesPanel";
 import { Icon } from "./Icon";
+import { PanelControls } from "./Dock";
 
 // ---------------------------------------------------------------------------
 // Monocode-style workspace panel (second column): three tabs —
@@ -116,7 +117,7 @@ function ChangesTab({ root, changes, activeFile, openFile }: {
   );
 }
 
-export function WorkspacePanel() {
+export function WorkspacePanel({ edge = false, side = "left" }: { edge?: boolean; side?: "left" | "right" }) {
   const width = useApp((s) => s.panelSizes.left);
   const [tab, setTab] = useState<WsTab>("sessions");
   const activeId = useApp((s) => s.activeId);
@@ -138,8 +139,8 @@ export function WorkspacePanel() {
   ];
 
   return (
-    <aside style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
-      <div data-tauri-drag-region className="flex items-center gap-1 h-12 pl-4 pr-2 flex-none border-b border-line">
+    <aside style={{ width }} className={`flex-none border-line bg-panel flex flex-col overflow-hidden ${side === "left" ? "border-r" : "border-l"}`}>
+      <div data-tauri-drag-region className={`flex items-center gap-1 h-12 pr-2 flex-none border-b border-line ${edge ? "pl-[84px]" : "pl-4"}`}>
         <span data-tauri-drag-region className="text-[15px] font-semibold text-ink flex-1">Workspace</span>
         <button className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised cursor-pointer"
           title="Search sessions"
@@ -151,6 +152,7 @@ export function WorkspacePanel() {
           onClick={() => useApp.getState().setView("new")}>
           <Icon name="plus" size={15} />
         </button>
+        <PanelControls id="workspace" />
       </div>
       <div className="flex items-center gap-1 px-2 py-2 flex-none border-b border-line">
         {TABS.map((t) => (

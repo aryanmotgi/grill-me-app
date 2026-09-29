@@ -4,6 +4,7 @@ import { Icon } from "./Icon";
 import { AgentLogo } from "./AgentLogo";
 import { ProjectIcon } from "./ProjectIcon";
 import { GrillWordmark } from "./GrillMark";
+import { PanelControls, togglePanel, useLayout } from "./Dock";
 import { addProjectFromFinder } from "../lib/addProject";
 
 // ---------------------------------------------------------------------------
@@ -39,7 +40,7 @@ function NavItem({ icon, label, badge, active, onClick, title, kbd }: {
   );
 }
 
-export function NavRail() {
+export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
   const appMode = useApp((s) => s.appMode);
@@ -51,6 +52,7 @@ export function NavRail() {
   const setSettingsOpen = useApp((s) => s.setSettingsOpen);
   const setSwitcherOpen = useApp((s) => s.setSwitcherOpen);
   const unanswered = messages.filter((m) => !m.answered).length;
+  const claudeOpen = useLayout()[0].claude.open;
   const moreSetting = useApp((s) => s.appSettings.navMoreOpen === true);
   const moreOpen = moreSetting || ["automations", "tasks", "inbox", "feed", "team"].includes(view);
 
@@ -65,11 +67,12 @@ export function NavRail() {
   };
 
   return (
-    <nav className="w-[220px] flex-none bg-panel border-r border-line flex flex-col overflow-hidden">
+    <nav className={`w-[220px] flex-none bg-panel border-line flex flex-col overflow-hidden ${side === "left" ? "border-r" : "border-l"}`}>
       {/* drag strip clears the overlay traffic lights */}
-      <div data-tauri-drag-region className="h-12 flex-none flex items-center justify-end pr-3">
+      <div data-tauri-drag-region className="group/rail h-12 flex-none flex items-center justify-end gap-1 pr-2">
         {/* brand sits right of the traffic lights; clicks pass through to drag */}
         <span className="pointer-events-none"><GrillWordmark /></span>
+        <span className="hidden group-hover/rail:flex"><PanelControls id="nav" /></span>
       </div>
       <div className="px-2 flex flex-col gap-0.5">
         <button
@@ -85,8 +88,8 @@ export function NavRail() {
           onClick={() => go("home")} />
         <NavItem icon="note" label="Brain" active={view === "brain"} title="Shared project brain: goal, where was I, what's happening"
           onClick={() => go("brain")} />
-        <NavItem icon="claude" label="Claude" active={view === "claude"} title="Brainstorm with Claude (sees your sessions) + claude.ai"
-          onClick={() => go("claude")} />
+        <NavItem icon="claude" label="Claude" active={claudeOpen} title="Claude chat panel — sees your sessions (⌘J)"
+          onClick={() => togglePanel("claude")} />
         <NavItem icon="eye" label="Preview" active={view === "preview"} title="Live preview of the app you're building"
           onClick={() => go("preview")} />
 
