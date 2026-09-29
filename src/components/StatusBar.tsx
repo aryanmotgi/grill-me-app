@@ -157,6 +157,11 @@ export function StatusBar() {
       ) : null}
 
       <span className="flex-1" />
+      <button className="flex items-center gap-1.5 px-2 py-0.5 rounded-md cursor-pointer transition-colors hover:bg-raised hover:text-ink"
+        title="Ship queue — ship every ready session at once"
+        onClick={() => void import("./ShipQueue").then(({ useShipQueue }) => useShipQueue.getState().setOpen(true))}>
+        <Icon name="push" size={12} /> Ship
+      </button>
       <BridgeButton />
       <HackClock />
       <button

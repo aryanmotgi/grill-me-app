@@ -1911,7 +1911,7 @@ fn validate_member_id(id: &str) -> Result<(), String> {
 
 /// Single-quote a string for POSIX sh: wrap in ' and escape embedded ' as '\''.
 /// Files Grill Me installs into every worktree — hidden from change lists.
-fn is_grillme_managed(path: &str) -> bool {
+pub(crate) fn is_grillme_managed(path: &str) -> bool {
     path == "CLAUDE.md" || path == "DELEGATION.md" || path == ".claude/" || path.starts_with(".claude/")
 }
 
@@ -4448,6 +4448,9 @@ pub fn run() {
             automations::detect_test_cmd,
             automations::run_tests,
             automations::phone_ping,
+            automations::ship_overview,
+            automations::dev_servers,
+            automations::detect_dev_cmd,
             claude_panel::brainstorm_stop,
             claude_panel::brainstorm_history,
             claude_panel::claudeai_show,
