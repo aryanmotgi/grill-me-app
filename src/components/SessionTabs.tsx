@@ -29,40 +29,33 @@ export function SessionTabs() {
   const active = teammates.find((t) => t.id === activeId);
 
   return (
-    <div data-tauri-drag-region className="flex items-stretch h-10 flex-none bg-panel border-b border-line demo-hide">
-      <div className="flex items-stretch overflow-x-auto flex-1 min-w-0">
+    <div data-tauri-drag-region className="flex items-center gap-1 h-12 px-2 flex-none border-b border-line demo-hide">
+      <div data-tauri-drag-region className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 min-w-0 h-full">
         {shown.map((t) => {
           const on = view === "session" && t.id === activeId;
           const agent = members.find((m) => m.id === t.id)?.agent ?? "claude";
           return (
             <button
               key={t.id}
-              className={`group/tab flex items-center gap-2 px-3 min-w-0 max-w-[220px] border-r border-line cursor-pointer transition-colors ${
-                on ? "bg-bg text-ink" : "text-dim hover:text-ink hover:bg-raised"
+              className={`group/tab flex items-center gap-2.5 h-9 px-3.5 min-w-[200px] max-w-[360px] rounded-lg cursor-pointer transition-colors ${
+                on ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/50"
               }`}
               title={`${t.name} · ${t.branch}${t.taskLabel ? ` · ${t.taskLabel}` : ""}`}
               onClick={() => { if (view !== "session") setView("session"); setActive(t.id); }}
             >
               <AgentLogo agent={agent} size={15} />
-              <span className="flex flex-col justify-center min-w-0 text-left">
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className={`status-dot ${t.status} flex-none`} aria-hidden />
-                  <EditableTitle mate={t} className="text-[11.5px] font-semibold" />
-                </span>
-                <span className="font-mono text-[9px] text-faint truncate">
-                  {t.branch}
-                </span>
-              </span>
+              <EditableTitle mate={t} className="text-[13.5px] min-w-0 flex-1 text-left" />
+              {t.status !== "idle" ? <span className={`status-dot ${t.status} flex-none`} style={{ width: 6, height: 6 }} aria-hidden /> : null}
             </button>
           );
         })}
         {view === "new" || shown.length === 0 ? (
-          <div className="flex items-center gap-2 px-3 my-1 ml-1 rounded-lg bg-raised text-ink text-[13px] flex-none">
+          <div className="flex items-center gap-2.5 h-9 px-3.5 min-w-[180px] rounded-lg bg-raised text-ink text-[13.5px] flex-none">
             <Icon name="spark" size={13} /> New session
           </div>
         ) : null}
         <button
-          className="px-3 text-dim hover:text-ink cursor-pointer flex-none"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised/50 cursor-pointer flex-none"
           title="New session"
           onClick={() => setView("new")}
         >
@@ -71,7 +64,7 @@ export function SessionTabs() {
       </div>
       {active && view === "session" && (members.find((m) => m.id === active.id)?.agent ?? "claude") === "claude" ? (
         <button
-          className="flex items-center gap-1.5 px-3 my-1.5 mr-1.5 rounded-md text-dim hover:text-ink hover:bg-raised text-[11.5px] cursor-pointer flex-none"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-dim hover:text-ink hover:bg-raised text-[12.5px] cursor-pointer flex-none"
           title="Type /grillme --orient into this session: where am I, what's next, grill my understanding (press Enter to send)"
           onClick={() => void insertSnippet("/grillme --orient")}
         >
@@ -80,11 +73,11 @@ export function SessionTabs() {
       ) : null}
       {active && view === "session" ? (
         <button
-          className="flex items-center gap-1.5 px-3 my-1.5 mr-2 rounded-md bg-accent text-accent-ink text-[11px] font-semibold cursor-pointer hover:brightness-110 flex-none"
+          className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-accent text-accent-ink text-[12.5px] font-medium cursor-pointer hover:brightness-110 flex-none"
           title={`Review & ship ${active.name}'s branch (⌘S)`}
           onClick={() => shipSession(active.id)}
         >
-          <Icon name="push" size={11} /> review & ship
+          <Icon name="push" size={12} /> Review & ship
         </button>
       ) : null}
     </div>

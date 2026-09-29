@@ -139,17 +139,30 @@ export function WorkspacePanel() {
 
   return (
     <aside style={{ width }} className="flex-none border-r border-line bg-panel flex flex-col overflow-hidden">
-      <div className="flex items-center gap-1 px-2 pt-2 pb-1 flex-none">
+      <div data-tauri-drag-region className="flex items-center gap-1 h-12 pl-4 pr-2 flex-none border-b border-line">
+        <span className="text-[15px] font-semibold text-ink flex-1">Workspace</span>
+        <button className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised cursor-pointer"
+          title="Search sessions"
+          onClick={() => { setTab("sessions"); requestAnimationFrame(() => document.getElementById("session-search")?.focus()); }}>
+          <Icon name="search" size={15} />
+        </button>
+        <button className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised cursor-pointer"
+          title="New session"
+          onClick={() => useApp.getState().setView("new")}>
+          <Icon name="plus" size={15} />
+        </button>
+      </div>
+      <div className="flex items-center gap-1 px-2 py-2 flex-none border-b border-line">
         {TABS.map((t) => (
           <button
             key={t.id}
-            className={`px-2.5 py-1 rounded-md text-[11px] cursor-pointer transition-colors ${
+            className={`flex-1 h-8 rounded-lg text-[13px] cursor-pointer transition-colors ${
               tab === t.id ? "bg-raised text-ink" : "text-dim hover:text-ink"
             }`}
             onClick={() => setTab(t.id)}
           >
             {t.label}
-            {t.badge ? <span className="ml-1 text-data num">{t.badge}</span> : null}
+            {t.badge ? <span className="ml-1.5 text-faint num">{t.badge}</span> : null}
           </button>
         ))}
       </div>
@@ -160,11 +173,12 @@ export function WorkspacePanel() {
         {tab === "explorer" ? (
           root ? (
             <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="px-3 py-1.5 flex items-center justify-between sticky top-0 bg-panel z-10">
-                <span className="panel-label truncate" title={root}>{root.split("/").pop()}</span>
-                <button className="text-faint hover:text-ink cursor-pointer" title="Refresh tree"
+              <div className="px-4 pt-3 pb-1.5 flex items-center justify-between sticky top-0 bg-panel z-10">
+                <span className="text-[11px] tracking-[0.12em] uppercase text-faint font-semibold truncate" title={root}>{root.split("/").pop()}</span>
+                <button className="w-7 h-7 rounded-md flex items-center justify-center text-faint hover:text-ink hover:bg-raised cursor-pointer"
+                  title="Collapse all + refresh"
                   onClick={() => setTreeKey((k) => k + 1)}>
-                  <Icon name="swap" size={11} />
+                  <Icon name="swap" size={13} />
                 </button>
               </div>
               <DirNode key={treeKey} root={root} rel="" name="" depth={0}

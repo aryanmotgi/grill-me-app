@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp, ptyIdFor } from "../store";
 import type { Teammate } from "../types";
-import { parseTranscript, type ChatItem } from "../lib/chat";
+import { modelLabel, parseTranscript, toRows, type ChatItem } from "../lib/chat";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
@@ -85,19 +85,48 @@ function ToolRow({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
   );
 }
 
-function Working({ mate }: { mate: Teammate }) {
-  const [since, setSince] = useState(() => Date.now());
+function ToolGroup({ tools }: { tools: Extract<ChatItem, { kind: "tool" }>[] }) {
+  const [open, setOpen] = useState(false);
+  if (tools.length === 1) return <ToolRow item={tools[0]} />;
+  const pending = tools.some((t) => t.result === undefined);
+  const errors = tools.filter((t) => t.isError).length;
+  const last = tools[tools.length - 1];
+  return (
+    <div className="text-[12.5px]">
+      <button className="flex items-center gap-2 max-w-full text-left text-faint hover:text-dim cursor-pointer py-0.5"
+        onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className={errors ? "text-danger" : ""}>
+          {pending ? <span className="spinner inline-block align-[-2px]" style={{ width: 11, height: 11 }} /> : <Icon name={errors ? "cross" : "check"} size={11} />}
+        </span>
+        <span className="truncate">
+          Used {tools.length} tools<span className="text-faint/70"> · {last.summary}</span>
+        </span>
+        <Icon name="chevron" size={9} className={`opacity-60 transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open ? (
+        <div className="ml-2 pl-3 border-l border-line flex flex-col">
+          {tools.map((t) => <ToolRow key={t.id} item={t} />)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Working({ since, model }: { since: number | undefined; model: string }) {
+  const [start] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { setSince(Date.now()); }, [mate.status]);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  const s = Math.max(0, Math.round((now - since) / 1000));
+  // a transcript stamp hours old means status detection lags the transcript —
+  // count from when we started watching instead of showing a silly number
+  const from = since !== undefined && now - since < 3 * 3_600_000 ? since : start;
+  const s = Math.max(0, Math.round((now - from) / 1000));
   return (
-    <div className="flex items-center gap-2 text-[13px] text-faint py-1">
-      <span className="chat-pulse"><AgentLogo agent="claude" size={13} /></span>
-      <span>Claude working for <span className="text-dim num">{s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`}</span></span>
+    <div className="flex items-center gap-2 text-[12.5px] text-faint py-1">
+      <span className="chat-pulse"><AgentLogo agent="claude" size={12} /></span>
+      <span>{model} working for <span className="text-dim num">{s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`}</span></span>
     </div>
   );
 }
@@ -109,6 +138,9 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
 }) {
   const { lines, state } = useTranscript(repoPath);
   const items = useMemo(() => parseTranscript(lines), [lines]);
+  const rows = useMemo(() => toRows(items, mate.status === "working"), [items, mate.status]);
+  const lastUserTs = useMemo(() => [...items].reverse().find((i) => i.kind === "user")?.ts, [items]);
+  const lastModel = useMemo(() => modelLabel([...items].reverse().find((i) => i.model)?.model), [items]);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const member = useApp((s) => s.members.find((m) => m.id === mate.id));
@@ -155,9 +187,19 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
             <p className="text-faint text-[12px]">Send one below — the conversation shows up here.</p>
           </div>
         ) : (
-          items.map((it) =>
-            it.kind === "user" ? (
-              <div key={it.id} className="flex justify-end">
+          rows.map((row) => {
+            if (row.kind === "tools") return <ToolGroup key={row.id} tools={row.tools} />;
+            if (row.kind === "worked") {
+              return (
+                <div key={row.id} className="flex items-center gap-2 text-[12.5px] text-faint pb-2">
+                  <AgentLogo agent="claude" size={12} />
+                  <span>{row.model} worked for <span className="num">{row.seconds < 60 ? `${row.seconds}s` : `${Math.floor(row.seconds / 60)}m ${row.seconds % 60}s`}</span></span>
+                </div>
+              );
+            }
+            const it = row.item;
+            return it.kind === "user" ? (
+              <div key={it.id} className="flex justify-end pt-2">
                 <div className="chat-bubble max-w-[78%] whitespace-pre-wrap break-words">
                   {it.text}
                   {it.images ? <div className="text-[11px] text-faint mt-1">{it.images} image{it.images > 1 ? "s" : ""} attached</div> : null}
@@ -171,11 +213,11 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
               <ToolRow key={it.id} item={it} />
             ) : (
               <div key={it.id} className="text-[11.5px] text-faint text-center py-1">{it.text}</div>
-            ),
-          )
+            );
+          })
         )}
 
-        {mate.status === "working" ? <Working mate={mate} /> : null}
+        {mate.status === "working" ? <Working since={lastUserTs} model={lastModel} /> : null}
         {mate.status === "needs-input" ? (
           <div className="flex items-center gap-3 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-[13px]">
             <span className="status-dot needs-input" />

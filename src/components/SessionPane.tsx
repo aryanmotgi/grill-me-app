@@ -341,10 +341,9 @@ export function SessionPane({ mate }: { mate: Teammate }) {
 
   return (
     <section className={`flex-1 min-w-0 flex flex-col ${tab === "chat" ? "" : "bg-term-bg"}`}>
-      <div className="flex items-center gap-2 px-3 h-9 border-b border-line bg-panel flex-none">
-        {/* the session tab strip above already shows name + branch — this row is
-            just the live status dot + this pane's tools (no duplicate title). */}
-        <span className={`status-dot ${mate.status}`} />
+      <div className={`flex items-center gap-2 px-4 h-10 flex-none ${tab === "chat" ? "" : "border-b border-line bg-panel"}`}>
+        {/* no title/status here — the pill tab above carries both. Just this
+            pane's view switcher + tools, floating right (Monocode-style). */}
         {mate.recording ? <span className="tag danger"><Icon name="record" size={9} /> rec</span> : null}
         {helpPending ? (
           <span className="tag warn" title="This session is flagged for help — the team can see it needs eyes">

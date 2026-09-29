@@ -6,11 +6,13 @@
 // Pure + tested; the ChatView polls `transcript_tail` and feeds lines here.
 // ---------------------------------------------------------------------------
 
+/** `ts` = epoch ms from the transcript line; `model` = the model that wrote it */
+type Stamp = { ts?: number; model?: string };
 export type ChatItem =
-  | { kind: "user"; id: string; text: string; images: number }
-  | { kind: "assistant"; id: string; text: string }
-  | { kind: "tool"; id: string; name: string; summary: string; detail: string; result?: string; isError?: boolean }
-  | { kind: "note"; id: string; text: string };
+  | ({ kind: "user"; id: string; text: string; images: number } & Stamp)
+  | ({ kind: "assistant"; id: string; text: string } & Stamp)
+  | ({ kind: "tool"; id: string; name: string; summary: string; detail: string; result?: string; isError?: boolean } & Stamp)
+  | ({ kind: "note"; id: string; text: string } & Stamp);
 
 type Block = { type?: string; text?: string; name?: string; id?: string; input?: Record<string, unknown>; tool_use_id?: string; content?: unknown; is_error?: boolean };
 
@@ -29,7 +31,7 @@ export function toolSummary(name: string, input: Record<string, unknown> = {}): 
     case "MultiEdit": return `Edited ${basename(input.file_path)}`;
     case "Write": return `Wrote ${basename(input.file_path)}`;
     case "NotebookEdit": return `Edited ${basename(input.notebook_path)}`;
-    case "Bash": return `Ran ${s("description") || s("command").split("\n")[0]}`.slice(0, 120);
+    case "Bash": return (s("description") || `Ran ${s("command").split("\n")[0]}`).slice(0, 120);
     case "Grep": return `Searched for "${s("pattern")}"`;
     case "Glob": return `Found files ${s("pattern")}`;
     case "Task":
@@ -88,21 +90,24 @@ export function parseTranscript(lines: string[]): ChatItem[] {
   let n = 0;
 
   for (const line of lines) {
-    let o: { type?: string; isMeta?: boolean; isSidechain?: boolean; uuid?: string; message?: { content?: unknown } };
+    let o: { type?: string; isMeta?: boolean; isSidechain?: boolean; uuid?: string; timestamp?: string; message?: { content?: unknown; model?: string } };
     try { o = JSON.parse(line); } catch { continue; }
     if (!o || o.isSidechain || o.isMeta) continue;
     if (o.type !== "user" && o.type !== "assistant") continue;
     const content = o.message?.content;
     const baseId = o.uuid ?? `l${n}`;
     n++;
+    const parsedTs = o.timestamp ? Date.parse(o.timestamp) : NaN;
+    const ts = Number.isFinite(parsedTs) ? parsedTs : undefined;
+    const model = o.message?.model;
 
     if (o.type === "user") {
       if (typeof content === "string") {
-        if (content.startsWith("[Request interrupted")) { items.push({ kind: "note", id: baseId, text: "Interrupted" }); continue; }
+        if (content.startsWith("[Request interrupted")) { items.push({ kind: "note", id: baseId, text: "Interrupted", ts }); continue; }
         const note = harnessNote(content);
-        if (note) { items.push({ kind: "note", id: baseId, text: note }); continue; }
+        if (note) { items.push({ kind: "note", id: baseId, text: note, ts }); continue; }
         const t = userText(content);
-        if (t) items.push({ kind: "user", id: baseId, text: t, images: 0 });
+        if (t) items.push({ kind: "user", id: baseId, text: t, images: 0, ts });
         continue;
       }
       if (!Array.isArray(content)) continue;
@@ -118,14 +123,14 @@ export function parseTranscript(lines: string[]): ChatItem[] {
           }
         } else if (b.type === "text" && b.text) {
           const note = harnessNote(b.text);
-          if (note) { items.push({ kind: "note", id: `${baseId}:n`, text: note }); continue; }
+          if (note) { items.push({ kind: "note", id: `${baseId}:n`, text: note, ts }); continue; }
           const t = userText(b.text);
           if (t) texts.push(t);
         } else if (b.type === "image") {
           images++;
         }
       }
-      if (texts.length || images) items.push({ kind: "user", id: baseId, text: texts.join("\n\n"), images });
+      if (texts.length || images) items.push({ kind: "user", id: baseId, text: texts.join("\n\n"), images, ts });
       continue;
     }
 
@@ -136,8 +141,8 @@ export function parseTranscript(lines: string[]): ChatItem[] {
       if (b.type === "text" && b.text?.trim()) {
         const prev = items[items.length - 1];
         // consecutive text blocks read as one reply
-        if (prev?.kind === "assistant") prev.text += `\n\n${b.text}`;
-        else items.push({ kind: "assistant", id, text: b.text });
+        if (prev?.kind === "assistant") { prev.text += `\n\n${b.text}`; prev.ts = ts ?? prev.ts; }
+        else items.push({ kind: "assistant", id, text: b.text, ts, model });
       } else if (b.type === "tool_use" && b.name) {
         const input = b.input ?? {};
         const item: Extract<ChatItem, { kind: "tool" }> = {
@@ -148,6 +153,8 @@ export function parseTranscript(lines: string[]): ChatItem[] {
           detail: b.name === "Bash" && typeof input.command === "string"
             ? input.command
             : JSON.stringify(input, null, 2).slice(0, RESULT_CAP),
+          ts,
+          model,
         };
         if (b.id) tools.set(b.id, item);
         items.push(item);
@@ -156,4 +163,63 @@ export function parseTranscript(lines: string[]): ChatItem[] {
     });
   }
   return items;
+}
+
+// ---- render grouping -------------------------------------------------------
+
+/** "claude-opus-4-8" → "Opus 4.8", "claude-sonnet-5" → "Sonnet 5" */
+export function modelLabel(model?: string): string {
+  if (!model) return "Claude";
+  const m = model.match(/claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-|$)/i);
+  if (!m) return "Claude";
+  const fam = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+  return m[3] ? `${fam} ${m[2]}.${m[3]}` : `${fam} ${m[2]}`;
+}
+
+export type ChatRow =
+  | { kind: "item"; item: ChatItem }
+  | { kind: "tools"; id: string; tools: Extract<ChatItem, { kind: "tool" }>[] }
+  | { kind: "worked"; id: string; model: string; seconds: number };
+
+/** Group runs of tool calls, and close each finished turn (user → reply)
+ *  with a "<model> worked for Ns" line. The last turn stays open while the
+ *  session is still working. */
+export function toRows(items: ChatItem[], working: boolean): ChatRow[] {
+  const rows: ChatRow[] = [];
+  let turnStart: number | undefined;
+  let lastTs: number | undefined;
+  let model: string | undefined;
+  let hasReply = false;
+
+  const closeTurn = (id: string) => {
+    if (hasReply && turnStart !== undefined && lastTs !== undefined && lastTs >= turnStart) {
+      rows.push({ kind: "worked", id: `w-${id}`, model: modelLabel(model), seconds: Math.round((lastTs - turnStart) / 1000) });
+    }
+    hasReply = false;
+    model = undefined;
+  };
+
+  for (const it of items) {
+    if (it.kind === "user") {
+      closeTurn(it.id);
+      turnStart = it.ts;
+      lastTs = it.ts;
+      rows.push({ kind: "item", item: it });
+      continue;
+    }
+    if (it.kind === "assistant" || it.kind === "tool") {
+      hasReply = true;
+      model = it.model ?? model;
+      if (it.ts !== undefined) lastTs = it.ts;
+    }
+    if (it.kind === "tool") {
+      const prev = rows[rows.length - 1];
+      if (prev?.kind === "tools") prev.tools.push(it);
+      else rows.push({ kind: "tools", id: `g-${it.id}`, tools: [it] });
+      continue;
+    }
+    rows.push({ kind: "item", item: it });
+  }
+  if (!working) closeTurn("end");
+  return rows;
 }
