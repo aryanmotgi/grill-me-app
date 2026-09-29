@@ -376,7 +376,8 @@ export function SessionList() {
     <aside data-tour="sessions" className="w-full h-full bg-panel flex flex-col overflow-hidden">
       <div className="px-2 pt-1 pb-2 flex-none">
         <input
-          className="w-full bg-raised hairline rounded-md px-2.5 py-1.5 text-[11px] outline-none focus:border-accent placeholder:text-faint"
+          id="session-search"
+          className="w-full bg-raised/60 hairline rounded-lg px-3 h-8 text-[12.5px] outline-none focus:border-accent placeholder:text-faint"
           placeholder="Search sessions…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

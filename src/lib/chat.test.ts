@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTranscript, toolSummary, userText } from "./chat";
+import { modelLabel, parseTranscript, toRows, toolSummary, userText } from "./chat";
 
 const L = (o: unknown) => JSON.stringify(o);
 
@@ -18,7 +18,7 @@ describe("toolSummary", () => {
   it("summarizes common tools", () => {
     expect(toolSummary("Read", { file_path: "/a/b/App.tsx" })).toBe("Read App.tsx");
     expect(toolSummary("Bash", { command: "npm test\nmore" })).toBe("Ran npm test");
-    expect(toolSummary("Bash", { command: "x", description: "Run tests" })).toBe("Ran Run tests");
+    expect(toolSummary("Bash", { command: "x", description: "Run tests" })).toBe("Run tests");
     expect(toolSummary("mcp__github__create_pr", {})).toBe("create_pr");
   });
 });
@@ -61,5 +61,34 @@ describe("parseTranscript", () => {
   it("counts pasted images on user messages", () => {
     const it = parseTranscript([L({ type: "user", uuid: "u", message: { content: [{ type: "text", text: "see" }, { type: "image" }] } })]);
     expect(it[0]).toMatchObject({ kind: "user", text: "see", images: 1 });
+  });
+});
+
+describe("modelLabel", () => {
+  it("prettifies model ids", () => {
+    expect(modelLabel("claude-opus-4-8")).toBe("Opus 4.8");
+    expect(modelLabel("claude-sonnet-5")).toBe("Sonnet 5");
+    expect(modelLabel("claude-haiku-4-5-20251001")).toBe("Haiku 4.5");
+    expect(modelLabel(undefined)).toBe("Claude");
+  });
+});
+
+describe("toRows", () => {
+  const t = (s: number) => `2026-09-28T10:00:${String(s).padStart(2, "0")}Z`;
+  const lines = [
+    L({ type: "user", uuid: "u1", timestamp: t(0), message: { content: "go" } }),
+    L({ type: "assistant", uuid: "a1", timestamp: t(2), message: { model: "claude-opus-4-8", content: [{ type: "tool_use", id: "x", name: "Read", input: {} }] } }),
+    L({ type: "assistant", uuid: "a2", timestamp: t(4), message: { model: "claude-opus-4-8", content: [{ type: "tool_use", id: "y", name: "Bash", input: { command: "ls" } }] } }),
+    L({ type: "assistant", uuid: "a3", timestamp: t(17), message: { model: "claude-opus-4-8", content: [{ type: "text", text: "done" }] } }),
+  ];
+  it("groups tool runs and closes finished turns with worked-for", () => {
+    const rows = toRows(parseTranscript(lines), false);
+    expect(rows.map((r) => r.kind)).toEqual(["item", "tools", "item", "worked"]);
+    const g = rows[1];
+    expect(g.kind === "tools" && g.tools.length).toBe(2);
+    expect(rows[3]).toMatchObject({ kind: "worked", model: "Opus 4.8", seconds: 17 });
+  });
+  it("leaves the live turn open while working", () => {
+    expect(toRows(parseTranscript(lines), true).some((r) => r.kind === "worked")).toBe(false);
   });
 });

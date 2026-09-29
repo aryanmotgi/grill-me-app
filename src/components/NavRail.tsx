@@ -64,7 +64,7 @@ export function NavRail() {
   return (
     <nav className="w-[220px] flex-none bg-panel border-r border-line flex flex-col overflow-hidden">
       {/* drag strip clears the overlay traffic lights */}
-      <div data-tauri-drag-region className="h-10 flex-none flex items-center justify-end pr-3">
+      <div data-tauri-drag-region className="h-12 flex-none flex items-center justify-end pr-3">
         {/* brand sits right of the traffic lights; clicks pass through to drag */}
         <span className="pointer-events-none"><GrillWordmark /></span>
       </div>
