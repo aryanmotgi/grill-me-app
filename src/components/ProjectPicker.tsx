@@ -148,7 +148,7 @@ export function ProjectPicker() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-bg flex items-center justify-center overflow-y-auto py-8">
+    <div className="fixed inset-0 z-50 ground flex items-center justify-center overflow-y-auto py-8">
       <div className="w-[560px] flex flex-col gap-5">
         <div className="text-center">
           <div className="font-display font-bold text-[24px] tracking-[0.1em] text-accent">GRILL ME</div>
