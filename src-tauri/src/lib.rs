@@ -4451,6 +4451,7 @@ pub fn run() {
             automations::ship_overview,
             automations::dev_servers,
             automations::detect_dev_cmd,
+            automations::plan_usage,
             claude_panel::brainstorm_stop,
             claude_panel::brainstorm_history,
             claude_panel::claudeai_show,

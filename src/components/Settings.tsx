@@ -314,6 +314,9 @@ export function SettingsModal() {
                         onClick={() => setAppSetting("background", b)}>{b}</button>
                     ))}
                   </Row>
+                  <Row label="Session details strip" hint="Show cpu, memory and token counts under each session">
+                    <Toggle checked={appSettings.showVitals === true} onChange={(v) => setAppSetting("showVitals", v)} />
+                  </Row>
                   <Row label="Backup & restore" hint="Move your preferences to another machine">
                     <button className="btn" onClick={exportSettings}><Icon name="download" size={10} /> export</button>
                     <label className="btn cursor-pointer">

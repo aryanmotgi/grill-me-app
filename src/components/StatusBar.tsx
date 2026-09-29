@@ -5,6 +5,7 @@ import { AgentLogo } from "./AgentLogo";
 import { GrillFlame } from "./GrillMark";
 import { Icon } from "./Icon";
 import { BridgeButton } from "./BridgePanel";
+import { STALE_SECS, untilLabel, usageTone, type PlanUsage } from "../lib/usage";
 
 // ---------------------------------------------------------------------------
 // Monocode-style bottom status bar for the center column, with the Grill Me
@@ -109,6 +110,35 @@ function HackClock() {
   );
 }
 
+/** Claude plan usage like Monocode's: session % · time to reset · week %. */
+function PlanMeter({ fallback }: { fallback: React.ReactNode }) {
+  const [u, setU] = useState<PlanUsage | null>(null);
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let alive = true;
+    const load = () => void import("@tauri-apps/api/core").then(({ invoke }) =>
+      invoke<PlanUsage | null>("plan_usage").then((v) => { if (alive) setU(v); }).catch(() => {}));
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  if (!u || u.session.pct === null) return <>{fallback}</>;
+  const stale = u.ageSecs > STALE_SECS;
+  const tone = (p: number | null) => ({ ok: "", warn: "text-warn", hot: "text-danger" })[usageTone(p)];
+  const sPct = Math.round(u.session.pct ?? 0);
+  return (
+    <span className={`flex items-center gap-2 ${stale ? "opacity-50" : ""}`}
+      title={`Claude plan usage — session (5h) ${sPct}%, week ${Math.round(u.week.pct ?? 0)}%${stale ? `\nLast updated ${Math.round(u.ageSecs / 60)} min ago — refreshes while a Claude Code session runs` : ""}`}>
+      <span className="meter w-12"><div className={usageTone(u.session.pct) === "ok" ? "" : "hot"} style={{ width: `${Math.min(100, sPct)}%`, background: usageTone(u.session.pct) === "ok" ? "var(--dim)" : undefined }} /></span>
+      <span className={`num ${tone(u.session.pct)}`}>{sPct}%</span>
+      {untilLabel(u.session.resetsAt) ? <span className="text-faint num">{untilLabel(u.session.resetsAt)}</span> : null}
+      <span className="text-faint">·</span>
+      <span className={`num ${tone(u.week.pct)}`}>{Math.round(u.week.pct ?? 0)}%</span>
+      {untilLabel(u.week.resetsAt) ? <span className="text-faint num">{untilLabel(u.week.resetsAt)}</span> : null}
+    </span>
+  );
+}
+
 export function StatusBar() {
   const teammates = useApp((s) => s.teammates);
   const members = useApp((s) => s.members);
@@ -129,10 +159,12 @@ export function StatusBar() {
   return (
     <div className="h-8 flex-none flex items-center gap-2.5 px-3 border-t border-line text-[11.5px] text-dim demo-hide">
       <AgentLogo agent={agent} size={13} />
+      <PlanMeter fallback={<>
       <span className="meter w-12" title={`Today's tokens vs your soft budget (${compact(cap)})`}>
         <div className={pct >= 100 ? "hot" : ""} style={{ width: `${pct}%`, background: pct >= 80 ? undefined : "var(--dim)" }} />
       </span>
       <span className="num" title={`${compact(budget.spent)} tokens today`}>{pct}%</span>
+      </>} />
 
       <span className="w-px h-3.5 bg-line" />
       <span className="flex items-center gap-1.5" title="Sessions producing output right now">
