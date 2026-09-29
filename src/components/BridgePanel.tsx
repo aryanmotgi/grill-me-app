@@ -151,7 +151,7 @@ export function BridgeButton() {
       title={connected ? "Claude bridge — Claude app ⇄ Claude Code" : "Claude bridge — not connected yet"}
       onClick={() => setOpen(!open)}
     >
-      <Icon name="swap" size={12} /> Bridge
+      <Icon name="swap" size={12} /> <span className="sb-wide">Bridge</span>
       {count ? <span className="num">{count}</span> : null}
     </button>
   );

@@ -842,3 +842,10 @@ select.btn, .btn[type] {
   .chat-pulse { display: inline-flex; animation: chatPulse 1.6s ease-in-out infinite; }
   @keyframes chatPulse { 50% { opacity: 0.35; } }
 }
+
+/* status bar: never wrap; drop secondary labels when the center column is narrow */
+.statusbar { container-type: inline-size; }
+.statusbar > * { flex-shrink: 0; }
+@container (max-width: 820px) {
+  .sb-wide { display: none; }
+}
