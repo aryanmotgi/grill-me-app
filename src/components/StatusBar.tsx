@@ -53,7 +53,9 @@ function HackClock() {
     for (const t of [180, 60, 30, 15, 0]) {
       const at = t * 60_000;
       if (prev > at && left <= at) {
-        useApp.getState().toast(t === 0 ? "⏰ Time's up — ship what works" : `⏰ ${clockLabel(left)} left — open Brain → What should we cut?`, "warn");
+        const msg = t === 0 ? "⏰ Time's up — ship what works" : `⏰ ${clockLabel(left)} left — open Brain → What should we cut?`;
+        useApp.getState().toast(msg, "warn");
+        void import("./Automations").then(({ alertEverywhere }) => alertEverywhere("Hack clock", msg));
         break;
       }
     }

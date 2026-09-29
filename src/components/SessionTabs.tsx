@@ -4,6 +4,7 @@ import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { GrillFlame } from "./GrillMark";
 import { EditableTitle } from "./EditableTitle";
+import { TestBadge } from "./Automations";
 
 // ---------------------------------------------------------------------------
 // Monocode-style top tab strip: every open session is a two-line tab
@@ -45,6 +46,7 @@ export function SessionTabs() {
             >
               <AgentLogo agent={agent} size={15} />
               <EditableTitle mate={t} className="text-[13.5px] min-w-0 flex-1 text-left" />
+              <TestBadge id={t.id} />
               {t.status !== "idle" ? <span className={`status-dot ${t.status} flex-none`} style={{ width: 6, height: 6 }} aria-hidden /> : null}
             </button>
           );

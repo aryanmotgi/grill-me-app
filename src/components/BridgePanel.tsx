@@ -84,7 +84,10 @@ async function runBrainCheck(memberId: string) {
     "brain_check", { memberId },
   ).catch(() => null);
   if (!r) return;
-  if (r.mismatch) st.toast(`⚠ ${r.session} may be off-plan: ${r.reason}`, "warn");
+  if (r.mismatch) {
+    st.toast(`⚠ ${r.session} may be off-plan: ${r.reason}`, "warn");
+    void import("./Automations").then(({ alertEverywhere }) => alertEverywhere("Off-plan work", `${r.session}: ${r.reason}`));
+  }
   const done = new Set(r.doneTaskIds);
   const started = new Set(r.startedTaskIds);
   const changed: Task[] = useApp.getState().tasks.flatMap((t): Task[] => {
