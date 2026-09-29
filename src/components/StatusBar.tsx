@@ -82,7 +82,7 @@ function HackClock() {
         onClick={() => setOpen(!open)}
       >
         <GrillFlame px={1.25} dim={!endsAt} />
-        {endsAt ? <span className="num">{clockLabel(left)} left</span> : "Hack clock"}
+        {endsAt ? <span className="num">{clockLabel(left)} left</span> : <span className="sb-wide">Hack clock</span>}
       </button>
       {open ? (
         <>
@@ -134,7 +134,7 @@ function PlanMeter({ fallback }: { fallback: React.ReactNode }) {
       {untilLabel(u.session.resetsAt) ? <span className="text-faint num">{untilLabel(u.session.resetsAt)}</span> : null}
       <span className="text-faint">·</span>
       <span className={`num ${tone(u.week.pct)}`}>{Math.round(u.week.pct ?? 0)}%</span>
-      {untilLabel(u.week.resetsAt) ? <span className="text-faint num">{untilLabel(u.week.resetsAt)}</span> : null}
+      {untilLabel(u.week.resetsAt) ? <span className="text-faint num sb-wide">{untilLabel(u.week.resetsAt)}</span> : null}
     </span>
   );
 }
@@ -157,7 +157,7 @@ export function StatusBar() {
   const waiting = attentionSessions(teammates);
 
   return (
-    <div className="h-8 flex-none flex items-center gap-2.5 px-3 border-t border-line text-[11.5px] text-dim demo-hide">
+    <div className="statusbar h-8 flex-none flex items-center gap-2.5 px-3 border-t border-line text-[11.5px] text-dim demo-hide whitespace-nowrap overflow-hidden">
       <AgentLogo agent={agent} size={13} />
       <PlanMeter fallback={<>
       <span className="meter w-12" title={`Today's tokens vs your soft budget (${compact(cap)})`}>
@@ -192,7 +192,7 @@ export function StatusBar() {
       <button className="flex items-center gap-1.5 px-2 py-0.5 rounded-md cursor-pointer transition-colors hover:bg-raised hover:text-ink"
         title="Ship queue — ship every ready session at once"
         onClick={() => void import("./ShipQueue").then(({ useShipQueue }) => useShipQueue.getState().setOpen(true))}>
-        <Icon name="push" size={12} /> Ship
+        <Icon name="push" size={12} /> <span className="sb-wide">Ship</span>
       </button>
       <BridgeButton />
       <HackClock />
@@ -203,7 +203,7 @@ export function StatusBar() {
         title="Toggle terminal (⌘`)"
         onClick={toggleBottomTerm}
       >
-        <Icon name="terminal" size={12} /> Terminal
+        <Icon name="terminal" size={12} /> <span className="sb-wide">Terminal</span>
       </button>
     </div>
   );
