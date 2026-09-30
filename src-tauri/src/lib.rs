@@ -8,6 +8,7 @@ mod claude_panel;
 mod automations;
 mod tailscale;
 mod remote;
+mod doctor;
 
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.
@@ -4408,6 +4409,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            doctor::system_doctor,
             team_config,
             git_state,
             git_state_cached,

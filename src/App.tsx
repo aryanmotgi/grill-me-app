@@ -45,6 +45,7 @@ import { NewSession } from "./components/NewSession";
 import { ClaudeDock } from "./components/ClaudePanel";
 import { togglePanel, useLayout } from "./components/Dock";
 import { useRemoteAutostart } from "./components/ClaudeConnect";
+import { useDoctorOnLaunch } from "./components/DoctorTab";
 import { leftEdgePanel, panelsOn } from "./lib/layout";
 import { BrainPage, useWelcomeBack } from "./components/BrainPage";
 import { AutomationsPage, useAutomations } from "./components/Automations";
@@ -316,6 +317,7 @@ export default function App() {
   useWelcomeBack();
   useAutomations();
   useRemoteAutostart();
+  useDoctorOnLaunch();
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);

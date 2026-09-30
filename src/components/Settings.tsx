@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { DoctorTab } from "./DoctorTab";
 import { Icon } from "./Icon";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useApp } from "../store";
@@ -14,9 +15,10 @@ import { CHECKPOINT_MIN_MINUTES, checkpointIntervalMinutes, clampCheckpointInter
 // Phase 2 Settings redesign; every prior toggle/action is preserved.
 // ---------------------------------------------------------------------------
 
-type Tab = "team" | "appearance" | "terminal" | "notifications" | "safety" | "checkpoints" | "panels" | "shortcuts";
+type Tab = "setup" | "team" | "appearance" | "terminal" | "notifications" | "safety" | "checkpoints" | "panels" | "shortcuts";
 
 const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
+  { id: "setup", label: "Setup check", blurb: "What this Mac has, and what it's missing", icon: "check" },
   { id: "team", label: "Team", blurb: "Who's on this project and where their code lives", icon: "team" },
   { id: "appearance", label: "Appearance", blurb: "App-wide colors and density", icon: "palette" },
   { id: "terminal", label: "Terminal", blurb: "How the embedded Claude terminals look", icon: "terminal" },
@@ -30,6 +32,7 @@ const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
 // Searchable keywords per tab — powers the rail match indicator and the
 // "no matches here" hint. Row-level filtering below is automatic via context.
 const SEARCH_INDEX: Record<Tab, string[]> = {
+  setup: ["setup", "doctor", "install", "missing", "node", "claude", "git", "gh", "github", "tailscale", "health"],
   team: ["team", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
   appearance: ["theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "backup", "restore", "export", "import"],
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
@@ -537,6 +540,8 @@ export function SettingsModal() {
               ) : null}
 
               {tab === "safety" ? <SafetyTab toast={toast} query={q} /> : null}
+
+              {tab === "setup" ? <DoctorTab /> : null}
 
               {tab === "checkpoints" ? <CheckpointsTab query={q} /> : null}
 
