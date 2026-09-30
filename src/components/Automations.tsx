@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { create } from "zustand";
 import { useApp, ptyIdFor } from "../store";
 import { notificationsSilenced } from "../lib/quietHours";
 import { deliverBriefWhenReady } from "../lib/ptyReady";
@@ -18,9 +17,8 @@ import { Icon } from "./Icon";
 
 const native = () => "__TAURI_INTERNALS__" in window;
 
-export interface TestResult { ok: boolean; ms: number; tail: string; cmd: string; at: number; sig: string; running?: boolean }
-
-export const useTests = create<{ results: Record<string, TestResult> }>(() => ({ results: {} }));
+import { useTests, type TestResult } from "../lib/testsStore";
+export { useTests, type TestResult };
 
 const on = (id: AutomationId) => automationOn(useApp.getState().appSettings, id);
 

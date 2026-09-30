@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useApp } from "../store";
 import { sessionTitle } from "../lib/sessionTitle";
-import { buildWires, sessionMarks, sessionSentence, type FlowEnd, type Wire } from "../lib/flow";
+import { buildWires, sessionMarks, sessionSentence, teamSessionsByMember, type FlowEnd, type Wire } from "../lib/flow";
 import { bridgeApply, bridgeResolve, bridgeSend, useBridge } from "./BridgePanel";
 import { useRemote } from "./ClaudeConnect";
 import { useTests } from "./Automations";
@@ -119,6 +119,7 @@ export function FlowPage() {
   const room = useApp((s) => s.room);
   const roomSelfId = useApp((s) => s.roomSelf?.memberId);
   const roomPresence = useApp((s) => s.roomPresence);
+  const teamSessions = useApp((s) => s.teamSessions);
   const setView = useApp((s) => s.setView);
   const setActive = useApp((s) => s.setActive);
   const state = useBridge((b) => b.state);
@@ -139,6 +140,7 @@ export function FlowPage() {
   const wires = useMemo(() => buildWires(state, titleOf), [state, teammates, titles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mates = room ? room.members.filter((m) => m.id !== roomSelfId) : [];
+  const mateSessions = useMemo(() => teamSessionsByMember(teamSessions, Date.now()), [teamSessions]);
   const openTasks = tasks.filter((t) => t.status !== "done").length;
   const anyClaude = !!(conn?.desktop || conn?.code || remote?.url);
 
@@ -226,8 +228,27 @@ export function FlowPage() {
                       <span className="text-[13px] font-medium text-ink flex-1 truncate">{m.name}</span>
                       <span className="text-[11px] text-faint">{online ? p?.status ?? "online" : "offline"}</span>
                     </div>
-                    <div className="text-[11.5px] text-dim truncate">{p?.task || (online ? "no task picked" : "last seen a while ago")}</div>
-                    {p?.file ? <div className="font-mono text-[11px] text-faint truncate">{p.file}</div> : null}
+                    {(mateSessions.get(m.id) ?? []).length ? (
+                      <div className="flex flex-col divide-y divide-line/60 -mx-1">
+                        {mateSessions.get(m.id)!.map((d) => (
+                          <div key={d.id} className="flex items-start gap-2 px-1 py-1.5">
+                            <span className={`status-dot ${d.status} mt-1.5 flex-none`} style={{ width: 7, height: 7 }} aria-hidden />
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-center gap-2">
+                                <span className="text-[12.5px] text-ink truncate">{d.title}</span>
+                                {d.tests === null ? null : <span className={`text-[11px] flex-none ${d.tests ? "text-ok" : "text-danger"}`}>{d.tests ? "tests ✓" : "tests ✗"}</span>}
+                              </span>
+                              <span className="block text-[11px] text-dim truncate">{d.sentence} · <span className="font-mono text-faint">{d.branch}</span></span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-[11.5px] text-dim truncate">{p?.task || (online ? "no sessions shared yet" : "last seen a while ago")}</div>
+                        {p?.file ? <div className="font-mono text-[11px] text-faint truncate">{p.file}</div> : null}
+                      </>
+                    )}
                   </div>
                 );
               })}

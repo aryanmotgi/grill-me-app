@@ -34,7 +34,9 @@ pub const ROOM_PORT: u16 = 4518;
 /// "done"). Same id-keyed arrays the local ~/.grillme merge writer uses.
 /// brain.json is the team half of the shared brain (goal + notes): an
 /// append-only list, so the id merge never has to resolve an edit conflict.
-pub const SYNC_FILES: &[&str] = &["tasks.json", "messages.json", "decisions.json", "brain.json"];
+/// team-sessions.json: each member's session digest (title/status/branch/tests).
+/// team-bridge.json: hand-offs, questions and answers routed between members.
+pub const SYNC_FILES: &[&str] = &["tasks.json", "messages.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json"];
 
 /// Per-file tombstone cap — a bounded ring so a long session can't grow the
 /// removed-id set without limit. Deletions older than this many removals may

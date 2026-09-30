@@ -113,4 +113,23 @@ describe("grill-me MCP server", () => {
     expect(l).toContain("Rouge Hack (id: rouge)");
     expect(l).not.toContain(tmpdir()); // project paths never leave the Mac
   });
+
+  it("team_status lists each teammate's shared sessions", async () => {
+    const [, res] = await rpc([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "team_status", arguments: {} } },
+    ], (home) => {
+      const g = join(home, ".grillme");
+      mkdirSync(g, { recursive: true });
+      writeFileSync(join(g, "settings.json"), JSON.stringify({ appMode: "team" }));
+      writeFileSync(join(g, "room.json"), JSON.stringify({ members: [{ id: "m1", name: "Maya" }, { id: "m2", name: "Devon", presence: { status: "idle" } }] }));
+      writeFileSync(join(g, "team-sessions.json"), JSON.stringify([
+        { id: "m1:api", member: "m1", memberName: "Maya", session: "api", title: "API", status: "working", sentence: "working in api.ts", branch: "feat/api", tests: false, ts: Date.now() },
+      ]));
+    });
+    const text = (res.result as { content: { text: string }[] }).content[0].text;
+    expect(text).toContain("Maya: 1 session");
+    expect(text).toContain('"API" working (working in api.ts) on feat/api · TESTS FAILING');
+    expect(text).toContain("Devon: idle");
+  });
 });
