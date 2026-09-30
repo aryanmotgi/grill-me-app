@@ -1923,15 +1923,22 @@ fn sh_quote(s: &str) -> String {
 }
 
 /// Claude Code hooks that report exact session state into events.jsonl.
+///
+/// Everything goes in `.claude/settings.local.json` — the per-machine file
+/// Claude Code never expects to be committed — because every hook embeds
+/// this Mac's absolute paths. (Older builds wrote the shared settings.json,
+/// which leaked those paths into teammates' clones; `strip_ours` cleans
+/// that up.) The user's own hooks in either file are never touched.
 #[tauri::command]
 fn install_hooks(repo_path: String, member_id: String) -> Result<String, String> {
     validate_member_id(&member_id)?;
-    if !PathBuf::from(&repo_path).join(".git").exists() {
+    let repo = PathBuf::from(&repo_path);
+    if !repo.join(".git").exists() {
         return Err("not a git worktree — skipping hook install".into());
     }
-    let dir = PathBuf::from(&repo_path).join(".claude");
+    let dir = repo.join(".claude");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join("settings.json");
+    let path = dir.join("settings.local.json");
     let mut root: serde_json::Value = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -1950,41 +1957,64 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
         );
         format!("sh -c {}", sh_quote(&script))
     };
-    let mk = |event: &str| {
-        serde_json::json!([{ "hooks": [{ "type": "command", "command": hook_cmd(event) }] }])
+    let cmd = |command: String| serde_json::json!({ "hooks": [{ "type": "command", "command": command }] });
+    let helper_hook = |mode: &str, matcher: &str| {
+        serde_json::json!({ "matcher": matcher, "hooks": [{ "type": "command",
+            "command": format!("python3 {} {mode} {member_id} {}", sh_quote(&helper_s), sh_quote(&proj_s)) }] })
     };
-    let hooks = root
-        .as_object_mut()
-        .ok_or("bad settings.json")?
-        .entry("hooks")
-        .or_insert_with(|| serde_json::json!({}));
-    let obj = hooks.as_object_mut().ok_or("bad hooks")?;
-    obj.insert("Notification".into(), mk("notification"));
-    obj.insert("Stop".into(), mk("stop"));
-    obj.insert("UserPromptSubmit".into(), mk("prompt"));
+
+    let mut ours: Vec<(&str, serde_json::Value)> = vec![
+        ("Notification", cmd(hook_cmd("notification"))),
+        ("Stop", cmd(hook_cmd("stop"))),
+        ("UserPromptSubmit", cmd(hook_cmd("prompt"))),
+        ("PreToolUse", helper_hook("pre", "Bash")),
+        ("PostToolUse", helper_hook("post", "Bash|Read|Edit|Write")),
+    ];
     // shared brain: every prompt (and session start) pulls in what's new from
     // the brainstorm side + other sessions — stdout becomes context
     if let Some(sync) = bridge::sync_hook_command(&member_id, &proj_s) {
         bridge::install();
-        let entry = serde_json::json!({ "hooks": [{ "type": "command", "command": sync }] });
-        if let Some(arr) = obj.get_mut("UserPromptSubmit").and_then(|v| v.as_array_mut()) {
-            arr.push(entry.clone());
-        }
-        obj.insert("SessionStart".into(), serde_json::json!([entry]));
+        ours.push(("UserPromptSubmit", cmd(sync.clone())));
+        ours.push(("SessionStart", cmd(sync)));
     }
-    let helper_hook = |mode: &str, matcher: &str| {
-        serde_json::json!([{ "matcher": matcher, "hooks": [{ "type": "command",
-            "command": format!("python3 {} {mode} {member_id} {}", sh_quote(&helper_s), sh_quote(&proj_s)) }] }])
-    };
-    obj.insert("PreToolUse".into(), helper_hook("pre", "Bash"));
-    obj.insert("PostToolUse".into(), helper_hook("post", "Bash|Read|Edit|Write"));
+    // delegation playbook, delivered as session context instead of edits to
+    // the repo's CLAUDE.md
+    let playbook = install_delegation(&repo)?;
+    ours.push(("SessionStart", cmd(format!("cat {}", sh_quote(&playbook.to_string_lossy())))));
+
+    strip_ours(&mut root, &proj_s);
+    let hooks = root
+        .as_object_mut()
+        .ok_or("bad settings.local.json")?
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}));
+    let obj = hooks.as_object_mut().ok_or("bad hooks")?;
+    for (event, entry) in ours {
+        if let Some(arr) = obj.entry(event).or_insert_with(|| serde_json::json!([])).as_array_mut() {
+            arr.push(entry);
+        }
+    }
     let next = serde_json::to_string_pretty(&root).unwrap();
+
+    // older builds wrote our hooks into the shared settings.json — take them
+    // back out so sessions don't run everything twice and teammates don't
+    // inherit this Mac's paths
+    let shared = dir.join("settings.json");
+    if let Some(mut cur) = std::fs::read_to_string(&shared).ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) {
+        if strip_ours(&mut cur, &proj_s) {
+            if cur.as_object().is_some_and(|o| o.is_empty()) && committed(&repo, ".claude/settings.json").is_none() {
+                let _ = std::fs::remove_file(&shared);
+            } else {
+                let _ = std::fs::write(&shared, serde_json::to_string_pretty(&cur).unwrap());
+            }
+        }
+    }
+
     // the /ship slash command the review-approve flow injects must actually
     // exist in the member repo — install it alongside the hooks
-    install_ship_command(&PathBuf::from(&repo_path))?;
-    // multi-agent delegation playbook (DELEGATION.md + CLAUDE.md import) —
-    // same per-repo path, so every project and worktree gets it by default
-    install_delegation(&PathBuf::from(&repo_path))?;
+    install_ship_command(&repo)?;
+    // keep our per-machine files out of `git add -A` (the /ship flow runs it)
+    git_exclude(&repo, &[".claude/settings.local.json", ".claude/commands/ship.md"]);
     // idempotent: rewriting identical content still bumps mtime and can
     // trigger watcher/vite reload storms — skip when unchanged
     if std::fs::read_to_string(&path).map(|cur| cur == next).unwrap_or(false) {
@@ -1992,6 +2022,52 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     }
     std::fs::write(&path, next).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Remove every hook entry Grill Me installed (any command that references
+/// our data dir), dropping emptied events and an emptied `hooks` object.
+/// Returns true when something was removed. The user's own hooks stay.
+fn strip_ours(root: &mut serde_json::Value, grillme: &str) -> bool {
+    let Some(hooks) = root.get_mut("hooks").and_then(|h| h.as_object_mut()) else { return false };
+    let mut changed = false;
+    for arr in hooks.values_mut().filter_map(|v| v.as_array_mut()) {
+        let before = arr.len();
+        arr.retain(|entry| {
+            !entry["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| h["command"].as_str().is_some_and(|c| c.contains(grillme))))
+        });
+        changed |= arr.len() != before;
+    }
+    hooks.retain(|_, v| !v.as_array().is_some_and(|a| a.is_empty()));
+    if hooks.is_empty() {
+        root.as_object_mut().map(|o| o.remove("hooks"));
+    }
+    changed
+}
+
+/// The file's content at HEAD, if the repo has it committed.
+fn committed(repo: &Path, rel: &str) -> Option<String> {
+    let out = Command::new("git").arg("-C").arg(repo).args(["show", &format!("HEAD:{rel}")]).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Add patterns to the repo's local exclude file (.git/info/exclude in the
+/// COMMON git dir, so worktrees share it). Never touches .gitignore.
+fn git_exclude(repo: &Path, patterns: &[&str]) {
+    let Ok(out) = Command::new("git").arg("-C").arg(repo).args(["rev-parse", "--git-common-dir"]).output() else { return };
+    if !out.status.success() {
+        return;
+    }
+    let common = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    let common = if common.is_absolute() { common } else { repo.join(common) };
+    let path = common.join("info").join("exclude");
+    let cur = std::fs::read_to_string(&path).unwrap_or_default();
+    let missing: Vec<&str> = patterns.iter().copied().filter(|p| !cur.lines().any(|l| l.trim() == *p)).collect();
+    if missing.is_empty() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(common.join("info"));
+    let sep = if cur.is_empty() || cur.ends_with('\n') { "" } else { "\n" };
+    let _ = std::fs::write(&path, format!("{cur}{sep}# Grill Me (per-machine)\n{}\n", missing.join("\n")));
 }
 
 // ---------------------------------------------------------------------------
@@ -2065,14 +2141,14 @@ fn install_ship_command(repo_path: &Path) -> Result<ShipInstall, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-agent delegation playbook: DELEGATION.md at the repo root teaches the
-// Claude Code session when to shell out to Codex / Cursor as subprocess tools
-// and when to handle work itself. Claude Code auto-loads it through an
-// @DELEGATION.md import appended to CLAUDE.md. Installed idempotently per
-// member repo alongside the hooks and /ship — every project and spawned
-// worktree gets it, Solo or Team. A user who edits the file and removes the
-// grillme marker owns it from then on; a template at
-// ~/.grillme/delegation.md overrides the built-in default for new installs.
+// Multi-agent delegation playbook: teaches the Claude Code session when to
+// shell out to Codex / Cursor as subprocess tools and when to handle work
+// itself. It lives in ~/.grillme/bin/delegation-playbook.md and reaches every
+// session through a SessionStart hook (stdout becomes context) — the repo's
+// own files are never edited. A template at ~/.grillme/delegation.md (with
+// the marker) overrides the built-in default. Older builds wrote
+// DELEGATION.md + an @DELEGATION.md import into CLAUDE.md; those are removed
+// here unless the user committed them.
 // ---------------------------------------------------------------------------
 
 const DELEGATION_MARKER: &str = "<!-- grillme:delegation-playbook -->";
@@ -2153,44 +2229,46 @@ template at `~/.grillme/delegation.md` (keeping the marker) overrides the
 default for all projects.*
 "#;
 
-/// Idempotently install DELEGATION.md at the repo root and ensure CLAUDE.md
-/// imports it. Same contract as install_ship_command: content-compared (no
-/// mtime churn), marker-guarded (a user-edited, marker-less DELEGATION.md is
-/// never touched), and ~/.grillme/delegation.md overrides the built-in
-/// template when present.
-fn install_delegation(repo_path: &Path) -> Result<ShipInstall, String> {
+/// Write the effective playbook under ~/.grillme and clean up the repo files
+/// older builds left behind. Returns the playbook path for the hook.
+fn install_delegation(repo_path: &Path) -> Result<PathBuf, String> {
     let template = std::fs::read_to_string(grillme_dir().join("delegation.md"))
         .ok()
         .filter(|s| s.contains(DELEGATION_MARKER))
         .unwrap_or_else(|| DELEGATION_MD.to_string());
-    let path = repo_path.join("DELEGATION.md");
-    let wrote = match std::fs::read_to_string(&path) {
-        Ok(cur) if cur == template => ShipInstall::Unchanged,
-        Ok(cur) if !cur.contains(DELEGATION_MARKER) => ShipInstall::SkippedUserFile,
-        _ => {
-            std::fs::write(&path, &template).map_err(|e| e.to_string())?;
-            ShipInstall::Installed
-        }
-    };
-    // wire the auto-load: CLAUDE.md must import the playbook. Appended once;
-    // a repo without CLAUDE.md gets a minimal one.
-    let claude_md = repo_path.join("CLAUDE.md");
-    match std::fs::read_to_string(&claude_md) {
-        Ok(cur) if cur.contains(DELEGATION_IMPORT) => {}
-        Ok(cur) => {
-            let sep = if cur.ends_with('\n') { "" } else { "\n" };
-            std::fs::write(
-                &claude_md,
-                format!("{cur}{sep}\n{DELEGATION_IMPORT}\n"),
-            )
-            .map_err(|e| e.to_string())?;
-        }
-        Err(_) => {
-            std::fs::write(&claude_md, format!("{DELEGATION_IMPORT}\n"))
-                .map_err(|e| e.to_string())?;
-        }
+    let bin = grillme_dir().join("bin");
+    std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
+    let path = bin.join("delegation-playbook.md");
+    if std::fs::read_to_string(&path).map(|cur| cur != template).unwrap_or(true) {
+        std::fs::write(&path, &template).map_err(|e| e.to_string())?;
     }
-    Ok(wrote)
+    cleanup_legacy_delegation(repo_path);
+    Ok(path)
+}
+
+/// Remove the DELEGATION.md / CLAUDE.md import older builds wrote — only
+/// what we wrote and only if it was never committed (committed files are
+/// the user's call).
+fn cleanup_legacy_delegation(repo: &Path) {
+    let playbook = repo.join("DELEGATION.md");
+    if std::fs::read_to_string(&playbook).is_ok_and(|c| c.contains(DELEGATION_MARKER))
+        && committed(repo, "DELEGATION.md").is_none()
+    {
+        let _ = std::fs::remove_file(&playbook);
+    }
+    let claude_md = repo.join("CLAUDE.md");
+    let Ok(cur) = std::fs::read_to_string(&claude_md) else { return };
+    let head = committed(repo, "CLAUDE.md");
+    if !cur.lines().any(|l| l.trim() == DELEGATION_IMPORT) || head.as_deref().is_some_and(|h| h.contains(DELEGATION_IMPORT)) {
+        return;
+    }
+    let kept: Vec<&str> = cur.lines().filter(|l| l.trim() != DELEGATION_IMPORT).collect();
+    let text = kept.join("\n").trim_end().to_string();
+    if text.trim().is_empty() && head.is_none() {
+        let _ = std::fs::remove_file(&claude_md);
+    } else {
+        let _ = std::fs::write(&claude_md, format!("{text}\n"));
+    }
 }
 
 #[tauri::command]
@@ -4816,8 +4894,9 @@ mod safety_tests {
 
 #[cfg(test)]
 mod delegation_tests {
-    use super::{install_delegation, ShipInstall, DELEGATION_IMPORT, DELEGATION_MARKER, DELEGATION_MD};
-    use std::path::PathBuf;
+    use super::{cleanup_legacy_delegation, git_exclude, strip_ours, DELEGATION_IMPORT, DELEGATION_MARKER, DELEGATION_MD};
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
 
     fn tmp_repo(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -4830,52 +4909,94 @@ mod delegation_tests {
         dir
     }
 
-    #[test]
-    fn installs_playbook_and_wires_claude_md_import() {
-        let repo = tmp_repo("install");
-        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::Installed);
-        let body = std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap();
-        assert!(body.contains(DELEGATION_MARKER));
-        // the playbook must carry the operational rules that make delegation safe
-        assert!(body.contains("codex exec") && body.contains("< /dev/null"));
-        assert!(body.contains("cursor-agent -p") && body.contains("--force"));
-        assert!(body.contains("workspace-write"));
-        // ...and the credit-conservation priority that survives future edits
-        assert!(body.contains("conserve Codex/Cursor credits"));
-        let claude = std::fs::read_to_string(repo.join("CLAUDE.md")).unwrap();
-        assert!(claude.contains(DELEGATION_IMPORT), "CLAUDE.md must import the playbook");
+    fn git(repo: &Path, args: &[&str]) {
+        let ok = Command::new("git").arg("-C").arg(repo)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"])
+            .args(args).output().unwrap().status.success();
+        assert!(ok, "git {args:?}");
     }
 
     #[test]
-    fn append_to_existing_claude_md_once() {
-        let repo = tmp_repo("append");
-        std::fs::write(repo.join("CLAUDE.md"), "# my project rules\n").unwrap();
-        install_delegation(&repo).unwrap();
-        install_delegation(&repo).unwrap(); // second run must not duplicate
-        let claude = std::fs::read_to_string(repo.join("CLAUDE.md")).unwrap();
-        assert!(claude.starts_with("# my project rules"), "existing content preserved");
-        assert_eq!(
-            claude.matches(DELEGATION_IMPORT).count(),
-            1,
-            "import appended exactly once"
-        );
+    fn playbook_keeps_its_operational_rules() {
+        assert!(DELEGATION_MD.contains(DELEGATION_MARKER));
+        assert!(DELEGATION_MD.contains("codex exec") && DELEGATION_MD.contains("< /dev/null"));
+        assert!(DELEGATION_MD.contains("cursor-agent -p") && DELEGATION_MD.contains("--force"));
+        assert!(DELEGATION_MD.contains("workspace-write"));
+        assert!(DELEGATION_MD.contains("conserve Codex/Cursor credits"));
     }
 
     #[test]
-    fn preserves_user_authored_playbook() {
-        let repo = tmp_repo("userfile");
-        let user = "My own delegation rules — always use codex.\n";
-        std::fs::write(repo.join("DELEGATION.md"), user).unwrap();
-        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::SkippedUserFile);
-        assert_eq!(std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap(), user);
+    fn removes_uncommitted_legacy_files_and_import() {
+        let repo = tmp_repo("legacy");
+        std::fs::write(repo.join("DELEGATION.md"), format!("{DELEGATION_MARKER}\nold\n")).unwrap();
+        std::fs::write(repo.join("CLAUDE.md"), format!("# my rules\n\n{DELEGATION_IMPORT}\n")).unwrap();
+        cleanup_legacy_delegation(&repo);
+        assert!(!repo.join("DELEGATION.md").exists());
+        assert_eq!(std::fs::read_to_string(repo.join("CLAUDE.md")).unwrap(), "# my rules\n");
     }
 
     #[test]
-    fn upgrades_stale_managed_playbook() {
-        let repo = tmp_repo("upgrade");
-        std::fs::write(repo.join("DELEGATION.md"), format!("{DELEGATION_MARKER}\nold rules\n")).unwrap();
-        assert_eq!(install_delegation(&repo).unwrap(), ShipInstall::Installed);
-        assert_eq!(std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap(), DELEGATION_MD);
+    fn deletes_a_claude_md_that_was_only_our_import() {
+        let repo = tmp_repo("only-import");
+        std::fs::write(repo.join("CLAUDE.md"), format!("{DELEGATION_IMPORT}\n")).unwrap();
+        cleanup_legacy_delegation(&repo);
+        assert!(!repo.join("CLAUDE.md").exists());
+    }
+
+    #[test]
+    fn never_touches_user_or_committed_files() {
+        let repo = tmp_repo("user");
+        std::fs::write(repo.join("DELEGATION.md"), "my own rules\n").unwrap();
+        cleanup_legacy_delegation(&repo);
+        assert_eq!(std::fs::read_to_string(repo.join("DELEGATION.md")).unwrap(), "my own rules\n");
+
+        let repo = tmp_repo("committed");
+        git(&repo, &["init", "-q"]);
+        std::fs::write(repo.join("DELEGATION.md"), format!("{DELEGATION_MARKER}\n")).unwrap();
+        std::fs::write(repo.join("CLAUDE.md"), format!("{DELEGATION_IMPORT}\n")).unwrap();
+        git(&repo, &["add", "-A"]);
+        git(&repo, &["commit", "-qm", "x"]);
+        cleanup_legacy_delegation(&repo);
+        assert!(repo.join("DELEGATION.md").exists(), "committed playbook is the user's call");
+        assert!(repo.join("CLAUDE.md").exists(), "committed import is the user's call");
+    }
+
+    #[test]
+    fn strips_only_our_hooks() {
+        let mut v = serde_json::json!({
+            "model": "opus",
+            "hooks": {
+                "PreToolUse": [
+                    { "matcher": "Bash", "hooks": [{ "type": "command", "command": "python3 '/Users/x/.grillme/bin/grillme-hook' pre A '/Users/x/.grillme'" }] },
+                    { "matcher": "Bash", "hooks": [{ "type": "command", "command": "./my-lint.sh" }] }
+                ],
+                "Stop": [{ "hooks": [{ "type": "command", "command": "sh -c 'echo >> /Users/x/.grillme/events.jsonl'" }] }]
+            }
+        });
+        assert!(strip_ours(&mut v, "/Users/x/.grillme"));
+        assert_eq!(v["model"], "opus");
+        assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "./my-lint.sh");
+        assert!(v["hooks"].get("Stop").is_none(), "emptied event dropped");
+        assert!(!strip_ours(&mut v, "/Users/x/.grillme"), "second pass is a no-op");
+
+        let mut only_ours = serde_json::json!({ "hooks": { "Stop": [{ "hooks": [{ "command": "cat /Users/x/.grillme/p.md" }] }] } });
+        strip_ours(&mut only_ours, "/Users/x/.grillme");
+        assert_eq!(only_ours, serde_json::json!({}));
+    }
+
+    #[test]
+    fn excludes_per_machine_files_once() {
+        let repo = tmp_repo("exclude");
+        git(&repo, &["init", "-q"]);
+        git_exclude(&repo, &[".claude/settings.local.json"]);
+        git_exclude(&repo, &[".claude/settings.local.json"]);
+        let ex = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+        assert_eq!(ex.matches(".claude/settings.local.json").count(), 1);
+        std::fs::create_dir_all(repo.join(".claude")).unwrap();
+        std::fs::write(repo.join(".claude/settings.local.json"), "{}").unwrap();
+        let st = Command::new("git").arg("-C").arg(&repo).args(["status", "--porcelain"]).output().unwrap();
+        assert!(String::from_utf8_lossy(&st.stdout).trim().is_empty(), "ignored by git status");
     }
 }
 
