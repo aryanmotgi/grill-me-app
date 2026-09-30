@@ -9,6 +9,7 @@ mod automations;
 mod tailscale;
 mod remote;
 mod doctor;
+pub mod mcp;
 
 // ---------------------------------------------------------------------------
 // Team config — ~/.grillme/config.json maps teammates to their worktrees.

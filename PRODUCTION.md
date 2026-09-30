@@ -54,9 +54,7 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 ### Phase 2: Public beta. 2–4 weeks.
 
 - [ ] **Signing + notarization** (decision 1).
-- [ ] **Drop the Node requirement.** The MCP bridge (`grillme-mcp.mjs`) needs Node, but Claude Code's native installer doesn't, so many users won't have it. Two options:
-  - **(a) Recommended:** ship it as a Tauri sidecar built with `bun build --compile`. About 1 hour of work, adds ~55 MB, zero behavior change.
-  - (b) Port the ~1,000 lines to Rust behind a `grill-me --mcp` mode of the app binary. Smallest and fastest, but a real rewrite.
+- [x] ~~**Drop the Node requirement.**~~ The MCP bridge is now a `grill-me --mcp` mode of the app binary (`src-tauri/src/mcp/`), a byte-for-byte port of the old `grillme-mcp.mjs`: no Node, and the per-prompt sync hook starts in milliseconds instead of ~100 ms.
 - [ ] **Content-Security-Policy.** `tauri.conf.json` has `"csp": null`. Set `default-src 'self'` plus what's needed: `ipc:` and `http://ipc.localhost` for connect, localhost frames for Preview, `'unsafe-inline'` styles. Test every view in the built app before merging; the claude.ai child webview is separate and unaffected.
 - [x] ~~**Hardening the local listeners.**~~ (#159) `4517` (API) and `4518` (room) handle one connection at a time with a 5 s timeout, so one slow client stalls everyone. Move to one thread per connection with a small cap.
 - [ ] **Homebrew cask** (`brew install --cask grill-me`) plus a one-page site: what it is, a 30-second GIF, download, and "needs Claude Code".

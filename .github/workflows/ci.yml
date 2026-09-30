@@ -1,8 +1,10 @@
 name: CI
 
-# Private repo: macOS runner minutes bill at 10x Linux. The web + MCP checks
-# run on Linux every time; the Rust suite (macOS-only app) runs only when the
-# backend actually changed.
+# Private repo: macOS runner minutes bill at 10x Linux. The web checks run on
+# Linux every time; the Rust suite (macOS-only app) runs only when the backend
+# actually changed. The MCP server is part of the Rust binary (grill-me --mcp),
+# so its end-to-end tests (src/lib/mcpServer.node.test.ts) run in the rust job,
+# against the freshly built debug binary.
 
 on:
   pull_request:
@@ -30,6 +32,7 @@ jobs:
             rust:
               - 'src-tauri/**'
               - '.github/workflows/ci.yml'
+              - 'src/lib/mcpServer.node.test.ts'
 
   web:
     runs-on: ubuntu-latest
@@ -41,9 +44,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx vitest run
-      - name: MCP server parses
-        run: node --check src-tauri/src/grillme-mcp.mjs
+      - run: npx vitest run --exclude src/lib/mcpServer.node.test.ts
 
   rust:
     needs: changes
@@ -65,3 +66,8 @@ jobs:
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test --locked
+      - name: Build the app binary (MCP server = grill-me --mcp)
+        working-directory: src-tauri
+        run: cargo build --locked
+      - name: MCP server end-to-end
+        run: npx vitest run src/lib/mcpServer.node.test.ts

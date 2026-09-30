@@ -20,7 +20,7 @@ import type { Task } from "../types";
 //   questions — a coder asking the brainstorm side something
 // ---------------------------------------------------------------------------
 
-interface BridgeConn { desktop: boolean; code: boolean; desktopInstalled: boolean; node: string | null }
+interface BridgeConn { desktop: boolean; code: boolean; desktopInstalled: boolean }
 
 export const useBridge = create<{
   state: BridgeState;

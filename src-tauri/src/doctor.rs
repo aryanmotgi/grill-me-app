@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------------
 // Doctor: one screen that says what this Mac is missing. New users otherwise
-// hit silent failures (no node → no Claude app bridge, no gh → no PRs).
+// hit silent failures (no claude → no sessions, no gh → no PRs). The MCP
+// bridge is built into the app binary, so Node is no longer needed.
 // Each check runs in a login shell — the same PATH sessions get.
 // ---------------------------------------------------------------------------
 
@@ -37,8 +38,6 @@ pub(crate) fn system_doctor() -> Vec<Value> {
             "Every session is a Claude Code process.", "curl -fsSL https://claude.ai/install.sh | bash"),
         check("git", "Git", true, login("git --version"),
             "Worktrees, diffs, checkpoints and shipping.", "xcode-select --install"),
-        check("node", "Node.js", false, crate::bridge::node_path().map(|p| login(&format!("{p} --version")).unwrap_or(p)),
-            "Runs the grill-me MCP bridge (Claude app ↔ sessions).", "brew install node"),
         check("gh", "GitHub CLI", false, login("gh --version"),
             "Opens and merges PRs from the Ship queue.", "brew install gh && gh auth login"),
         check("tailscale", "Tailscale", false, ts_detail,

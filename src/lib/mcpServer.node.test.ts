@@ -5,12 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Drives the real grill-me MCP server over stdio (isolated HOME) and checks
-// the tool list it advertises.
+// the tool list it advertises. The server is the app binary in --mcp mode:
+// build it first (cargo build in src-tauri), or point GRILLME_MCP_CMD at
+// another command line (whitespace-separated, e.g. "/path/grill-me --mcp").
+const MCP_CMD = (process.env.GRILLME_MCP_CMD ?? "src-tauri/target/debug/grill-me --mcp").trim().split(/\s+/);
+
 function rpc(lines: object[], seed?: (home: string) => void): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
     const home = mkdtempSync(join(tmpdir(), "grillme-mcp-"));
     seed?.(home);
-    const child = spawn(process.execPath, ["src-tauri/src/grillme-mcp.mjs"], { env: { ...process.env, HOME: home } });
+    const child = spawn(MCP_CMD[0], MCP_CMD.slice(1), { env: { ...process.env, HOME: home } });
     let out = "";
     child.stdout.on("data", (d) => {
       out += d;

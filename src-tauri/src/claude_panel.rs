@@ -79,10 +79,9 @@ pub(crate) fn brainstorm_send(
     } else {
         format!("<grill-me-sync>\nWhat's new in the project since my last message (from Grill Me):\n\n{}\n</grill-me-sync>\n\n{message}", sync.trim())
     };
-    let node = crate::bridge::node_path().ok_or("Node.js not found (brew install node)")?;
-    let script = crate::grillme_root().join("bin/grillme-mcp.mjs");
+    let exe = crate::mcp::exe_path().ok_or("can't locate the Grill Me binary")?;
     let mcp = serde_json::json!({
-        "mcpServers": { "grill-me": { "command": node, "args": [script.to_string_lossy()] } }
+        "mcpServers": { "grill-me": { "command": exe, "args": ["--mcp"] } }
     })
     .to_string();
 

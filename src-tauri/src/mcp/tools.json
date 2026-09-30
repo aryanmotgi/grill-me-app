@@ -1,0 +1,242 @@
+[
+  {
+    "name": "whats_new",
+    "description": "Catch up on every coding session in the open Grill Me project: what each is working on, what it just did, its last reply, and anything waiting (questions from coders, pending handoffs/plans). Call this first whenever the user asks what's going on.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "read_session",
+    "description": "Read the recent conversation of one coding session as turns (the user's ask, tools used, final reply). `session` is a session id or title from whats_new; omit to read the calling session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        },
+        "turns": {
+          "type": "number",
+          "description": "How many recent turns (default 3, max 10)"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_diff",
+    "description": "The code a session changed: its commits vs main, a file summary, and the diff (truncated). Use it to explain the change to the user in plain English and flag anything risky.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_plan",
+    "description": "The team's saved decisions, open tasks, and shared notes. Coders should read this before starting work.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "save_plan",
+    "description": "Propose a plan: tasks for the board plus the decision behind it. The user approves it in Grill Me before anything is saved. Use after brainstorming lands on a plan.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "title",
+        "tasks"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "description": "What was decided and why, one or two sentences"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "title"
+            ],
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "desc": {
+                "type": "string"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "send_to_coder",
+    "description": "Hand a task to a Claude Code session. GRILL GATE: before calling, ask the user to explain the plan back in their own words and push back if it's vague. Pass their explanation verbatim as `user_explanation` — the call is rejected without a real one. The user approves the handoff in Grill Me before it's typed into the session.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "session",
+        "message",
+        "user_explanation"
+      ],
+      "properties": {
+        "session": {
+          "type": "string",
+          "description": "Session id or title from whats_new"
+        },
+        "message": {
+          "type": "string",
+          "description": "The full instruction for the coder"
+        },
+        "user_explanation": {
+          "type": "string",
+          "description": "The user's own words explaining the plan back"
+        }
+      }
+    }
+  },
+  {
+    "name": "ask_brainstorm",
+    "description": "(Coder side) Ask the brainstorm side a question — a product or design call you shouldn't make alone. The user sees it in Grill Me and answers with the Claude app; the answer comes back to this session.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "question"
+      ],
+      "properties": {
+        "question": {
+          "type": "string"
+        },
+        "context": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "open_questions",
+    "description": "Questions coders have asked the brainstorm side that are still unanswered.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "answer_question",
+    "description": "Answer a coder's question (id from open_questions). The answer is sent back to that session after the user approves it in Grill Me.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "id",
+        "answer"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "answer": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "notes",
+    "description": "Shared scratchpad both sides can read and add to (ideas, constraints, links). action=read or add.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "read",
+            "add"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "past_lessons",
+    "description": "Lessons from past hackathons (stack, what worked, mistakes, reusable pieces). Use when starting a new project or choosing a stack.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "catch_up",
+    "description": "Everything new in this project since you last asked (or in the last `hours`): goal, decisions, notes, plans, what each session did, commits. Call at the start of a conversation and whenever the user returns.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "hours": {
+          "type": "number",
+          "description": "Look back this many hours instead of since last call"
+        }
+      }
+    }
+  },
+  {
+    "name": "set_goal",
+    "description": "Set the project's one-line goal in the shared brain (what we're building and for whom). Both sides see it.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "goal"
+      ],
+      "properties": {
+        "goal": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "list_projects",
+    "description": "The Grill Me projects on this Mac (name, id, how many sessions) and which one is open. Every other tool takes an optional `project` to work on one project regardless of what's open.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "ship_status",
+    "description": "Which sessions are ready to ship: each one's branch, commits ahead of main, uncommitted files, last auto-test result, and a verdict (ready / tests failing / uncommitted / nothing yet). Check this before telling the user something is done.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "team_status",
+    "description": "In team mode: every teammate's presence, branch, and tasks. (Teammates' conversations live on their machines and aren't readable.)",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]

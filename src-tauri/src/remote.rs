@@ -2,9 +2,9 @@
 // claude.ai connection: the grill-me MCP served over HTTPS so the claude.ai
 // website (which can't reach local servers) sees your sessions.
 //
-//   claude.ai ──https──► Tailscale Funnel ──► 127.0.0.1:4519 (node, --http)
+//   claude.ai ──https──► Tailscale Funnel ──► 127.0.0.1:4519 (grill-me --mcp --http)
 //
-// Safety: the node server binds loopback only and Funnel is the single way
+// Safety: the server (src/mcp/http.rs) binds loopback only and Funnel is the single way
 // in; the URL carries a 64-hex secret (everything else 404s); read-only
 // unless the user allows proposals (which still need approval in the app);
 // credentials are redacted and secret files never appear in diffs; rate
@@ -38,7 +38,8 @@ fn kill_stale() {
     }
     let cmdline = Command::new("/bin/ps").args(["-p", pid, "-o", "command="]).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    if cmdline.contains("grillme-mcp.mjs") && cmdline.contains("--http") {
+    // ours: `<grill-me binary> --mcp --http …` (or an older build's node script)
+    if (cmdline.contains("--mcp") || cmdline.contains("grillme-mcp.mjs")) && cmdline.contains("--http") {
         let _ = Command::new("/bin/kill").arg(pid).status();
     }
     let _ = std::fs::remove_file(pid_path());
@@ -106,11 +107,10 @@ fn start_server(allow_writes: bool, share_chats: bool) -> Result<(), String> {
     let mut g = crate::lock_or_recover(&SERVER);
     stop_locked(&mut g);
     crate::bridge::install();
-    let node = crate::bridge::node_path().ok_or("Node.js not found (brew install node)")?;
+    let exe = crate::mcp::exe_path().ok_or("can't locate the Grill Me binary")?;
     secret(false)?;
-    let mut cmd = Command::new(node);
-    cmd.arg(crate::grillme_root().join("bin/grillme-mcp.mjs"))
-        .args(["--http", &REMOTE_PORT.to_string(), "--secret-file"])
+    let mut cmd = Command::new(exe);
+    cmd.args(["--mcp", "--http", &REMOTE_PORT.to_string(), "--secret-file"])
         .arg(secret_path())
         .current_dir(crate::grillme_root())
         .stdin(Stdio::null())
