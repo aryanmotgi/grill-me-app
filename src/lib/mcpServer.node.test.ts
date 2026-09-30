@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -62,5 +62,29 @@ describe("grill-me MCP server", () => {
     const text = JSON.stringify(res.result);
     expect(text).toContain("Ship the demo by 5pm");
     expect(text).toContain("judges love live demos");
+  });
+
+  it("ship_status blocks a session whose last tests failed", async () => {
+    const [, res] = await rpc([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "ship_status", arguments: {} } },
+    ], (home) => {
+      const repo = join(home, "app");
+      mkdirSync(repo);
+      const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...a]);
+      g("init", "-q", "-b", "main");
+      writeFileSync(join(repo, "a.txt"), "1");
+      g("add", "-A"); g("commit", "-qm", "init");
+      g("checkout", "-qb", "feature");
+      writeFileSync(join(repo, "a.txt"), "2");
+      g("commit", "-qam", "work");
+      mkdirSync(join(home, ".grillme"), { recursive: true });
+      writeFileSync(join(home, ".grillme", "config.json"), JSON.stringify({ teammates: [{ id: "s1", repoPath: repo }] }));
+      writeFileSync(join(home, ".grillme", "tests.json"), JSON.stringify({ [repo]: { ok: false, ms: 3000, cmd: "npm test", at: Date.now(), tail: "1 failing: login breaks" } }));
+    });
+    const text = JSON.stringify(res.result);
+    expect(text).toContain("blocked: tests failing");
+    expect(text).toContain("1 commit ahead of main");
+    expect(text).toContain("login breaks");
   });
 });

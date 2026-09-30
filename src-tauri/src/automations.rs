@@ -139,10 +139,30 @@ pub(crate) fn run_tests(repo_path: String, command: Option<String>, last_sig: Op
     };
     let bytes = reader.join().unwrap_or_default();
     let ms = started.elapsed().as_millis() as u64;
-    Ok(match status {
+    let result = match status {
         Some(s) => json!({ "skipped": false, "sig": sig, "ok": s.success(), "code": s.code(), "ms": ms, "tail": tail(&bytes), "cmd": cmd }),
         None => json!({ "skipped": false, "sig": sig, "ok": false, "code": null, "ms": ms, "tail": format!("Timed out after {}s.\n{}", TEST_TIMEOUT.as_secs(), tail(&bytes)), "cmd": cmd }),
-    })
+    };
+    record_test(&repo_path, &result);
+    Ok(result)
+}
+
+static TESTS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Last result per worktree in tests.json — the MCP server reads it so
+/// Claude (and claude.ai) can see which sessions are red before shipping.
+fn record_test(repo_path: &str, r: &Value) {
+    let _g = crate::lock_or_recover(&TESTS_LOCK);
+    let path = crate::grillme_dir().join("tests.json");
+    let mut all: serde_json::Map<String, Value> = std::fs::read_to_string(&path)
+        .ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let tail: String = {
+        let t = r["tail"].as_str().unwrap_or("");
+        t.chars().rev().take(1500).collect::<Vec<_>>().into_iter().rev().collect()
+    };
+    let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    all.insert(repo_path.to_string(), json!({ "ok": r["ok"], "ms": r["ms"], "cmd": r["cmd"], "sig": r["sig"], "tail": tail, "at": at }));
+    let _ = std::fs::write(&path, serde_json::to_string_pretty(&all).unwrap_or_default());
 }
 
 fn valid_topic(t: &str) -> bool {
