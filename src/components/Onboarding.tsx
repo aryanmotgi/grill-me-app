@@ -27,6 +27,12 @@ const STEPS: Step[] = [
     body: "“+” opens “What are we grilling?” — type a task and Grill Me spins up a session on its own branch. Or “Start a hackathon” to plan the whole build at once.",
   },
   {
+    key: "flow",
+    sel: '[data-tour="flow"]',
+    title: "Flow",
+    body: "The whole picture: Claude proposes, you approve, sessions build. Every task, plan or question in flight is a wire here with its one button — and teammates' sessions sit below.",
+  },
+  {
     key: "brain",
     sel: '[data-tour="brain"]',
     title: "Brain",
