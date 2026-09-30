@@ -640,82 +640,102 @@ pub(crate) fn start_room_server() -> Result<(), String> {
         }
     }
     std::thread::spawn(move || {
-        use std::io::{BufRead, BufReader};
+        // one thread per connection (capped): a peer that trickles bytes can
+        // hold its own thread for the 5 s timeout, not the whole room
+        let active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         for stream in listener.incoming().flatten() {
-            // Read timeout: a half-open or stalled peer errors out of the
-            // read calls below instead of blocking the loop forever.
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-            let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
-            let mut reader = BufReader::new(match stream.try_clone() {
-                Ok(s) => s,
-                Err(_) => continue,
+            if active.load(Ordering::SeqCst) >= ROOM_MAX_CONNS {
+                continue;
+            }
+            let active = active.clone();
+            active.fetch_add(1, Ordering::SeqCst);
+            std::thread::spawn(move || {
+                handle_room_conn(stream);
+                active.fetch_sub(1, Ordering::SeqCst);
             });
-            let mut stream = stream;
-            let mut line = String::new();
-            if reader.read_line(&mut line).is_err() {
-                continue;
-            }
-            let mut parts = line.split_whitespace();
-            let method = parts.next().unwrap_or("").to_string();
-            let path = parts.next().unwrap_or("").to_string();
-            let mut content_len = 0usize;
-            loop {
-                let mut h = String::new();
-                if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
-                    break;
-                }
-                if let Some(v) = h.to_lowercase().strip_prefix("content-length:") {
-                    content_len = v.trim().parse().unwrap_or(0);
-                }
-            }
-            let mut body = vec![0u8; content_len.min(262_144)];
-            if !body.is_empty() && reader.read_exact(&mut body).is_err() {
-                continue; // timed out mid-body — drop the connection
-            }
-            let respond = |stream: &mut std::net::TcpStream, code: u16, body: &str| {
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 {code} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-            };
-            if !path.starts_with("/room/") {
-                respond(&mut stream, 404, "{\"error\":\"unknown route\"}");
-                continue;
-            }
-            let peer = stream.peer_addr().map(|a| a.ip()).ok();
-            // creating a room replaces the current one and makes the caller
-            // host — only this Mac may do that, never a peer on the network
-            if path.split('?').next() == Some("/room/create") && !peer.is_some_and(|ip| ip.is_loopback()) {
-                respond(&mut stream, 403, "{\"error\":\"rooms are created on the host's own Mac\"}");
-                continue;
-            }
-            if let Some(ip) = peer {
-                let mut g = lock_or_recover(&CODE_GUARD);
-                if g.get_or_insert_with(CodeGuard::default).locked(ip, now_ms()) {
-                    respond(&mut stream, 429, "{\"error\":\"too many wrong room codes — wait 10 minutes\"}");
-                    continue;
-                }
-            }
-            let (status, out) = {
-                let mut room = lock_or_recover(&ROOM);
-                let (status, out) = room_handle(&method, &path, &body, &mut room, now_ms());
-                // Persist every successful mutation atomically.
-                if method == "POST" && status == 200 {
-                    let _ = save_room(&room);
-                }
-                (status, out)
-            };
-            if status == 403 && out.contains("bad room code") {
-                if let Some(ip) = peer {
-                    lock_or_recover(&CODE_GUARD).get_or_insert_with(CodeGuard::default).record_fail(ip, now_ms());
-                }
-            }
-            respond(&mut stream, status, &out);
         }
     });
     Ok(())
 }
+
+const ROOM_MAX_CONNS: usize = 32;
+
+/// One request on the 0.0.0.0 room listener.
+fn handle_room_conn(stream: std::net::TcpStream) {
+    use std::io::{BufRead, BufReader};
+    // Read timeout: a half-open or stalled peer errors out of the
+    // read calls below instead of blocking the loop forever.
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+    let mut reader = BufReader::new(match stream.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    });
+    let mut stream = stream;
+    let mut line = String::new();
+    if reader.read_line(&mut line).is_err() {
+        return;
+    }
+    let mut parts = line.split_whitespace();
+    let method = parts.next().unwrap_or("").to_string();
+    let path = parts.next().unwrap_or("").to_string();
+    let mut content_len = 0usize;
+    loop {
+        let mut h = String::new();
+        if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
+            break;
+        }
+        if let Some(v) = h.to_lowercase().strip_prefix("content-length:") {
+            content_len = v.trim().parse().unwrap_or(0);
+        }
+    }
+    let mut body = vec![0u8; content_len.min(262_144)];
+    if !body.is_empty() && reader.read_exact(&mut body).is_err() {
+        return; // timed out mid-body — drop the connection
+    }
+    let respond = |stream: &mut std::net::TcpStream, code: u16, body: &str| {
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {code} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+    };
+    if !path.starts_with("/room/") {
+        respond(&mut stream, 404, "{\"error\":\"unknown route\"}");
+        return;
+    }
+    let peer = stream.peer_addr().map(|a| a.ip()).ok();
+    // creating a room replaces the current one and makes the caller
+    // host — only this Mac may do that, never a peer on the network
+    if path.split('?').next() == Some("/room/create") && !peer.is_some_and(|ip| ip.is_loopback()) {
+        respond(&mut stream, 403, "{\"error\":\"rooms are created on the host's own Mac\"}");
+        return;
+    }
+    if let Some(ip) = peer {
+        let mut g = lock_or_recover(&CODE_GUARD);
+        if g.get_or_insert_with(CodeGuard::default).locked(ip, now_ms()) {
+            respond(&mut stream, 429, "{\"error\":\"too many wrong room codes — wait 10 minutes\"}");
+            return;
+        }
+    }
+    let (status, out) = {
+        let mut room = lock_or_recover(&ROOM);
+        let (status, out) = room_handle(&method, &path, &body, &mut room, now_ms());
+        // Persist every successful mutation atomically.
+        if method == "POST" && status == 200 {
+            let _ = save_room(&room);
+        }
+        (status, out)
+    };
+    if status == 403 && out.contains("bad room code") {
+        if let Some(ip) = peer {
+            lock_or_recover(&CODE_GUARD).get_or_insert_with(CodeGuard::default).record_fail(ip, now_ms());
+        }
+    }
+    respond(&mut stream, status, &out);
+
+}
+
 
 // ---------------------------------------------------------------------------
 // Tauri commands.
@@ -1448,12 +1468,20 @@ mod wire_tests {
         // brief grace for the accept thread to be ready
         std::thread::sleep(Duration::from_millis(50));
 
-        // client A (host) creates the room
-        let Some((st, body)) = req("POST", "/room/create", r#"{"name":"Host"}"#) else {
+        if req("GET", "/room/state?code=PROBE", "").is_none() {
             eprintln!("skipping wire test — server not reachable");
             return;
-        };
+        }
+
+        // a peer that connects and never sends a byte must not stall others
+        let _stalled = std::net::TcpStream::connect(("127.0.0.1", ROOM_PORT)).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        let t0 = std::time::Instant::now();
+
+        // client A (host) creates the room
+        let (st, body) = req("POST", "/room/create", r#"{"name":"Host"}"#).expect("a stalled peer blocked the room");
         assert_eq!(st, 200, "create: {body}");
+        assert!(t0.elapsed() < Duration::from_secs(2), "a stalled peer slowed the room ({:?})", t0.elapsed());
         let code = serde_json::from_str::<serde_json::Value>(&body).unwrap()["code"]
             .as_str()
             .unwrap()
