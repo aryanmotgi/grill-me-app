@@ -125,6 +125,17 @@ export function ClaudeConnect() {
   const setWrites = async (on: boolean) => { setAppSetting("remoteWrites", on); await restart(); };
   const setShare = async (on: boolean) => { setAppSetting("remoteShareChats", on); await restart(); };
 
+  // pin a claude.ai Project to the open Grill Me project: paste this into the
+  // Project's instructions and every tool call carries `project`
+  const copyProjectInstructions = () => {
+    const { projects, activeProject } = useApp.getState();
+    const p = projects.find((x) => x.id === activeProject);
+    const name = p?.name ?? "default";
+    const id = p?.id ?? "default";
+    const text = `This Claude project is for my Grill Me project "${name}". Whenever you use a Grill Me tool, pass project: "${id}" so you only see this project's sessions, plan and goal. Start conversations by calling catch_up with that project.`;
+    void navigator.clipboard.writeText(text).then(() => toast(`Copied — paste into your claude.ai Project's instructions to pin it to ${name}`));
+  };
+
   const openConnectors = () => void call("claudeai_navigate", { url: "https://claude.ai/settings/connectors" }).catch(() => {});
   const loadLog = async () => setLog(await call<typeof log>("remote_log", { limit: 30 }).catch(() => []));
 
@@ -178,6 +189,7 @@ export function ClaudeConnect() {
               <Icon name="doc" size={11} /> Copy private link
             </button>
             <button className="composer-btn h-7 text-[11.5px]" onClick={openConnectors}>Open Connectors</button>
+            <button className="composer-btn h-7 text-[11.5px]" title="Paste into a claude.ai Project's instructions — that Project then only sees this Grill Me project" onClick={copyProjectInstructions}>Copy project instructions</button>
             <button className="composer-btn h-7 text-[11.5px]" title="Old link stops working immediately" onClick={() => void rotate()}>New secret</button>
             <button className="composer-btn h-7 text-[11.5px]" onClick={() => void loadLog()}>Access log</button>
             <button className="composer-btn h-7 text-[11.5px]" disabled={busy} onClick={() => void disconnect()}>Turn off</button>

@@ -1079,6 +1079,15 @@ fn set_active_project(id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// State dir for an explicit project id ("default" = the root), if it exists.
+pub(crate) fn project_dir_for(id: &str) -> Option<PathBuf> {
+    if id == "default" {
+        return Some(grillme_root());
+    }
+    let dir = grillme_root().join("projects").join(id);
+    (valid_project_id(id) && dir.is_dir()).then_some(dir)
+}
+
 fn grillme_dir() -> PathBuf {
     let active = lock_or_recover(&ACTIVE_PROJECT).clone();
     if active.is_empty() || active == "default" || !valid_project_id(&active) {
@@ -3498,7 +3507,9 @@ fn start_api_server(app: tauri::AppHandle) {
                     // accepted from the remote (claude.ai) connection.
                     let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
                     let kind = v["kind"].as_str().unwrap_or("");
-                    match bridge::push(kind, &v["item"]) {
+                    // the MCP server names the project it read from, so a
+                    // write lands there even if another one is open here
+                    match bridge::push_to(v["project"].as_str(), kind, &v["item"]) {
                         Ok(entry) => {
                             let _ = app.emit("bridge-changed", ());
                             respond(&mut stream, 200, &entry.to_string());

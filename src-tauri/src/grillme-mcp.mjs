@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, basename, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const HOME = homedir();
 const ROOT = join(HOME, ".grillme");
@@ -29,7 +30,30 @@ function readJson(path, fallback) {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; }
 }
 
+/** Projects registered in Grill Me: [{ id, name }] (paths never leave here). */
+function projectList() {
+  const list = readJson(join(ROOT, "projects.json"), []);
+  return (Array.isArray(list) ? list : []).filter((p) => p && typeof p.id === "string").map((p) => ({ id: p.id, name: String(p.name ?? p.id) }));
+}
+
+/** A tool call's `project` argument (id or name, any case) → its state dir. */
+export function resolveProject(arg) {
+  const want = String(arg).trim().toLowerCase();
+  const hit = projectList().find((p) => p.id.toLowerCase() === want || p.name.toLowerCase() === want);
+  const id = hit?.id ?? (want === "default" ? "default" : null);
+  if (!id) return null;
+  if (id === "default") return { id, dir: ROOT };
+  const dir = join(ROOT, "projects", id);
+  return /^[A-Za-z0-9._-]+$/.test(id) && id !== "." && id !== ".." && existsSync(dir) ? { id, dir } : null;
+}
+
+// per-call project scope (concurrent HTTP calls each keep their own)
+const SCOPE = new AsyncLocalStorage();
+
 function projectDir() {
+  // a tool call pinned to a project (claude.ai Project instructions pass it)
+  const scoped = SCOPE.getStore();
+  if (scoped) return scoped;
   // hooks + Grill Me pass the project explicitly (a session belongs to its
   // project no matter which one is open in the app)
   const forced = process.env.GRILLME_PROJECT_DIR;
@@ -352,7 +376,7 @@ async function push(kind, item) {
     res = await fetch(`${API}/bridge/push`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, item }),
+      body: JSON.stringify({ kind, item, project: projectDir().id }),
     });
   } catch {
     throw new Error("Grill Me isn't running — open the Grill Me app, then try again.");
@@ -733,6 +757,11 @@ const TOOLS = [
     inputSchema: { type: "object", required: ["goal"], properties: { goal: { type: "string" } } },
   },
   {
+    name: "list_projects",
+    description: "The Grill Me projects on this Mac (name, id, how many sessions) and which one is open. Every other tool takes an optional `project` to work on one project regardless of what's open.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "ship_status",
     description: "Which sessions are ready to ship: each one's branch, commits ahead of main, uncommitted files, last auto-test result, and a verdict (ready / tests failing / uncommitted / nothing yet). Check this before telling the user something is done.",
     inputSchema: { type: "object", properties: {} },
@@ -848,6 +877,17 @@ async function callTool(name, args = {}) {
       await push("goal", { goal: String(args.goal) });
       return "Goal saved to the shared brain.";
     }
+    case "list_projects": {
+      const open = projectDir().id;
+      const rows = [{ id: "default", name: "default" }, ...projectList().filter((p) => p.id !== "default")].map((p) => {
+        const r = resolveProject(p.id);
+        if (!r) return null;
+        const cfg = readJson(join(r.dir, "config.json"), {});
+        const n = Array.isArray(cfg.teammates) ? cfg.teammates.length : 0;
+        return `- ${p.name} (id: ${p.id}) · ${n} session${n === 1 ? "" : "s"}${p.id === open ? " · OPEN" : ""}`;
+      }).filter(Boolean);
+      return rows.join("\n");
+    }
     case "ship_status": {
       const all = members();
       if (!all.length) return "No sessions — open a project in Grill Me first.";
@@ -895,7 +935,7 @@ const TITLES = {
   whats_new: "What's new in my sessions", read_session: "Read a session", get_diff: "Get a session's diff",
   get_plan: "Get the plan", save_plan: "Propose a plan", send_to_coder: "Hand a task to a session",
   ask_brainstorm: "Ask the brainstorm side", open_questions: "Open questions", answer_question: "Answer a coder's question",
-  notes: "Shared notes", past_lessons: "Past lessons", catch_up: "Catch up", set_goal: "Set the project goal", team_status: "Team status", ship_status: "Ship status",
+  notes: "Shared notes", past_lessons: "Past lessons", catch_up: "Catch up", set_goal: "Set the project goal", team_status: "Team status", ship_status: "Ship status", list_projects: "List projects",
 };
 const IDEMPOTENT = new Set(["set_goal"]);
 
@@ -918,7 +958,14 @@ function toolsFor() {
   const list = REMOTE.on
     ? TOOLS.filter((t) => !WRITE_TOOLS.has(t.name) || (REMOTE.allowWrites && REMOTE_PROPOSALS.has(t.name)))
     : TOOLS;
-  return list.map(annotate);
+  return list.map(annotate).map(withProjectArg);
+}
+
+const PROJECT_ARG = { type: "string", description: "Grill Me project name or id (see list_projects). Omit for the project open in the app." };
+
+function withProjectArg(t) {
+  if (t.name === "list_projects") return t;
+  return { ...t, inputSchema: { ...t.inputSchema, properties: { ...(t.inputSchema.properties ?? {}), project: PROJECT_ARG } } };
 }
 
 /** Strip anything that looks like a credential before it leaves the Mac. */
@@ -967,8 +1014,16 @@ async function handle(req) {
       if (REMOTE.on && name === "notes" && String(args.action).toLowerCase() !== "read") {
         return reply({ content: [{ type: "text", text: "Adding notes isn't available over this connection." }], isError: true });
       }
+      let scope;
+      if (args.project !== undefined && args.project !== "") {
+        scope = resolveProject(args.project);
+        if (!scope) {
+          const known = projectList().map((p) => p.name).join(", ") || "none";
+          return reply({ content: [{ type: "text", text: `No Grill Me project "${args.project}". Projects: ${known}.` }], isError: true });
+        }
+      }
       try {
-        const text = await callTool(name, args);
+        const text = scope ? await SCOPE.run(scope, () => callTool(name, args)) : await callTool(name, args);
         return reply({ content: [{ type: "text", text: REMOTE.on ? redact(text) : text }] });
       } catch (e) {
         return reply({ content: [{ type: "text", text: String(e?.message ?? e) }], isError: true });
