@@ -4,9 +4,9 @@
 //
 // * bridge.json (per project) holds handoffs, questions, plans, and notes.
 //   Writes are serialized here (API thread + Tauri commands share one lock).
-// * The MCP server script is embedded and installed to ~/.grillme/bin; the
-//   hackathon skill playbooks are seeded to ~/.grillme/skills (never
-//   overwritten — they're the user's to edit).
+// * The MCP server is this app's own binary in `--mcp` mode (src/mcp/, no
+//   Node needed); the hackathon skill playbooks are seeded to
+//   ~/.grillme/skills (never overwritten — they're the user's to edit).
 // * bridge_connect registers the MCP server with the Claude desktop app and
 //   Claude Code (user scope).
 // ---------------------------------------------------------------------------
@@ -16,7 +16,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-pub(crate) const MCP_SCRIPT: &str = include_str!("grillme-mcp.mjs");
 const SERVER_NAME: &str = "grill-me";
 const LIST_CAP: usize = 200;
 const TEXT_CAP: usize = 20_000;
@@ -36,14 +35,11 @@ fn root() -> PathBuf {
     crate::grillme_root()
 }
 
-/// Install/refresh the MCP server script and seed missing skill playbooks.
+/// Seed missing skill playbooks. (The MCP server used to be a Node script
+/// installed to ~/.grillme/bin; it's now `<this binary> --mcp`. A leftover
+/// grillme-mcp.mjs is left in place so hooks written by older builds keep
+/// working until they're rewritten.)
 pub(crate) fn install() {
-    let bin = root().join("bin");
-    let _ = std::fs::create_dir_all(&bin);
-    let script = bin.join("grillme-mcp.mjs");
-    if std::fs::read_to_string(&script).map(|c| c != MCP_SCRIPT).unwrap_or(true) {
-        let _ = std::fs::write(&script, MCP_SCRIPT);
-    }
     let skills = root().join("skills");
     let _ = std::fs::create_dir_all(&skills);
     for (id, body) in DEFAULT_SKILLS {
@@ -342,15 +338,14 @@ pub(crate) fn bridge_set_goal(goal: String) -> Result<(), String> {
     set_goal(goal.trim()).map(|_| ())
 }
 
-fn script_path() -> String {
-    root().join("bin/grillme-mcp.mjs").to_string_lossy().into_owned()
+fn mcp_exe() -> Result<String, String> {
+    crate::mcp::exe_path().ok_or_else(|| "can't locate the Grill Me binary".to_string())
 }
 
-/// Run the grill-me script in a CLI mode for the ACTIVE project.
+/// Run the grill-me MCP binary in a CLI mode for the ACTIVE project.
 pub(crate) fn run_script(args: &[&str]) -> Result<String, String> {
-    let node = node_path().ok_or("Node.js not found (brew install node)")?;
-    let out = Command::new(node)
-        .arg(script_path())
+    let out = Command::new(mcp_exe()?)
+        .arg("--mcp")
         .args(args)
         .env("GRILLME_PROJECT_DIR", crate::grillme_dir())
         .current_dir(root())
@@ -367,13 +362,11 @@ pub(crate) fn brain_digest(since: u64) -> Result<String, String> {
 }
 
 /// Hook command a Claude Code session runs to receive shared-brain updates
-/// (stdout is added to its context). None when Node isn't installed.
+/// (stdout is added to its context). None when the binary can't be located.
 pub(crate) fn sync_hook_command(member_id: &str, project_dir: &str) -> Option<String> {
-    let node = node_path()?;
     Some(format!(
-        "{} {} --sync {} --project {}",
-        crate::sh_quote(&node),
-        crate::sh_quote(&script_path()),
+        "{} --mcp --sync {} --project {}",
+        crate::sh_quote(&crate::mcp::exe_path()?),
         member_id,
         crate::sh_quote(project_dir)
     ))
@@ -663,17 +656,6 @@ pub(crate) fn bridge_resolve(list: String, id: String, status: String) -> Result
 
 // ---- connect to Claude app + Claude Code -----------------------------------
 
-pub(crate) fn node_path() -> Option<String> {
-    for c in ["/opt/homebrew/bin/node", "/usr/local/bin/node"] {
-        if std::path::Path::new(c).exists() {
-            return Some(c.into());
-        }
-    }
-    let out = Command::new("/bin/zsh").args(["-lc", "command -v node"]).output().ok()?;
-    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (out.status.success() && p.starts_with('/')).then_some(p)
-}
-
 fn desktop_config() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
     let dir = PathBuf::from(home).join("Library/Application Support/Claude");
@@ -695,7 +677,7 @@ pub(crate) fn bridge_status() -> Value {
         .and_then(|h| read_json(&PathBuf::from(h).join(".claude.json")))
         .map(|c| c["mcpServers"][SERVER_NAME].is_object())
         .unwrap_or(false);
-    json!({ "desktop": desktop, "code": code, "desktopInstalled": desktop_config().is_some(), "node": node_path() })
+    json!({ "desktop": desktop, "code": code, "desktopInstalled": desktop_config().is_some() })
 }
 
 /// Register the grill-me MCP server with the Claude desktop app (its config
@@ -703,8 +685,7 @@ pub(crate) fn bridge_status() -> Value {
 #[tauri::command(async)]
 pub(crate) fn bridge_connect() -> Result<String, String> {
     install();
-    let node = node_path().ok_or("Node.js not found — install it (brew install node) and try again.")?;
-    let script = root().join("bin/grillme-mcp.mjs").to_string_lossy().into_owned();
+    let exe = mcp_exe()?;
     let mut done = Vec::new();
 
     if let Some(cfg_path) = desktop_config() {
@@ -721,7 +702,7 @@ pub(crate) fn bridge_connect() -> Result<String, String> {
         if !cfg["mcpServers"].is_object() {
             cfg["mcpServers"] = json!({});
         }
-        cfg["mcpServers"][SERVER_NAME] = json!({ "command": node, "args": [script] });
+        cfg["mcpServers"][SERVER_NAME] = json!({ "command": exe, "args": ["--mcp"] });
         std::fs::write(&cfg_path, serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?)
             .map_err(|e| format!("couldn't write Claude app config: {e}"))?;
         done.push("Claude app (restart it to load)");
@@ -730,7 +711,7 @@ pub(crate) fn bridge_connect() -> Result<String, String> {
     if let Ok(claude) = crate::preflight_claude() {
         let _ = Command::new(&claude).args(["mcp", "remove", "--scope", "user", SERVER_NAME]).output();
         let out = Command::new(&claude)
-            .args(["mcp", "add", "--scope", "user", SERVER_NAME, "--", &node, &script])
+            .args(["mcp", "add", "--scope", "user", SERVER_NAME, "--", &exe, "--mcp"])
             .output()
             .map_err(|e| e.to_string())?;
         if out.status.success() {
@@ -782,9 +763,15 @@ mod tests {
     }
 
     #[test]
-    fn skills_and_script_are_embedded() {
-        assert!(MCP_SCRIPT.contains("tools/list"));
+    fn skills_are_embedded() {
         assert_eq!(DEFAULT_SKILLS.len(), 6);
+    }
+
+    #[test]
+    fn sync_hook_runs_this_binary_in_mcp_mode() {
+        let cmd = sync_hook_command("s1", "/Users/x/.grillme/projects/p").unwrap();
+        assert!(cmd.contains(" --mcp --sync s1 --project '/Users/x/.grillme/projects/p'"), "{cmd}");
+        assert!(!cmd.contains("node") && !cmd.contains(".mjs"), "{cmd}");
     }
 }
 
