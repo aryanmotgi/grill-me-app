@@ -105,7 +105,11 @@ async function runBrainCheck(memberId: string) {
 export function useBridgeFeed() {
   const lastPing = useRef<Record<string, number>>({});
   useEffect(() => {
-    if (!native()) return;
+    if (!native()) {
+      // browser dev: sample items so the Flow view / panel are browsable
+      void import("../data/fakeBridge").then(({ FAKE_BRIDGE }) => useBridge.setState({ state: FAKE_BRIDGE }));
+      return;
+    }
     let alive = true;
     let unlisten: (() => void) | undefined;
     void refresh(false);

@@ -126,8 +126,9 @@ export function FlowPage() {
   const setBridgeOpen = useBridge((b) => b.setOpen);
   const remote = useRemote((r) => r.status);
 
+  // real members once config is loaded; the sample teammates in browser dev
   const sessions = useMemo(
-    () => members.map((m) => teammates.find((t) => t.id === m.id)).filter((t): t is Teammate => !!t),
+    () => (members.length ? members.map((m) => teammates.find((t) => t.id === m.id)).filter((t): t is Teammate => !!t) : teammates),
     [members, teammates],
   );
   const titleOf = (id: string) => {
