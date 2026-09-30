@@ -13,7 +13,7 @@ export function ConflictBanner() {
 
   return (
     <button
-      className="flex-none px-4 py-1.5 bg-warn/10 border-b border-warn/40 text-warn text-[11px] flex items-center gap-3 cursor-pointer text-left hover:bg-warn/15 transition-colors"
+      className="flex-none pl-[84px] pr-4 py-1.5 bg-warn/10 border-b border-warn/40 text-warn text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1 cursor-pointer text-left hover:bg-warn/15 transition-colors"
       title="Jump to these files in the claimed list"
       onClick={() => flashFiles(conflicts.map((c) => c.file))}
     >
