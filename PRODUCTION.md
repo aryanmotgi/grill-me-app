@@ -29,6 +29,10 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 | #158 | MCP **per-project scoping**: `project` arg on every tool, `list_projects`, "Copy project instructions"; writes land in the project they came from | A hackathon's claude.ai Project only sees that hackathon. Also fixed questions landing in whatever project was open |
 | #159 | API + room servers: a thread per connection, plus timeouts | One stalled client could freeze the API (no timeout at all) or the whole room |
 | #160 | **First-run consent** screen; hooks install only after "Got it" | Strangers see what we add before we touch their repos |
+| #162 | Consent dialog opaque + plain words; own files never count as claims; banner clears traffic lights | First native run of #160 showed all three |
+| #163 | **Flow view**: the bridge drawn as a map — Claude, brain, sessions, and every item in flight with its one action | The bridge was an invisible side panel; now it's the picture of who's talking to whom |
+| #164 | **Teammates' sessions in Flow**: each Grill Me shares a session digest (title, status, branch, tests; never the chat) over the room; `team_status` uses it | You could not see what teammates were working on |
+| #165 | **Team bridge**: hand-offs, questions and answers routed between teammates' Grill Mes; approval on both ends; `send_to_coder("Maya / API")` | Your Claude can now task a teammate's session, and answer their coders' questions |
 
 ## Decisions only you can make
 
@@ -71,7 +75,8 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 
 **Team coordination**
 - [x] ~~**Share the brain across the team.**~~ (#155) Rooms already sync `tasks`, `messages` and `decisions`. Add the **goal, notes and approved plans** (the shared parts of `bridge.json`) so every teammate's Claude, and their claude.ai, sees the same team goal.
-- [ ] **"What I'm on" digests.** Each teammate opts in to share a one-line-per-session summary (never raw transcripts) through the room. `team_status` in MCP then answers "what is everyone doing?" for real.
+- [x] ~~**"What I'm on" digests.**~~ (#164) Each teammate opts in to share a one-line-per-session summary (never raw transcripts) through the room. `team_status` in MCP then answers "what is everyone doing?" for real.
+- [x] **Team bridge** (#165): hand-offs and questions between teammates' sessions, approved on both ends. Not yet exercised across two physical Macs — do that with a teammate before the public beta.
 - [ ] **Cross-machine conflict warnings.** File claims are local today. Syncing them through the room gives a "Maya's session is editing `api.ts` too" banner.
 - [ ] **Tailscale identity instead of codes.** When hosting over a tailnet, bind the room to the Tailscale IP only and use `tailscale whois` for names. No code to read aloud, and nothing exposed on the LAN.
 - [ ] **Host handoff.** If the host quits, the longest-connected member becomes host with the last state. Right now the host is a single point of failure.
