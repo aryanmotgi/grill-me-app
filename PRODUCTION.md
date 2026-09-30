@@ -11,7 +11,7 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 3. **Team**: rooms that are safe on café Wi-Fi and work across networks.
 4. **MCP**: the claude.ai ↔ sessions bridge, made standard and safe enough for strangers.
 
-## Done (Sept 29)
+## Done (Sept 29–30)
 
 | PR | What | Why it mattered |
 |---|---|---|
@@ -21,6 +21,14 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 | #148 | MCP tool annotations (`title`, `readOnlyHint`, …) plus a real stdio test | Clients skip permission prompts on reads and flag the writes |
 | #149 | Release workflow: bump version → tag → universal `.dmg` on a draft GitHub Release; signing turns on automatically once the secrets exist | There was no way to hand anyone a build |
 | #151 | Hooks moved to `.claude/settings.local.json` (git-excluded); the playbook comes through a SessionStart hook; old leaked files cleaned up | **Blocker**: we were committing `/Users/aryanmotgi/...` paths into people's repos and editing their `CLAUDE.md` |
+| #153 | Our hooks are recognized by the `~/.grillme` root | Hooks written under another project would otherwise run twice |
+| #154 | **Copy diagnostics** (versions + setup check; no chats, paths or secrets) | Bug reports people can actually send |
+| #155 | **Team brain**: goal and notes sync across the room (append-only `brain.json`; the newest goal wins) | Every teammate's Claude and claude.ai now see the same team goal |
+| #156 | MCP **`ship_status`** + test results in `whats_new` (`run_tests` saves them to `tests.json`) | Claude can say "session B is red, don't ship it" |
+| #157 | **Remove from my repos**: clean uninstall of hooks and `/ship` | Nobody should have to hand-clean their repos |
+| #158 | MCP **per-project scoping**: `project` arg on every tool, `list_projects`, "Copy project instructions"; writes land in the project they came from | A hackathon's claude.ai Project only sees that hackathon. Also fixed questions landing in whatever project was open |
+| #159 | API + room servers: a thread per connection, plus timeouts | One stalled client could freeze the API (no timeout at all) or the whole room |
+| #160 | **First-run consent** screen; hooks install only after "Got it" | Strangers see what we add before we touch their repos |
 
 ## Decisions only you can make
 
@@ -34,10 +42,10 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 
 - [ ] **First tagged release, v0.2.0**: bump the version in `tauri.conf.json`, `package.json` and `Cargo.toml`, push the tag, check the draft, publish.
 - [ ] **Auto-update** (`tauri-plugin-updater` + `latest.json` on GitHub Releases). Needs an updater keypair: `npx tauri signer generate`, with the private key kept as a repo secret. Without this, every fix means a manual re-download.
-- [ ] **Diagnostics**: a Settings → Setup check → "Copy diagnostics" button (versions, doctor results, the last 50 app log lines, **no** transcripts or secrets). Plus a rotating `~/.grillme/logs/app.log`. Bug reports are useless without this.
-- [ ] **Uninstall / "remove from this repo"**: strips our hooks from `settings.local.json` (`strip_ours` already exists) and deletes `ship.md` if it has our marker.
+- [x] ~~**Diagnostics**~~ (#154; a rotating app log is still to do): a Settings → Setup check → "Copy diagnostics" button (versions, doctor results, the last 50 app log lines, **no** transcripts or secrets). Plus a rotating `~/.grillme/logs/app.log`. Bug reports are useless without this.
+- [x] ~~**Uninstall**~~ (#157): strips our hooks from `settings.local.json` (`strip_ours` already exists) and deletes `ship.md` if it has our marker.
 - [ ] **Release notes on each GitHub Release**: generate them with the existing `release_notes` command (git log + merged PRs → Claude summary) and paste them into the draft.
-- [ ] **Consent on first project**: one screen listing exactly what Grill Me installs (hooks in `settings.local.json`, `/ship` command, read access to `~/.claude/projects` transcripts), with a "Got it". Strangers need to see this before we touch anything.
+- [x] ~~**Consent on first project**~~ (#160): one screen listing exactly what Grill Me installs (hooks in `settings.local.json`, `/ship` command, read access to `~/.claude/projects` transcripts), with a "Got it". Strangers need to see this before we touch anything.
 
 ### Phase 2: Public beta. 2–4 weeks.
 
@@ -46,7 +54,7 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
   - **(a) Recommended:** ship it as a Tauri sidecar built with `bun build --compile`. About 1 hour of work, adds ~55 MB, zero behavior change.
   - (b) Port the ~1,000 lines to Rust behind a `grill-me --mcp` mode of the app binary. Smallest and fastest, but a real rewrite.
 - [ ] **Content-Security-Policy.** `tauri.conf.json` has `"csp": null`. Set `default-src 'self'` plus what's needed: `ipc:` and `http://ipc.localhost` for connect, localhost frames for Preview, `'unsafe-inline'` styles. Test every view in the built app before merging; the claude.ai child webview is separate and unaffected.
-- [ ] **Hardening the local listeners.** `4517` (API) and `4518` (room) handle one connection at a time with a 5 s timeout, so one slow client stalls everyone. Move to one thread per connection with a small cap.
+- [x] ~~**Hardening the local listeners.**~~ (#159) `4517` (API) and `4518` (room) handle one connection at a time with a 5 s timeout, so one slow client stalls everyone. Move to one thread per connection with a small cap.
 - [ ] **Homebrew cask** (`brew install --cask grill-me`) plus a one-page site: what it is, a 30-second GIF, download, and "needs Claude Code".
 - [ ] **Privacy page**, plain words: what's read (transcripts, git), what leaves the Mac (only what the user turns on: the claude.ai connection, phone pings through ntfy.sh, team rooms), and no telemetry.
 - [ ] **Split `lib.rs`** (5,400 lines, 65 commands) into `pty`, `git`, `hooks`, `api` and `usage` modules before outside contributors show up.
@@ -55,14 +63,14 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 
 **MCP (the claude.ai ↔ sessions bridge)**
 - [ ] **OAuth for the remote connector** instead of a secret in the URL. claude.ai custom connectors support OAuth 2.1 with dynamic client registration. A secret URL leaks through screenshots, browser history and shared chats. OAuth gives per-device tokens you can revoke one at a time, and "Sign in to Grill Me" becomes a consent screen served by the app.
-- [ ] **Per-project scoping**: an optional `project` argument on every tool, plus a "Copy project instructions" button that pins a claude.ai Project to one Grill Me project. That way a hackathon's Claude project only ever sees that hackathon's sessions.
-- [ ] **Workflow tools**, read-only: `test_status` (last auto-test run per session), `ship_status` (what's ready or blocked), `preview_url`. Claude can then say "session B's tests are red; don't ship it."
+- [x] ~~**Per-project scoping**~~ (#158): an optional `project` argument on every tool, plus a "Copy project instructions" button that pins a claude.ai Project to one Grill Me project. That way a hackathon's Claude project only ever sees that hackathon's sessions.
+- [x] ~~**Workflow tools**~~ (`ship_status` in #156; `preview_url` still to do), read-only: `test_status` (last auto-test run per session), `ship_status` (what's ready or blocked), `preview_url`. Claude can then say "session B's tests are red; don't ship it."
 - [ ] **`outputSchema` / structured results** for `whats_new` and `catch_up`, so clients can render cards instead of walls of text.
 - [ ] **Resources + subscriptions**: expose each session as an MCP resource and send `resources/updated` when it finishes a turn. That's push instead of polling, in clients that support it.
 - [ ] **Elicitation for the grill gate** in Claude Code: the server asks the user directly to explain the plan back, rather than trusting the model to relay it.
 
 **Team coordination**
-- [ ] **Share the brain across the team.** Rooms already sync `tasks`, `messages` and `decisions`. Add the **goal, notes and approved plans** (the shared parts of `bridge.json`) so every teammate's Claude, and their claude.ai, sees the same team goal.
+- [x] ~~**Share the brain across the team.**~~ (#155) Rooms already sync `tasks`, `messages` and `decisions`. Add the **goal, notes and approved plans** (the shared parts of `bridge.json`) so every teammate's Claude, and their claude.ai, sees the same team goal.
 - [ ] **"What I'm on" digests.** Each teammate opts in to share a one-line-per-session summary (never raw transcripts) through the room. `team_status` in MCP then answers "what is everyone doing?" for real.
 - [ ] **Cross-machine conflict warnings.** File claims are local today. Syncing them through the room gives a "Maya's session is editing `api.ts` too" banner.
 - [ ] **Tailscale identity instead of codes.** When hosting over a tailnet, bind the room to the Tailscale IP only and use `tailscale whois` for names. No code to read aloud, and nothing exposed on the LAN.
@@ -80,3 +88,8 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 - Every change: a branch → PR → CI green → squash-merge (as now).
 - Every release: bump the version in 3 files → `git tag vX.Y.Z && git push --tags` → check the draft release → publish.
 - Security-sensitive PRs (listeners, MCP remote, hooks) get a focused review pass before merge.
+
+## Security notes to keep in mind
+
+- With per-project scoping (#158), a claude.ai connection can read **any** Grill Me project on the Mac, not only the open one. The connection is still off by default and read-only unless proposals are on. If per-project remote access is ever needed, add an allowlist of projects to the remote server.
+- The team room is still LAN or tailnet HTTP with a 5-char code. It's throttled now (#145), but traffic isn't encrypted on plain Wi-Fi. Prefer Tailscale for rooms (see "Tailscale identity instead of codes").
