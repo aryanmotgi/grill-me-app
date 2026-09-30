@@ -316,7 +316,9 @@ fn start_watching(app: tauri::AppHandle) {
                         Ok(r) => r.to_string_lossy().into_owned(),
                         Err(_) => continue,
                     };
-                    if rel.is_empty() || is_ignored(&rel) {
+                    // our own installs (hooks, /ship, playbook) are written
+                    // into every worktree at once — never a claim or conflict
+                    if rel.is_empty() || is_ignored(&rel) || is_grillme_managed(&rel) {
                         continue;
                     }
                     let ts = std::time::SystemTime::now()

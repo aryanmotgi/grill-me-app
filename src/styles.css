@@ -273,6 +273,11 @@ body,
 .scrim {
   background: color-mix(in srgb, black 62%, transparent);
 }
+/* small dialogs over busy content: an OPAQUE surface (the gradient/vibrant
+   panel token is translucent and would let the page bleed through the text) */
+.glass.solid {
+  background: var(--ground-color, var(--panel));
+}
 
 /* Tabular figures so digit clusters (stats, cpu/mem, tokens) don't jitter. */
 .num {
