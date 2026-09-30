@@ -4491,6 +4491,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             doctor::system_doctor,
+            doctor::diagnostics,
             team_config,
             git_state,
             git_state_cached,

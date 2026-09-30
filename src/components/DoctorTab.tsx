@@ -33,6 +33,12 @@ export function DoctorTab() {
   const [checks, setChecks] = useState<DoctorCheck[] | null>(null);
   const refresh = () => { setChecks(null); void runDoctor().then(setChecks); };
   useEffect(refresh, []);
+  const copyDiagnostics = async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const text = await invoke<string>("diagnostics").catch((e) => `diagnostics failed: ${e}`);
+    await navigator.clipboard.writeText(text);
+    toast("Diagnostics copied — paste it into your bug report");
+  };
 
   if (!native()) return <div className="text-faint text-[11px]">Setup check runs in the desktop app.</div>;
   if (!checks) return <div className="text-faint text-[11px] flex items-center gap-2"><span className="spinner" /> Checking this Mac…</div>;
@@ -45,6 +51,7 @@ export function DoctorTab() {
           {bad.length === 0 ? "All set." : bad.some((c) => c.required) ? "Something required is missing." : "Ready — a few extras are off."}
         </span>
         <span className="flex-1" />
+        <button className="btn" title="Versions and what's installed — no chats, paths or secrets" onClick={() => void copyDiagnostics()}>Copy diagnostics</button>
         <button className="btn" onClick={refresh}>Re-check</button>
       </div>
       {checks.map((c) => (
