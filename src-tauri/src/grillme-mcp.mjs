@@ -820,9 +820,37 @@ const WRITE_TOOLS = new Set(["save_plan", "send_to_coder", "ask_brainstorm", "an
 // they're never allowed from the internet — even with proposals on.
 const REMOTE_PROPOSALS = new Set(["save_plan", "send_to_coder", "answer_question"]);
 
+// MCP tool annotations: clients (claude.ai, Claude Code) use readOnlyHint to
+// skip the permission prompt on reads and to flag the tools that change things.
+// Nothing here reaches outside the Mac, so openWorldHint is false everywhere.
+const TITLES = {
+  whats_new: "What's new in my sessions", read_session: "Read a session", get_diff: "Get a session's diff",
+  get_plan: "Get the plan", save_plan: "Propose a plan", send_to_coder: "Hand a task to a session",
+  ask_brainstorm: "Ask the brainstorm side", open_questions: "Open questions", answer_question: "Answer a coder's question",
+  notes: "Shared notes", past_lessons: "Past lessons", catch_up: "Catch up", set_goal: "Set the project goal", team_status: "Team status",
+};
+const IDEMPOTENT = new Set(["set_goal"]);
+
+export function annotate(tool) {
+  // remotely, notes is read-only (add is refused at call time)
+  const write = WRITE_TOOLS.has(tool.name) || (tool.name === "notes" && !REMOTE.on);
+  return {
+    ...tool,
+    annotations: {
+      title: TITLES[tool.name] ?? tool.name,
+      readOnlyHint: !write,
+      destructiveHint: false,
+      idempotentHint: !write || IDEMPOTENT.has(tool.name),
+      openWorldHint: false,
+    },
+  };
+}
+
 function toolsFor() {
-  if (!REMOTE.on) return TOOLS;
-  return TOOLS.filter((t) => !WRITE_TOOLS.has(t.name) || (REMOTE.allowWrites && REMOTE_PROPOSALS.has(t.name)));
+  const list = REMOTE.on
+    ? TOOLS.filter((t) => !WRITE_TOOLS.has(t.name) || (REMOTE.allowWrites && REMOTE_PROPOSALS.has(t.name)))
+    : TOOLS;
+  return list.map(annotate);
 }
 
 /** Strip anything that looks like a credential before it leaves the Mac. */
