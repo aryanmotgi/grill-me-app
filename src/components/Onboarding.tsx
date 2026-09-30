@@ -86,7 +86,9 @@ export function Onboarding() {
   const setAppSetting = useApp((s) => s.setAppSetting);
 
   // Wait until a project is active — never fight the ProjectPicker for the screen.
-  const active = !onboarded && !!activeProject && !pickerOpen;
+  const consented = useApp((s) => s.appSettings.installConsent === true);
+  // ...and never fight the first-run consent screen either
+  const active = !onboarded && consented && !!activeProject && !pickerOpen;
 
   const [step, setStep] = useState(0);
   const [placed, setPlaced] = useState<Placed | null>(null);

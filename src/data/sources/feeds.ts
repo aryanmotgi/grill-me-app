@@ -378,13 +378,24 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         agent: me.agent ?? null,
       }).catch(() => {});
     }
-    for (const m of members) {
-      // hooks are a Claude Code mechanism (.claude/settings.json) — skip for
-      // cursor/codex sessions; their status falls back to OSC/bell + quiet-time
+    await installHooks();
+  };
+  // hooks go into repos only after the first-run consent screen's "Got it"
+  // (InstallConsent) — and then right away, without a relaunch
+  let hooksInstalled = false;
+  const installHooks = async () => {
+    const st = store.getState();
+    if (hooksInstalled || st.appSettings.installConsent !== true || !st.members.length) return;
+    hooksInstalled = true;
+    const { invoke } = await import("@tauri-apps/api/core");
+    for (const m of st.members) {
+      // hooks are a Claude Code mechanism (.claude/settings.local.json) — skip
+      // for cursor/codex sessions; their status falls back to OSC/bell + quiet-time
       if (m.agent && m.agent !== "claude") continue;
       await invoke("install_hooks", { repoPath: m.repoPath, memberId: m.id }).catch(() => {});
     }
   };
+  store.subscribe((s) => { if (!hooksInstalled && s.appSettings.installConsent === true) void installHooks(); });
   // config may not be loaded yet — retry until members appear
   const waitCfg = setInterval(() => {
     if (store.getState().members.length > 0) {
