@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { ProjectIcon } from "./ProjectIcon";
+import { GrillFlame } from "./GrillMark";
 import { useApp } from "../store";
 import { isTauri } from "../data/sources/git";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
@@ -126,85 +127,101 @@ export function ProjectPicker() {
     }
   };
 
+  const first = projects.length === 0;
+
   return (
-    <div className="fixed inset-0 z-50 ground flex items-center justify-center overflow-y-auto py-8">
-      <div className="w-[560px] flex flex-col gap-5">
-        <div className="text-center">
-          <div className="font-display font-bold text-[24px] tracking-[0.1em] text-accent">GRILL ME</div>
-          <div className="panel-label mt-1">choose a project workspace</div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          {projects.map((p, i) => {
-            const st = stats[p.id];
-            return (
-              <button key={p.id}
-                className="flex items-center gap-3 px-4 py-3 bg-panel hairline rounded-sm cursor-pointer hover:border-accent text-left transition-colors"
-                style={p.color ? { borderLeft: `3px solid ${p.color}` } : undefined}
-                onClick={() => choose(p)}>
-                {i < 9 ? <span className="font-mono text-faint text-[10px] w-3">{i + 1}</span> : null}
-                <ProjectIcon id={p.id} color={p.color} size={18} />
-                <span className="font-display font-semibold text-[13px]">{p.name}</span>
-                {st?.needsInput ? (
-                  <span className="status-dot needs-input" title="A session here needs input" />
-                ) : null}
-                <span className="font-mono text-faint text-[10px] truncate max-w-[150px]">{p.path || "~/.grillme"}</span>
-                <span className="flex-1" />
-                {st ? (
-                  <span className="flex gap-2.5 text-[10px] text-dim tabular-nums">
-                    {st.sessionsAlive > 0 ? <span className="text-ok">{st.sessionsAlive} live</span> : null}
-                    {st.tasksInProgress > 0 ? <span>{st.tasksInProgress} active</span> : null}
-                    {st.unanswered > 0 ? <span className="text-warn">{st.unanswered} unread</span> : null}
-                    {commitAge(st.lastCommitAgeMin) ? <span title="Last commit">c {commitAge(st.lastCommitAgeMin)}</span> : null}
-                  </span>
-                ) : null}
-                {ago(p.lastOpened) ? <span className="text-faint text-[10px]">{ago(p.lastOpened)}</span> : null}
-                {p.id === activeProject ? <span className="tag ok">current</span> : null}
-              </button>
-            );
-          })}
-        </div>
-
-        {discovered.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            <div className="panel-label">found on disk</div>
-            {discovered.map((d) => (
-              <div key={d} className="flex items-center gap-2 px-3 py-1.5 text-[11px]">
-                <span className="font-mono text-faint text-[10px] truncate">{d}</span>
-                <span className="flex-1" />
-                <button className="btn" onClick={() => void openProjectAt(d, warn)}>
-                  <Icon name="plus" size={9} /> add
-                </button>
+    <div className="fixed inset-0 z-50 ground flex flex-col overflow-y-auto">
+      {/* drag strip under the traffic lights — a full-screen cover must not trap the window */}
+      <div data-tauri-drag-region className="h-12 flex-none" />
+      <div className="flex-1 flex items-start justify-center px-6 pb-12">
+        <div className="w-[600px] max-w-full flex flex-col gap-7 pt-[6vh]">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <GrillFlame px={4} />
+            <div>
+              <div className="text-[22px] font-semibold text-ink tracking-tight">{first ? "Welcome to Grill Me" : "Pick a project"}</div>
+              <div className="text-[13px] text-dim mt-1">
+                {first
+                  ? "One window for every Claude Code session on a project. Start by opening its folder."
+                  : "Each project keeps its own sessions, brain, board and bridge."}
               </div>
-            ))}
+            </div>
           </div>
-        ) : null}
 
-        <div className="flex flex-col gap-1.5 border-t border-line pt-4">
-          <div className="panel-label">add project</div>
-          <button
-            className="flex items-center gap-3 px-4 py-3 rounded-md hairline bg-panel hover:bg-raised cursor-pointer text-left transition-colors"
-            title="Opens Finder — pick an existing folder, or use New Folder to start a fresh project"
-            onClick={() => void addProjectFromFinder(warn)}
-          >
-            <Icon name="folder" size={16} />
-            <span className="flex flex-col">
-              <span className="text-[13px] text-ink">Open folder…</span>
-              <span className="text-[11px] text-faint">Pick a folder in Finder, or make a new one — the project sticks to it</span>
-            </span>
-          </button>
-          <div className="flex gap-1.5 mt-1">
-            <input className="flex-1 bg-raised hairline rounded-sm px-3 py-2 font-mono text-[11px] outline-none focus:border-accent"
-              placeholder="or clone: https://github.com/org/repo" value={cloneUrl}
-              onChange={(e) => setCloneUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && clone()} />
-            <button className="btn" disabled={cloning} onClick={clone}>{cloning ? "cloning…" : "clone"}</button>
+          {first ? null : (
+            <div className="flex flex-col gap-2">
+              {projects.map((p, i) => {
+                const st = stats[p.id];
+                const current = p.id === activeProject;
+                return (
+                  <button key={p.id}
+                    className={`composer-card group/proj flex items-center gap-3.5 px-4 py-3.5 rounded-xl cursor-pointer text-left transition-colors hover:border-white/20 ${current ? "border-white/20" : ""}`}
+                    onClick={() => choose(p)}>
+                    <ProjectIcon id={p.id} color={p.color} size={22} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="text-[14px] font-medium text-ink truncate">{p.name}</span>
+                        {st?.needsInput ? <span className="status-dot needs-input" title="A session here needs you" /> : null}
+                        {current ? <span className="text-[11px] text-faint">open</span> : null}
+                      </span>
+                      <span className="block font-mono text-[11px] text-faint truncate mt-0.5">{(p.path || "~/.grillme").replace(/^\/Users\/[^/]+/, "~")}</span>
+                    </span>
+                    {st ? (
+                      <span className="flex gap-3 text-[11px] text-dim tabular-nums flex-none">
+                        {st.sessionsAlive > 0 ? <span className="text-ok">{st.sessionsAlive} live</span> : null}
+                        {st.tasksInProgress > 0 ? <span>{st.tasksInProgress} active</span> : null}
+                        {st.unanswered > 0 ? <span className="text-warn">{st.unanswered} unread</span> : null}
+                        {commitAge(st.lastCommitAgeMin) ? <span title="Last commit">committed {commitAge(st.lastCommitAgeMin)} ago</span> : null}
+                      </span>
+                    ) : null}
+                    {!st && ago(p.lastOpened) ? <span className="text-faint text-[11px] flex-none">{ago(p.lastOpened)}</span> : null}
+                    {i < 9 ? <span className="font-mono text-faint text-[11px] w-4 text-right flex-none opacity-0 group-hover/proj:opacity-100" title={`Press ${i + 1}`}>{i + 1}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {discovered.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="panel-label">found on this Mac</div>
+              {discovered.map((d) => (
+                <div key={d} className="flex items-center gap-2 px-1 text-[12px]">
+                  <span className="font-mono text-dim text-[11px] truncate">{d.replace(/^\/Users\/[^/]+/, "~")}</span>
+                  <span className="flex-1" />
+                  <button className="composer-btn h-7 text-[11.5px]" onClick={() => void openProjectAt(d, warn)}>
+                    <Icon name="plus" size={10} /> Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className={`flex flex-col gap-2.5 ${first ? "" : "border-t border-line pt-5"}`}>
+            {first ? null : <div className="panel-label">add a project</div>}
+            <button
+              className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl cursor-pointer text-left transition-colors ${first ? "bg-accent text-accent-ink hover:brightness-110" : "composer-card hover:border-white/20"}`}
+              title="Opens Finder — pick an existing folder, or use New Folder to start fresh"
+              onClick={() => void addProjectFromFinder(warn)}
+            >
+              <Icon name="folder" size={18} />
+              <span className="flex flex-col">
+                <span className="text-[14px] font-medium">Open a folder…</span>
+                <span className={`text-[12px] ${first ? "opacity-80" : "text-faint"}`}>Pick one in Finder, or make a new one. The project sticks to it.</span>
+              </span>
+            </button>
+            <div className="flex gap-2">
+              <input className="flex-1 bg-raised/60 hairline rounded-lg px-3 h-9 font-mono text-[12px] outline-none focus:border-white/20"
+                placeholder="or clone a repo: https://github.com/org/repo" value={cloneUrl}
+                onChange={(e) => setCloneUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && clone()} />
+              <button className="composer-btn h-9" disabled={cloning || !cloneUrl.trim()} onClick={clone}>{cloning ? <><span className="spinner" /> Cloning…</> : "Clone"}</button>
+            </div>
           </div>
+
+          {activeProject ? (
+            <button className="text-[12px] text-faint hover:text-dim cursor-pointer self-center" onClick={() => setPickerOpen(false)}>← Back to workspace</button>
+          ) : null}
         </div>
-
-        {activeProject ? (
-          <button className="btn self-center" onClick={() => setPickerOpen(false)}>back to workspace</button>
-        ) : null}
       </div>
     </div>
   );
