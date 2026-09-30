@@ -15,6 +15,7 @@ import type {
   RoomState,
   Task,
   Teammate,
+  TeamBridgeItem,
   TeamSession,
   Toast,
 } from "./types";
@@ -238,6 +239,7 @@ interface AppState {
     standupLines?: string[];
     decisions?: Decision[];
     teamSessions?: TeamSession[];
+    teamBridge?: TeamBridgeItem[];
   }) => void;
   advanceMergeQueue: () => void;
 
@@ -245,6 +247,8 @@ interface AppState {
   decisions: Decision[];
   /** Teammates' session digests over the room (team-sessions.json). */
   teamSessions: TeamSession[];
+  /** Hand-offs, questions and answers routed between teammates (team-bridge.json). */
+  teamBridge: TeamBridgeItem[];
   /** Decisions-log overlay (⌘K + features.ts). */
   decisionsOpen: boolean;
   /** Append a decision: shapes it via makeDecision, prepends locally, and
@@ -592,6 +596,7 @@ export const useApp = create<AppState>((set, get) => ({
     set(() => ({
       ...(p.tasks ? { tasks: p.tasks } : {}),
       ...(p.teamSessions ? { teamSessions: p.teamSessions } : {}),
+      ...(p.teamBridge ? { teamBridge: p.teamBridge } : {}),
       ...(p.messages ? { messages: p.messages } : {}),
       ...(p.mergeQueue
         ? {
@@ -612,6 +617,8 @@ export const useApp = create<AppState>((set, get) => ({
   decisions: [],
 
   teamSessions: [],
+
+  teamBridge: [],
   decisionsOpen: false,
   addDecision: (text, tag) => {
     const meId = get().members[0]?.id ?? "me";

@@ -172,6 +172,29 @@ export interface TeamSession {
   ts: number;
 }
 
+/** One item routed between teammates' Grill Mes (team-bridge.json): a
+ *  hand-off or answer addressed to one member's session, or a question a
+ *  coder asked the whole team. Each side approves before anything is typed. */
+export interface TeamBridgeItem {
+  id: string;
+  kind: "handoff" | "question" | "answer";
+  from: string;
+  fromName: string;
+  /** target member (hand-off / answer); null for a question (anyone answers) */
+  to: string | null;
+  toName?: string;
+  /** hand-off / answer: the target session on `to`'s Mac; question: the asker's session */
+  session?: string;
+  sessionTitle?: string;
+  message: string;
+  context?: string;
+  /** answer → the team question it answers */
+  questionId?: string;
+  userExplanation?: string;
+  ts: number;
+  status: "pending" | "sent" | "dismissed" | "answered";
+}
+
 /** Live presence a member pushes on each heartbeat (post-onboarding). */
 export interface RoomPresence {
   name?: string;

@@ -132,4 +132,27 @@ describe("grill-me MCP server", () => {
     expect(text).toContain('"API" working (working in api.ts) on feat/api · TESTS FAILING');
     expect(text).toContain("Devon: idle");
   });
+
+  it("open_questions includes teammates' questions from the team bridge", async () => {
+    const [, res] = await rpc([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "open_questions", arguments: {} } },
+    ], (home) => {
+      const g = join(home, ".grillme");
+      mkdirSync(g, { recursive: true });
+      writeFileSync(join(g, "bridge.json"), JSON.stringify({ handoffs: [], plans: [], notes: [], questions: [
+        { id: "q-local", ts: 1, answered: false, from: "ui", fromTitle: "UI", question: "Dark mode first?" },
+      ] }));
+      writeFileSync(join(g, "team-bridge.json"), JSON.stringify([
+        { id: "q-local", kind: "question", from: "m1", fromName: "Aryan", to: null, session: "ui", sessionTitle: "UI", message: "Dark mode first?", ts: 1, status: "pending" },
+        { id: "q-maya", kind: "question", from: "m2", fromName: "Maya", to: null, session: "api", sessionTitle: "API", message: "Redis or in-memory?", ts: 2, status: "pending" },
+        { id: "q-old", kind: "question", from: "m2", fromName: "Maya", to: null, session: "api", message: "answered already", ts: 3, status: "answered" },
+      ]));
+    });
+    const text = (res.result as { content: { text: string }[] }).content[0].text;
+    expect(text).toContain("id q-local from UI: Dark mode first?");
+    expect(text).toContain('id q-maya from Maya\'s "API" (teammate): Redis or in-memory?');
+    expect(text).not.toContain("answered already");
+    expect(text.match(/Dark mode first/g)?.length).toBe(1);
+  });
 });

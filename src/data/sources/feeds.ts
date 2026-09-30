@@ -44,6 +44,7 @@ interface FeedStore {
     standupLines?: string[];
     decisions?: import("../../types").Decision[];
     teamSessions?: import("../../types").TeamSession[];
+    teamBridge?: import("../../types").TeamBridgeItem[];
   }) => void;
   claudeMissing: boolean;
   setClaudeMissing: (missing: boolean) => void;
@@ -741,17 +742,19 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         if (!seeded) return; // members not loaded yet — retry next tick
       }
       const me = store.getState().members[0]?.id;
-      const [tasks, messages, decisions, team, standupLines, teamSessions] = await Promise.all([
+      const [tasks, messages, decisions, team, standupLines, teamSessions, teamBridge] = await Promise.all([
         read("tasks.json"),
         read("messages.json"),
         read("decisions.json"),
         read("team.json"),
         invoke<string[]>("standup_tail"),
         read("team-sessions.json").catch(() => null),
+        read("team-bridge.json").catch(() => null),
       ]);
       store.getState().setShared({
         tasks: tasks === "__unchanged__" ? undefined : tasks ?? undefined,
         teamSessions: teamSessions === "__unchanged__" ? undefined : teamSessions ?? undefined,
+        teamBridge: teamBridge === "__unchanged__" ? undefined : teamBridge ?? undefined,
         messages: messages === "__unchanged__" ? undefined : messages ?? undefined,
         decisions: decisions === "__unchanged__" ? undefined : decisions ?? undefined,
         mergeQueue: team === "__unchanged__" ? undefined : team?.mergeQueue,

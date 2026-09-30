@@ -4619,6 +4619,7 @@ pub fn run() {
             transcript_tail,
             bridge::bridge_read,
             bridge::bridge_resolve,
+            bridge::bridge_import,
             bridge::bridge_status,
             bridge::bridge_connect,
             bridge::bridge_set_goal,

@@ -7,6 +7,7 @@ import {
   EMPTY_BRIDGE, newlyPending, parseBridge, pending, pendingCount, planToTasks,
   type BridgeHandoff, type BridgePlan, type BridgeState,
 } from "../lib/bridge";
+import { inboundFor, questionMirrorsToPush, toTeamHandoff } from "../lib/teamBridge";
 import { Icon } from "./Icon";
 import type { Task } from "../types";
 
@@ -40,8 +41,50 @@ async function refresh(announce: boolean) {
   const next = parseBridge(await invoke<string>("bridge_read").catch(() => ""));
   const prev = useBridge.getState().state;
   useBridge.setState({ state: next });
-  if (announce) for (const msg of newlyPending(prev, next)) useApp.getState().toast(`${msg} — open Claude bridge`);
+  if (announce) for (const msg of newlyPending(prev, next)) useApp.getState().toast(`${msg} — open Flow`);
   void mirrorToTeam(next);
+  void syncTeamBridge(next);
+}
+
+/** Who am I in the room, and is the room live (past onboarding)? */
+function roomMe(st = useApp.getState()) {
+  const me = st.roomSelf?.memberId ?? "";
+  const meName = st.room?.members.find((m) => m.id === me)?.name ?? me;
+  return { me, meName, live: !!(me && st.room && st.room.phase === "done") };
+}
+
+/** Team bridge (team-bridge.json over the room):
+ *  - items teammates routed to my sessions → pending local hand-offs (Rust
+ *    dedupes by id), then the usual approve-to-type flow;
+ *  - my coders' open questions → mirrored so teammates' Claudes can answer;
+ *    mirrors close when the local question does. */
+const importedIds = new Set<string>();
+async function syncTeamBridge(b: BridgeState) {
+  const st = useApp.getState();
+  const { me, meName, live } = roomMe(st);
+  if (!live) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  let added = false;
+  for (const e of inboundFor(st.teamBridge, me)) {
+    if (importedIds.has(e.id)) continue;
+    importedIds.add(e.id);
+    added = (await invoke<boolean>("bridge_import", { item: e }).catch(() => false)) || added;
+  }
+  const titleOf = (id: string) => {
+    const t = st.teammates.find((x) => x.id === id);
+    return t ? sessionTitle(t, st.appSettings.sessionTitles) : id;
+  };
+  const push = questionMirrorsToPush(b.questions, st.teamBridge, me, meName, titleOf);
+  if (push.length) await upsertShared("team-bridge.json", push);
+  if (added) await refresh(true); // show (and announce) what just arrived
+}
+
+/** Tell the sender what happened to something they routed to me. */
+async function reflectToTeam(id: string, status: "sent" | "dismissed") {
+  const st = useApp.getState();
+  const { me, live } = roomMe(st);
+  const e = st.teamBridge.find((x) => x.id === id && x.to === me);
+  if (live && e && e.status !== status) await upsertShared("team-bridge.json", [{ ...e, status }]);
 }
 
 /** Team brain: in a live room, brain notes + goal ride the room's shared
@@ -146,12 +189,27 @@ export function useBridgeFeed() {
 export async function bridgeResolve(list: string, id: string, status: string) {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("bridge_resolve", { list, id, status }).catch((e) => useApp.getState().toast(`Bridge: ${e}`, "warn"));
+  if (list === "handoffs" && (status === "sent" || status === "dismissed")) await reflectToTeam(id, status);
   await refresh(false);
 }
 
-/** Approve a handoff: make sure the session is up, then type the message in. */
+/** Approve a handoff: make sure the session is up, then type the message in.
+ *  Addressed to a teammate's session? It goes over the room instead, and
+ *  they approve it on their side. */
 export async function bridgeSend(h: BridgeHandoff): Promise<boolean> {
   const { members, toast } = useApp.getState();
+  if (h.to) {
+    const st = useApp.getState();
+    const { me, meName, live } = roomMe(st);
+    if (!live) { toast(`Not in a live team room — can't reach ${h.toName || "that teammate"}`, "warn"); return false; }
+    const items = [toTeamHandoff(h, me, meName, Date.now())];
+    const q = h.questionId ? st.teamBridge.find((e) => e.id === h.questionId) : undefined;
+    if (q) items.push({ ...q, status: "answered" });
+    await upsertShared("team-bridge.json", items);
+    await bridgeResolve("handoffs", h.id, "sent");
+    toast(`Sent to ${h.toName || h.to} — they approve it in their Grill Me before it's typed in`);
+    return true;
+  }
   const m = members.find((x) => x.id === h.session);
   if (!m) { toast(`No session "${h.sessionTitle || h.session}" in this project`, "warn"); return false; }
   const { invoke } = await import("@tauri-apps/api/core");
@@ -286,7 +344,7 @@ export function BridgePanel() {
           {p.handoffs.map((h) => (
             <Card key={h.id}>
               <div className="text-[11px] tracking-[0.1em] uppercase text-faint">
-                {h.kind === "answer" ? "Answer" : "Task"} → {h.sessionTitle || h.session}
+                {h.from ? `From ${h.from} · ` : ""}{h.kind === "answer" ? "Answer" : "Task"} → {h.to ? `${h.toName || h.to} · ` : ""}{h.sessionTitle || h.session}
               </div>
               <div className="text-[12.5px] text-ink whitespace-pre-wrap max-h-48 overflow-y-auto">{h.message}</div>
               {h.userExplanation ? (
@@ -296,7 +354,7 @@ export function BridgePanel() {
               ) : null}
               <div className="flex gap-2 pt-1">
                 <button className="composer-btn on" disabled={busy === h.id} onClick={() => void send(h)}>
-                  <Icon name="push" size={12} /> Send to session
+                  <Icon name="push" size={12} /> {h.to ? `Send to ${h.toName || "teammate"}` : "Send to session"}
                 </button>
                 <button className="composer-btn" onClick={() => void resolve("handoffs", h.id, "dismissed")}>Dismiss</button>
               </div>

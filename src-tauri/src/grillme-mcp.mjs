@@ -299,6 +299,29 @@ const ago = (ms) => {
   return m < 1 ? "just now" : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
 };
 
+/** Teammates' shared sessions (team-sessions.json over the room), fresh ones only. */
+function teamSessions() {
+  const all = readJson(join(projectDir().dir, "team-sessions.json"), []);
+  return Array.isArray(all) ? all.filter((d) => d && d.member && d.session && Date.now() - (d.ts ?? 0) < 90_000) : [];
+}
+
+/** A teammate's session by `member:session` id, title, or "Name / title". */
+export function findTeamSession(key, list) {
+  const k = String(key ?? "").trim().toLowerCase();
+  if (!k) return null;
+  return list.find((d) => d.id.toLowerCase() === k)
+    ?? list.find((d) => `${d.memberName} / ${d.title}`.toLowerCase() === k)
+    ?? list.find((d) => `${d.memberName}'s ${d.title}`.toLowerCase() === k)
+    ?? list.find((d) => String(d.title).toLowerCase() === k)
+    ?? null;
+}
+
+/** Teammates' open questions (team-bridge.json). `mine` = local ids to skip. */
+function teamQuestions(mine = new Set()) {
+  const all = readJson(join(projectDir().dir, "team-bridge.json"), []);
+  return (Array.isArray(all) ? all : []).filter((e) => e && e.kind === "question" && e.status === "pending" && !mine.has(e.id));
+}
+
 /** Last auto-test result for a worktree (tests.json, written by Grill Me). */
 function testResult(repo) {
   const all = readJson(join(projectDir().dir, "tests.json"), {});
@@ -837,10 +860,16 @@ async function callTool(name, args = {}) {
     }
     case "send_to_coder": {
       const m = findSession(args.session);
-      if (!m) return `No session "${args.session}". Call whats_new for the list.`;
+      // not one of ours? maybe a teammate's session, shared over the room
+      const team = m ? null : findTeamSession(args.session, teamSessions());
+      if (!m && !team) return `No session "${args.session}". Call whats_new (yours) or team_status (teammates') for the list.`;
       const exp = String(args.user_explanation ?? "").trim();
       if (exp.length < 40 || exp === String(args.message).trim()) {
         throw new Error("Grill gate: ask the user to explain the plan back in their own words (a few sentences) and pass that as user_explanation.");
+      }
+      if (team) {
+        await push("handoff", { session: team.session, sessionTitle: team.title, message: String(args.message), userExplanation: exp, to: team.member, toName: team.memberName });
+        return `Handoff to ${team.memberName}'s "${team.title}" is waiting for the user's OK in Grill Me; ${team.memberName} approves it on their side before it's typed in.`;
       }
       await push("handoff", { session: m.id, sessionTitle: label(m), message: String(args.message), userExplanation: exp });
       return `Handoff to ${label(m)} is waiting for the user's OK in Grill Me.`;
@@ -851,7 +880,12 @@ async function callTool(name, args = {}) {
     }
     case "open_questions": {
       const q = bridgeState().questions.filter((x) => !x.answered);
-      return q.length ? q.map((x) => `- id ${x.id} from ${x.fromTitle ?? x.from}: ${x.question}${x.context ? `\n  context: ${x.context}` : ""}`).join("\n") : "No open questions.";
+      const lines = q.map((x) => `- id ${x.id} from ${x.fromTitle ?? x.from}: ${x.question}${x.context ? `\n  context: ${x.context}` : ""}`);
+      // teammates' coders ask the whole team; answering one routes back to their Mac
+      for (const t of teamQuestions(new Set(q.map((x) => x.id)))) {
+        lines.push(`- id ${t.id} from ${t.fromName}'s "${t.sessionTitle ?? t.session}" (teammate): ${t.message}${t.context ? `\n  context: ${t.context}` : ""}`);
+      }
+      return lines.length ? lines.join("\n") : "No open questions.";
     }
     case "answer_question": {
       await push("answer", { id: String(args.id), answer: String(args.answer) });
