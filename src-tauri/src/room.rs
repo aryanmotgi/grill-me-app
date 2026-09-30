@@ -574,6 +574,48 @@ fn apply_sync(
 // 4517 hazard). No bearer token: the room code inside each request is auth.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Wrong-code throttle. The 5-char code (31^5 ≈ 28.6M) is the only auth, so a
+// peer on the same Wi-Fi could otherwise guess it by brute force. Each IP
+// gets MAX_BAD_CODES wrong guesses per window, then is refused (429) without
+// the code being checked at all — no oracle — until the window passes.
+// ~60 guesses/hour/IP puts an average break at decades.
+// ---------------------------------------------------------------------------
+
+const MAX_BAD_CODES: u32 = 10;
+const BAD_CODE_WINDOW_MS: u64 = 10 * 60 * 1000;
+
+#[derive(Default)]
+pub(crate) struct CodeGuard {
+    fails: std::collections::HashMap<std::net::IpAddr, (u32, u64)>,
+}
+
+impl CodeGuard {
+    pub(crate) fn locked(&mut self, ip: std::net::IpAddr, now: u64) -> bool {
+        match self.fails.get(&ip) {
+            Some(&(n, since)) if now.saturating_sub(since) < BAD_CODE_WINDOW_MS => n >= MAX_BAD_CODES,
+            Some(_) => {
+                self.fails.remove(&ip);
+                false
+            }
+            None => false,
+        }
+    }
+
+    pub(crate) fn record_fail(&mut self, ip: std::net::IpAddr, now: u64) {
+        if self.fails.len() > 4096 {
+            self.fails.retain(|_, (_, since)| now.saturating_sub(*since) < BAD_CODE_WINDOW_MS);
+        }
+        let e = self.fails.entry(ip).or_insert((0, now));
+        if now.saturating_sub(e.1) >= BAD_CODE_WINDOW_MS {
+            *e = (0, now);
+        }
+        e.0 += 1;
+    }
+}
+
+static CODE_GUARD: Mutex<Option<CodeGuard>> = Mutex::new(None);
+
 static ROOM_SERVER_STARTED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn start_room_server() -> Result<(), String> {
@@ -639,6 +681,20 @@ pub(crate) fn start_room_server() -> Result<(), String> {
                 respond(&mut stream, 404, "{\"error\":\"unknown route\"}");
                 continue;
             }
+            let peer = stream.peer_addr().map(|a| a.ip()).ok();
+            // creating a room replaces the current one and makes the caller
+            // host — only this Mac may do that, never a peer on the network
+            if path.split('?').next() == Some("/room/create") && !peer.is_some_and(|ip| ip.is_loopback()) {
+                respond(&mut stream, 403, "{\"error\":\"rooms are created on the host's own Mac\"}");
+                continue;
+            }
+            if let Some(ip) = peer {
+                let mut g = lock_or_recover(&CODE_GUARD);
+                if g.get_or_insert_with(CodeGuard::default).locked(ip, now_ms()) {
+                    respond(&mut stream, 429, "{\"error\":\"too many wrong room codes — wait 10 minutes\"}");
+                    continue;
+                }
+            }
             let (status, out) = {
                 let mut room = lock_or_recover(&ROOM);
                 let (status, out) = room_handle(&method, &path, &body, &mut room, now_ms());
@@ -648,6 +704,11 @@ pub(crate) fn start_room_server() -> Result<(), String> {
                 }
                 (status, out)
             };
+            if status == 403 && out.contains("bad room code") {
+                if let Some(ip) = peer {
+                    lock_or_recover(&CODE_GUARD).get_or_insert_with(CodeGuard::default).record_fail(ip, now_ms());
+                }
+            }
             respond(&mut stream, status, &out);
         }
     });
@@ -863,6 +924,21 @@ pub fn room_make_tasks(plan: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn code_guard_locks_after_ten_bad_codes_then_expires() {
+        let ip: std::net::IpAddr = "192.168.1.9".parse().unwrap();
+        let other: std::net::IpAddr = "192.168.1.10".parse().unwrap();
+        let mut g = super::CodeGuard::default();
+        for _ in 0..9 {
+            g.record_fail(ip, 1000);
+        }
+        assert!(!g.locked(ip, 1000));
+        g.record_fail(ip, 1000);
+        assert!(g.locked(ip, 1000));
+        assert!(!g.locked(other, 1000), "other IPs unaffected");
+        assert!(!g.locked(ip, 1000 + super::BAD_CODE_WINDOW_MS), "window passes");
+    }
+
     use super::*;
 
     // -- code generation -----------------------------------------------------
