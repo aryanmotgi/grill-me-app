@@ -2027,6 +2027,65 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Undo install_hooks for one repo: our hooks out of both settings files,
+/// our /ship command, and the legacy playbook files. The user's own hooks,
+/// commands and anything committed stay.
+fn uninstall_repo(repo: &Path, root_s: &str) -> bool {
+    let mut changed = false;
+    for name in ["settings.local.json", "settings.json"] {
+        let path = repo.join(".claude").join(name);
+        let Some(mut cur) = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) else { continue };
+        if strip_ours(&mut cur, root_s) {
+            changed = true;
+            if cur.as_object().is_some_and(|o| o.is_empty()) && committed(repo, &format!(".claude/{name}")).is_none() {
+                let _ = std::fs::remove_file(&path);
+            } else {
+                let _ = std::fs::write(&path, serde_json::to_string_pretty(&cur).unwrap_or_default());
+            }
+        }
+    }
+    let ship = repo.join(".claude/commands/ship.md");
+    if std::fs::read_to_string(&ship).is_ok_and(|c| c.contains(SHIP_COMMAND_MARKER)) && committed(repo, ".claude/commands/ship.md").is_none() {
+        let _ = std::fs::remove_file(&ship);
+        changed = true;
+    }
+    cleanup_legacy_delegation(repo);
+    changed
+}
+
+/// Every repo/worktree Grill Me may have installed into: project folders
+/// plus each project's session worktrees.
+fn known_repos() -> Vec<PathBuf> {
+    let root = grillme_root();
+    let read = |p: PathBuf| std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+    let mut out: Vec<PathBuf> = vec![];
+    if let Some(ps) = read(root.join("projects.json")).and_then(|v| v.as_array().cloned()) {
+        out.extend(ps.iter().filter_map(|p| p["path"].as_str().map(PathBuf::from)));
+    }
+    let mut configs = vec![root.join("config.json")];
+    if let Ok(dirs) = std::fs::read_dir(root.join("projects")) {
+        configs.extend(dirs.flatten().map(|d| d.path().join("config.json")));
+    }
+    for c in configs {
+        if let Some(ms) = read(c).and_then(|v| v["teammates"].as_array().cloned()) {
+            out.extend(ms.iter().filter_map(|m| m["repoPath"].as_str().map(PathBuf::from)));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out.into_iter().filter(|p| p.join(".claude").is_dir()).collect()
+}
+
+/// "Remove Grill Me from my repos" — run before deleting the app (a running
+/// app reinstalls hooks when it next starts a session).
+#[tauri::command(async)]
+fn uninstall_all() -> serde_json::Value {
+    let root_s = grillme_root().to_string_lossy().into_owned();
+    let repos = known_repos();
+    let cleaned = repos.iter().filter(|r| uninstall_repo(r, &root_s)).count();
+    serde_json::json!({ "checked": repos.len(), "cleaned": cleaned })
+}
+
 /// Remove every hook entry Grill Me installed (any command that references
 /// our data dir), dropping emptied events and an emptied `hooks` object.
 /// Returns true when something was removed. The user's own hooks stay.
@@ -4491,6 +4550,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             doctor::system_doctor,
+            uninstall_all,
             doctor::diagnostics,
             team_config,
             git_state,
@@ -4987,6 +5047,23 @@ mod delegation_tests {
         let mut only_ours = serde_json::json!({ "hooks": { "Stop": [{ "hooks": [{ "command": "cat /Users/x/.grillme/p.md" }] }] } });
         strip_ours(&mut only_ours, "/Users/x/.grillme");
         assert_eq!(only_ours, serde_json::json!({}));
+    }
+
+    #[test]
+    fn uninstall_removes_only_ours() {
+        let repo = tmp_repo("uninstall");
+        std::fs::create_dir_all(repo.join(".claude/commands")).unwrap();
+        std::fs::write(repo.join(".claude/settings.local.json"), r#"{"hooks":{"Stop":[{"hooks":[{"command":"cat /Users/x/.grillme/p.md"}]}]}}"#).unwrap();
+        std::fs::write(repo.join(".claude/settings.json"), r#"{"model":"opus","hooks":{"Stop":[{"hooks":[{"command":"sh /Users/x/.grillme/h"}]}]}}"#).unwrap();
+        std::fs::write(repo.join(".claude/commands/ship.md"), super::SHIP_COMMAND_MD).unwrap();
+        std::fs::write(repo.join(".claude/commands/mine.md"), "my command").unwrap();
+        assert!(super::uninstall_repo(&repo, "/Users/x/.grillme"));
+        assert!(!repo.join(".claude/settings.local.json").exists(), "emptied local settings removed");
+        let shared: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(repo.join(".claude/settings.json")).unwrap()).unwrap();
+        assert_eq!(shared, serde_json::json!({ "model": "opus" }), "user settings kept");
+        assert!(!repo.join(".claude/commands/ship.md").exists());
+        assert!(repo.join(".claude/commands/mine.md").exists());
+        assert!(!super::uninstall_repo(&repo, "/Users/x/.grillme"), "second run is a no-op");
     }
 
     #[test]
