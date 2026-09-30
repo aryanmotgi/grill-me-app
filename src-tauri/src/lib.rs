@@ -3395,8 +3395,6 @@ pub(crate) fn generate_token() -> String {
 }
 
 fn start_api_server(app: tauri::AppHandle) {
-    use std::io::{BufRead, BufReader, Write as _};
-    use tauri::Emitter;
     let token = api_token();
     // Claude bridge: MCP server script + hackathon skill playbooks
     bridge::install();
@@ -3416,155 +3414,182 @@ fn start_api_server(app: tauri::AppHandle) {
             Ok(l) => l,
             Err(e) => return eprintln!("[api] bind failed: {e}"),
         };
+        // one thread per connection (capped) with socket timeouts: a client
+        // that connects and stalls can no longer wedge the API for everyone
+        let active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         for stream in listener.incoming().flatten() {
-            let mut reader = BufReader::new(match stream.try_clone() {
-                Ok(s) => s,
-                Err(_) => continue,
+            use std::sync::atomic::Ordering;
+            if active.load(Ordering::SeqCst) >= API_MAX_CONNS {
+                continue; // dropped: the client sees a closed connection and retries
+            }
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(5)));
+            let (app, token, active) = (app.clone(), token.clone(), active.clone());
+            active.fetch_add(1, Ordering::SeqCst);
+            std::thread::spawn(move || {
+                handle_api_conn(&app, &token, stream);
+                active.fetch_sub(1, Ordering::SeqCst);
             });
-            let mut stream = stream;
-            let mut line = String::new();
-            if reader.read_line(&mut line).is_err() {
-                continue;
-            }
-            let mut parts = line.split_whitespace();
-            let method = parts.next().unwrap_or("").to_string();
-            let path = parts.next().unwrap_or("").to_string();
-            let mut authed = false;
-            let mut content_len = 0usize;
-            loop {
-                let mut h = String::new();
-                if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
-                    break;
-                }
-                let hl = h.to_lowercase();
-                if hl.starts_with("authorization:") {
-                    let value = h["authorization:".len()..].trim();
-                    let bearer = value
-                        .split_once(' ')
-                        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
-                        .map(|(_, t)| t.trim());
-                    if bearer == Some(token.as_str()) {
-                        authed = true;
-                    }
-                }
-                if let Some(v) = hl.strip_prefix("content-length:") {
-                    content_len = v.trim().parse().unwrap_or(0);
-                }
-            }
-            let mut body = vec![0u8; content_len.min(65536)];
-            if content_len > 0 {
-                use std::io::Read as _;
-                let _ = reader.read_exact(&mut body);
-            }
-            let respond = |stream: &mut std::net::TcpStream, code: u16, body: &str| {
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 {code} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-            };
-            if !authed {
-                respond(&mut stream, 401, "{\"error\":\"bad token\"}");
-                continue;
-            }
-            let route = path.split('?').next().unwrap_or("");
-            match (method.as_str(), route) {
-                ("GET", "/sessions") => {
-                    let out = serde_json::to_string(&pty_status()).unwrap_or_else(|_| "[]".into());
-                    respond(&mut stream, 200, &out);
-                }
-                ("GET", "/read") => {
-                    let q: std::collections::HashMap<_, _> = path
-                        .split('?')
-                        .nth(1)
-                        .unwrap_or("")
-                        .split('&')
-                        .filter_map(|kv| kv.split_once('='))
-                        .collect();
-                    let id = q.get("id").copied().unwrap_or("").to_string();
-                    let n: usize = q.get("lines").and_then(|v| v.parse().ok()).unwrap_or(40);
-                    match pty_screen(id, Some(n)) {
-                        Ok(lines) => {
-                            let out = serde_json::to_string(&lines).unwrap_or_else(|_| "[]".into());
-                            respond(&mut stream, 200, &out);
-                        }
-                        Err(e) => respond(&mut stream, 404, &format!("{{\"error\":\"{e}\"}}")),
-                    }
-                }
-                ("POST", "/send") => {
-                    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-                    let id = v["id"].as_str().unwrap_or("").to_string();
-                    let data = v["data"].as_str().unwrap_or("").to_string();
-                    match pty_write(id, data) {
-                        Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
-                        Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
-                    }
-                }
-                ("POST", "/bridge/push") => {
-                    // Claude bridge writes (from the grill-me MCP server).
-                    // Handoffs, plans and answers land PENDING (approved in
-                    // the app). Notes/goal/questions are context and are never
-                    // accepted from the remote (claude.ai) connection.
-                    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-                    let kind = v["kind"].as_str().unwrap_or("");
-                    // the MCP server names the project it read from, so a
-                    // write lands there even if another one is open here
-                    match bridge::push_to(v["project"].as_str(), kind, &v["item"]) {
-                        Ok(entry) => {
-                            let _ = app.emit("bridge-changed", ());
-                            respond(&mut stream, 200, &entry.to_string());
-                        }
-                        Err(e) => respond(&mut stream, 400, &serde_json::json!({ "error": e }).to_string()),
-                    }
-                }
-                ("POST", "/new") => {
-                    let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-                    let id = v["id"].as_str().unwrap_or("").to_string();
-                    let branch = v["branch"].as_str().unwrap_or("").to_string();
-                    if id.is_empty() || branch.is_empty() {
-                        respond(&mut stream, 400, "{\"error\":\"need id and branch\"}");
-                        continue;
-                    }
-                    if !valid_project_id(&id) {
-                        respond(&mut stream, 400, "{\"error\":\"invalid id\"}");
-                        continue;
-                    }
-                    let mut cfg = team_config();
-                    let base = match cfg.teammates.first() {
-                        Some(m) => m.repo_path.clone(),
-                        None => {
-                            respond(&mut stream, 400, "{\"error\":\"no base repo configured\"}");
-                            continue;
-                        }
-                    };
-                    let parent = std::path::Path::new(&base)
-                        .parent()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| ".".into());
-                    let path_new = format!("{parent}/worktrees-{id}");
-                    if let Err(e) = worktree_add(base, branch, path_new.clone()) {
-                        respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}"));
-                        continue;
-                    }
-                    cfg.teammates.push(TeamMember {
-                        id: id.clone(),
-                        name: id.clone(),
-                        repo_path: path_new.clone(),
-                        permission: Some("edit".into()),
-                        remote: None,
-                        tmux_session: None,
-                        agent: None,
-                    });
-                    let _ = team_config_write(cfg);
-                    match pty_ensure_inner(app.clone(), id, path_new, false, None, None, None) {
-                        Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
-                        Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
-                    }
-                }
-                _ => respond(&mut stream, 404, "{\"error\":\"unknown route\"}"),
-            }
         }
     });
+}
+
+const API_MAX_CONNS: usize = 32;
+static API_NEW_LOCK: Mutex<()> = Mutex::new(());
+
+/// One request on the loopback control API (token-checked).
+fn handle_api_conn(app: &tauri::AppHandle, token: &str, stream: std::net::TcpStream) {
+    use std::io::{BufRead, BufReader, Write as _};
+    use tauri::Emitter;
+
+    let mut reader = BufReader::new(match stream.try_clone() {
+        Ok(s) => s,
+        Err(_) => return,
+    });
+    let mut stream = stream;
+    let mut line = String::new();
+    if reader.read_line(&mut line).is_err() {
+        return;
+    }
+    let mut parts = line.split_whitespace();
+    let method = parts.next().unwrap_or("").to_string();
+    let path = parts.next().unwrap_or("").to_string();
+    let mut authed = false;
+    let mut content_len = 0usize;
+    loop {
+        let mut h = String::new();
+        if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
+            break;
+        }
+        let hl = h.to_lowercase();
+        if hl.starts_with("authorization:") {
+            let value = h["authorization:".len()..].trim();
+            let bearer = value
+                .split_once(' ')
+                .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+                .map(|(_, t)| t.trim());
+            if bearer == Some(token) {
+                authed = true;
+            }
+        }
+        if let Some(v) = hl.strip_prefix("content-length:") {
+            content_len = v.trim().parse().unwrap_or(0);
+        }
+    }
+    let mut body = vec![0u8; content_len.min(65536)];
+    if content_len > 0 {
+        use std::io::Read as _;
+        let _ = reader.read_exact(&mut body);
+    }
+    let respond = |stream: &mut std::net::TcpStream, code: u16, body: &str| {
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {code} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+    };
+    if !authed {
+        respond(&mut stream, 401, "{\"error\":\"bad token\"}");
+        return;
+    }
+    let route = path.split('?').next().unwrap_or("");
+    match (method.as_str(), route) {
+        ("GET", "/sessions") => {
+            let out = serde_json::to_string(&pty_status()).unwrap_or_else(|_| "[]".into());
+            respond(&mut stream, 200, &out);
+        }
+        ("GET", "/read") => {
+            let q: std::collections::HashMap<_, _> = path
+                .split('?')
+                .nth(1)
+                .unwrap_or("")
+                .split('&')
+                .filter_map(|kv| kv.split_once('='))
+                .collect();
+            let id = q.get("id").copied().unwrap_or("").to_string();
+            let n: usize = q.get("lines").and_then(|v| v.parse().ok()).unwrap_or(40);
+            match pty_screen(id, Some(n)) {
+                Ok(lines) => {
+                    let out = serde_json::to_string(&lines).unwrap_or_else(|_| "[]".into());
+                    respond(&mut stream, 200, &out);
+                }
+                Err(e) => respond(&mut stream, 404, &format!("{{\"error\":\"{e}\"}}")),
+            }
+        }
+        ("POST", "/send") => {
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = v["id"].as_str().unwrap_or("").to_string();
+            let data = v["data"].as_str().unwrap_or("").to_string();
+            match pty_write(id, data) {
+                Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
+                Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
+            }
+        }
+        ("POST", "/bridge/push") => {
+            // Claude bridge writes (from the grill-me MCP server).
+            // Handoffs, plans and answers land PENDING (approved in
+            // the app). Notes/goal/questions are context and are never
+            // accepted from the remote (claude.ai) connection.
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let kind = v["kind"].as_str().unwrap_or("");
+            // the MCP server names the project it read from, so a
+            // write lands there even if another one is open here
+            match bridge::push_to(v["project"].as_str(), kind, &v["item"]) {
+                Ok(entry) => {
+                    let _ = app.emit("bridge-changed", ());
+                    respond(&mut stream, 200, &entry.to_string());
+                }
+                Err(e) => respond(&mut stream, 400, &serde_json::json!({ "error": e }).to_string()),
+            }
+        }
+        ("POST", "/new") => {
+            // config read-modify-write: one /new at a time
+            let _one = lock_or_recover(&API_NEW_LOCK);
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = v["id"].as_str().unwrap_or("").to_string();
+            let branch = v["branch"].as_str().unwrap_or("").to_string();
+            if id.is_empty() || branch.is_empty() {
+                respond(&mut stream, 400, "{\"error\":\"need id and branch\"}");
+                return;
+            }
+            if !valid_project_id(&id) {
+                respond(&mut stream, 400, "{\"error\":\"invalid id\"}");
+                return;
+            }
+            let mut cfg = team_config();
+            let base = match cfg.teammates.first() {
+                Some(m) => m.repo_path.clone(),
+                None => {
+                    respond(&mut stream, 400, "{\"error\":\"no base repo configured\"}");
+                    return;
+                }
+            };
+            let parent = std::path::Path::new(&base)
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| ".".into());
+            let path_new = format!("{parent}/worktrees-{id}");
+            if let Err(e) = worktree_add(base, branch, path_new.clone()) {
+                respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}"));
+                return;
+            }
+            cfg.teammates.push(TeamMember {
+                id: id.clone(),
+                name: id.clone(),
+                repo_path: path_new.clone(),
+                permission: Some("edit".into()),
+                remote: None,
+                tmux_session: None,
+                agent: None,
+            });
+            let _ = team_config_write(cfg);
+            match pty_ensure_inner(app.clone(), id, path_new, false, None, None, None) {
+                Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
+                Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
+            }
+        }
+        _ => respond(&mut stream, 404, "{\"error\":\"unknown route\"}"),
+    }
 }
 
 
