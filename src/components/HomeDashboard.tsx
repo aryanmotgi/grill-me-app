@@ -12,21 +12,9 @@ import { DEFAULT_TOKEN_BUDGET, tokenBudget, tokenBurn } from "../lib/dashboard";
 import type { TokenBurn } from "../lib/dashboard";
 import { budgetLevel, budgetPct, budgetWarning, rateLimitedSessions } from "../lib/ratelimit";
 import type { ActivityEvent, Teammate } from "../types";
+import { sessionSentence as activitySentence } from "../lib/flow";
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
-
-function activitySentence(t: Teammate): string {
-  if (t.health === "disconnected") return "worktree not connected";
-  if (t.status === "needs-input") return "needs a decision";
-  if (t.flag === "looping") return "looks stuck in a loop";
-  if (t.flag === "stalled") return "stalled — no output for a while";
-  if (t.status === "working")
-    return t.currentFile !== "—" && t.currentFile
-      ? `working in ${t.currentFile.split("/").pop()}`
-      : "working";
-  if (t.lastActiveMin > 0) return `quiet ${t.lastActiveMin}m`;
-  return "idle";
-}
 
 // ---------------------------------------------------------------------------
 // 1. HERO — the one queue that matters. Amber emphasis + pulse when non-empty;

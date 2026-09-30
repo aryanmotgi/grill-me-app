@@ -89,6 +89,8 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
         </button>
         <NavItem icon="layout" label="Home" active={view === "home"} title="Mission control (⌘H)"
           onClick={() => go("home")} />
+        <NavItem icon="swap" label="Flow" active={view === "flow"} title="Who's talking to whom: Claude ⇄ brain ⇄ sessions ⇄ teammates"
+          onClick={() => go("flow")} />
         <NavItem icon="note" label="Brain" tour="brain" active={view === "brain"} title="Shared project brain: goal, where was I, what's happening"
           onClick={() => go("brain")} />
         <NavItem icon="claude" label="Claude" active={claudeOpen} title="Claude chat panel — sees your sessions (⌘J)"

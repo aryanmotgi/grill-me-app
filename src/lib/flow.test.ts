@@ -1,0 +1,66 @@
+import { describe, expect, it } from "vitest";
+import { buildWires, sessionMarks, sessionSentence } from "./flow";
+import type { BridgeState } from "./bridge";
+import type { Teammate } from "../types";
+
+const bridge: BridgeState = {
+  handoffs: [
+    { id: "h1", ts: 300, status: "pending", kind: "handoff", session: "s1", sessionTitle: "Rouge main", message: "Build the login page\nwith email only", userExplanation: "…" },
+    { id: "h2", ts: 100, status: "sent", kind: "handoff", session: "s1", message: "old", userExplanation: "" },
+    { id: "h3", ts: 250, status: "pending", kind: "answer", session: "s2", message: "Use Postgres.", userExplanation: "" },
+  ],
+  plans: [{ id: "p1", ts: 200, status: "pending", title: "MVP", decision: "email login", tasks: [{ title: "a" }, { title: "b" }] }],
+  questions: [
+    { id: "q1", ts: 50, answered: false, from: "s2", fromTitle: "API", question: "Postgres or SQLite?" },
+    { id: "q2", ts: 60, answered: true, from: "s2", question: "done one" },
+  ],
+  notes: [],
+};
+
+describe("buildWires", () => {
+  it("turns pending items into wires, oldest first, and skips resolved ones", () => {
+    const wires = buildWires(bridge, (id) => `#${id}`);
+    expect(wires.map((w) => w.id)).toEqual(["q1", "p1", "h3", "h1"]);
+    const task = wires.find((w) => w.id === "h1")!;
+    expect(task.kind).toBe("task");
+    expect(task.to).toEqual({ kind: "session", id: "s1", title: "Rouge main" });
+    expect(task.label).toBe("Build the login page with email only");
+    expect(task.action).toBe("send");
+    const q = wires.find((w) => w.id === "q1")!;
+    expect(q.from).toEqual({ kind: "session", id: "s2", title: "API" });
+    expect(q.to).toEqual({ kind: "brainstorm" });
+    const plan = wires.find((w) => w.id === "p1")!;
+    expect(plan.to).toEqual({ kind: "brain" });
+    expect(plan.label).toBe("MVP · 2 tasks");
+  });
+
+  it("falls back to the session title lookup and clips long labels", () => {
+    const long: BridgeState = { ...bridge, plans: [], questions: [], handoffs: [
+      { id: "h", ts: 1, status: "pending", kind: "handoff", session: "s9", message: "x".repeat(200), userExplanation: "" },
+    ] };
+    const [w] = buildWires(long, (id) => (id === "s9" ? "Nine" : id));
+    expect(w.to).toEqual({ kind: "session", id: "s9", title: "Nine" });
+    expect(w.label.length).toBe(110);
+    expect(w.label.endsWith("…")).toBe(true);
+  });
+});
+
+describe("sessionMarks", () => {
+  it("counts what waits to go in and what waits to come out", () => {
+    const wires = buildWires(bridge, (id) => id);
+    expect(sessionMarks(wires, "s1")).toEqual({ waiting: 1, asked: 0 });
+    expect(sessionMarks(wires, "s2")).toEqual({ waiting: 1, asked: 1 });
+    expect(sessionMarks(wires, "s3")).toEqual({ waiting: 0, asked: 0 });
+  });
+});
+
+describe("sessionSentence", () => {
+  const base = { health: "ok", status: "idle", currentFile: "—", lastActiveMin: 0 } as unknown as Teammate;
+  it("ranks the states", () => {
+    expect(sessionSentence({ ...base, health: "disconnected" } as Teammate)).toBe("worktree not connected");
+    expect(sessionSentence({ ...base, status: "needs-input" } as Teammate)).toBe("needs a decision");
+    expect(sessionSentence({ ...base, status: "working", currentFile: "src/app/login.tsx" } as Teammate)).toBe("working in login.tsx");
+    expect(sessionSentence({ ...base, lastActiveMin: 7 } as Teammate)).toBe("quiet 7m");
+    expect(sessionSentence(base)).toBe("idle");
+  });
+});

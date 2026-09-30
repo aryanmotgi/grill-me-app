@@ -17,6 +17,7 @@ import { SettingsModal } from "./components/Settings";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { Onboarding } from "./components/Onboarding";
 import { InstallConsent } from "./components/InstallConsent";
+import { FlowPage } from "./components/FlowPage";
 import { ReviewModal } from "./components/ReviewModal";
 import { SessionHandoff } from "./components/SessionHandoff";
 import { HomeDashboard } from "./components/HomeDashboard";
@@ -353,6 +354,8 @@ export default function App() {
             <AutomationsPage />
           ) : view === "brain" ? (
             <BrainPage />
+          ) : view === "flow" ? (
+            <FlowPage />
           ) : view === "new" || !active ? (
             <NewSession />
           ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" ? (
