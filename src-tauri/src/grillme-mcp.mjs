@@ -275,6 +275,39 @@ const ago = (ms) => {
   return m < 1 ? "just now" : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
 };
 
+/** Last auto-test result for a worktree (tests.json, written by Grill Me). */
+function testResult(repo) {
+  const all = readJson(join(projectDir().dir, "tests.json"), {});
+  return all && typeof all === "object" ? all[repo] ?? null : null;
+}
+
+function testLine(repo) {
+  const t = testResult(repo);
+  if (!t) return null;
+  const secs = Math.round((t.ms ?? 0) / 1000);
+  return `tests: ${t.ok ? "passing" : "FAILING"} (${t.cmd}, ${secs}s, ${ago(t.at)})`;
+}
+
+/** Can this session ship? Branch vs main, uncommitted work, last tests. */
+export function shipVerdict({ branch, base, ahead, dirty, tests }) {
+  if (!base) return "no main/master branch";
+  if (branch === base) return "on the default branch — work needs its own branch";
+  if (tests && !tests.ok) return "blocked: tests failing";
+  if (dirty) return `not ready: ${dirty} uncommitted file${dirty === 1 ? "" : "s"}`;
+  if (!ahead) return "nothing to ship yet";
+  return tests ? "ready to ship" : "ready to ship (no test run yet)";
+}
+
+function shipRow(m) {
+  const repo = m.repoPath;
+  const branch = git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const base = ["main", "master"].find((b) => git(repo, ["rev-parse", "--verify", "--quiet", b])) ?? "";
+  const ahead = base && base !== branch ? Number(git(repo, ["rev-list", "--count", `${base}..HEAD`])) || 0 : 0;
+  const dirty = changedFiles(repo).length;
+  const tests = testResult(repo);
+  return { branch, base, ahead, dirty, tests, verdict: shipVerdict({ branch, base, ahead, dirty, tests }) };
+}
+
 function sessionCard(m) {
   const { turns: ts, updated } = turns(m.repoPath);
   const last = ts[ts.length - 1];
@@ -283,6 +316,7 @@ function sessionCard(m) {
   return [
     `### ${label(m)}  (id: ${m.id})`,
     `branch: ${git(m.repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]) || "?"} · ${changed} changed files · ${working ? "WORKING now" : `last active ${ago(updated)}`}`,
+    testLine(m.repoPath),
     last ? `last ask: "${clip(last.ask, 200)}"` : "no conversation yet",
     last && last.tools.length ? `did: ${clip(last.tools.slice(-8).join(", "), 300)}` : null,
     last && last.reply ? `last reply: ${clip(last.reply, 500)}` : null,
@@ -699,6 +733,11 @@ const TOOLS = [
     inputSchema: { type: "object", required: ["goal"], properties: { goal: { type: "string" } } },
   },
   {
+    name: "ship_status",
+    description: "Which sessions are ready to ship: each one's branch, commits ahead of main, uncommitted files, last auto-test result, and a verdict (ready / tests failing / uncommitted / nothing yet). Check this before telling the user something is done.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "team_status",
     description: "In team mode: every teammate's presence, branch, and tasks. (Teammates' conversations live on their machines and aren't readable.)",
     inputSchema: { type: "object", properties: {} },
@@ -809,6 +848,20 @@ async function callTool(name, args = {}) {
       await push("goal", { goal: String(args.goal) });
       return "Goal saved to the shared brain.";
     }
+    case "ship_status": {
+      const all = members();
+      if (!all.length) return "No sessions — open a project in Grill Me first.";
+      return all.map((m) => {
+        const r = shipRow(m);
+        const t = r.tests;
+        return [
+          `### ${label(m)}: ${r.verdict}`,
+          `branch ${r.branch || "?"}${r.base && r.branch !== r.base ? ` · ${r.ahead} commit${r.ahead === 1 ? "" : "s"} ahead of ${r.base}` : ""} · ${r.dirty} uncommitted`,
+          t ? testLine(m.repoPath) : "tests: not run yet (turn on Auto-test in Grill Me → Automations)",
+          t && !t.ok && t.tail ? `last test output:\n${clip(t.tail, 800)}` : null,
+        ].filter(Boolean).join("\n");
+      }).join("\n\n");
+    }
     case "team_status": {
       const settings = readJson(join(ROOT, "settings.json"), {});
       if (settings.appMode !== "team") return "Grill Me is in solo mode — no teammates.";
@@ -842,7 +895,7 @@ const TITLES = {
   whats_new: "What's new in my sessions", read_session: "Read a session", get_diff: "Get a session's diff",
   get_plan: "Get the plan", save_plan: "Propose a plan", send_to_coder: "Hand a task to a session",
   ask_brainstorm: "Ask the brainstorm side", open_questions: "Open questions", answer_question: "Answer a coder's question",
-  notes: "Shared notes", past_lessons: "Past lessons", catch_up: "Catch up", set_goal: "Set the project goal", team_status: "Team status",
+  notes: "Shared notes", past_lessons: "Past lessons", catch_up: "Catch up", set_goal: "Set the project goal", team_status: "Team status", ship_status: "Ship status",
 };
 const IDEMPOTENT = new Set(["set_goal"]);
 
