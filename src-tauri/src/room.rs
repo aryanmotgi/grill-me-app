@@ -32,7 +32,9 @@ pub const ROOM_PORT: u16 = 4518;
 
 /// Shared documents carried live over the room AFTER onboarding (phase
 /// "done"). Same id-keyed arrays the local ~/.grillme merge writer uses.
-pub const SYNC_FILES: &[&str] = &["tasks.json", "messages.json", "decisions.json"];
+/// brain.json is the team half of the shared brain (goal + notes): an
+/// append-only list, so the id merge never has to resolve an edit conflict.
+pub const SYNC_FILES: &[&str] = &["tasks.json", "messages.json", "decisions.json", "brain.json"];
 
 /// Per-file tombstone cap — a bounded ring so a long session can't grow the
 /// removed-id set without limit. Deletions older than this many removals may

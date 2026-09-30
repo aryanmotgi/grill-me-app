@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Drives the real grill-me MCP server over stdio (isolated HOME) and checks
 // the tool list it advertises.
-function rpc(lines: object[]): Promise<Record<string, unknown>[]> {
+function rpc(lines: object[], seed?: (home: string) => void): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
     const home = mkdtempSync(join(tmpdir(), "grillme-mcp-"));
+    seed?.(home);
     const child = spawn(process.execPath, ["src-tauri/src/grillme-mcp.mjs"], { env: { ...process.env, HOME: home } });
     let out = "";
     child.stdout.on("data", (d) => {
@@ -44,5 +45,22 @@ describe("grill-me MCP server", () => {
     expect(byName.send_to_coder.readOnlyHint).toBe(false);
     expect(byName.save_plan.readOnlyHint).toBe(false);
     expect(byName.notes.readOnlyHint).toBe(false);
+  });
+
+  it("catch_up shows a teammate's goal and notes from the synced team brain", async () => {
+    const now = Date.now();
+    const [, res] = await rpc([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "catch_up", arguments: { hours: 1 } } },
+    ], (home) => {
+      mkdirSync(join(home, ".grillme"), { recursive: true });
+      writeFileSync(join(home, ".grillme", "brain.json"), JSON.stringify([
+        { id: "g-1", kind: "goal", ts: now, text: "Ship the demo by 5pm" },
+        { id: "n-1", kind: "note", ts: now, text: "judges love live demos", by: "Maya" },
+      ]));
+    });
+    const text = JSON.stringify(res.result);
+    expect(text).toContain("Ship the demo by 5pm");
+    expect(text).toContain("judges love live demos");
   });
 });
