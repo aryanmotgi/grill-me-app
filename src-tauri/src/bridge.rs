@@ -198,6 +198,9 @@ pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
     arr.push(entry.clone());
     trim(arr);
     save(&v)?;
+    if kind == "note" {
+        append_team(json!({ "id": entry["id"], "kind": "note", "ts": ts, "text": entry["text"], "by": entry["by"] }));
+    }
     Ok(entry)
 }
 
@@ -205,10 +208,52 @@ pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
 fn set_goal(goal: &str) -> Result<Value, String> {
     let _g = crate::lock_or_recover(&BRIDGE_LOCK);
     let mut v = load();
+    let ts = now_ms();
     v["goal"] = json!(goal.chars().take(500).collect::<String>());
-    v["goalTs"] = json!(now_ms());
+    v["goalTs"] = json!(ts);
     save(&v)?;
+    append_team(json!({ "id": new_id("g"), "kind": "goal", "ts": ts, "text": v["goal"] }));
     Ok(json!({ "goal": v["goal"] }))
+}
+
+// ---- team brain -------------------------------------------------------------
+// brain.json mirrors every goal change and note as an append-only entry. In
+// team mode the room syncs it (room::SYNC_FILES), so teammates' goals and
+// notes arrive here; `with_team` overlays them for reading. Solo, it's inert.
+
+fn team_path() -> PathBuf {
+    crate::grillme_dir().join("brain.json")
+}
+
+/// Same locked merge-writer the room sync uses, so the two never race.
+fn append_team(entry: Value) {
+    let _ = crate::upsert_at(&team_path(), vec![entry], &[], false);
+}
+
+/// Overlay the team's entries on this Mac's bridge: the newest goal from
+/// anyone wins, and teammates' notes join ours (deduped by id).
+pub(crate) fn with_team(mut v: Value, team: &[Value]) -> Value {
+    let ts_of = |e: &Value| e["ts"].as_u64().unwrap_or(0);
+    if let Some(g) = team.iter().filter(|e| e["kind"] == "goal").max_by_key(|e| ts_of(e)) {
+        if ts_of(g) > v["goalTs"].as_u64().unwrap_or(0) {
+            v["goal"] = g["text"].clone();
+            v["goalTs"] = g["ts"].clone();
+        }
+    }
+    if let Some(notes) = v["notes"].as_array_mut() {
+        let mine: std::collections::HashSet<String> = notes.iter().filter_map(|n| n["id"].as_str().map(str::to_owned)).collect();
+        for e in team.iter().filter(|e| e["kind"] == "note") {
+            if e["id"].as_str().is_some_and(|id| !mine.contains(id)) {
+                notes.push(json!({ "id": e["id"], "ts": e["ts"], "text": e["text"], "by": e["by"] }));
+            }
+        }
+        notes.sort_by_key(|n| n["ts"].as_u64().unwrap_or(0));
+    }
+    v
+}
+
+fn team_entries() -> Vec<Value> {
+    std::fs::read_to_string(team_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
 #[tauri::command]
@@ -508,7 +553,7 @@ pub(crate) fn bridge_add_note(text: String, by: String) -> Result<(), String> {
 #[tauri::command]
 pub(crate) fn bridge_read() -> String {
     let _g = crate::lock_or_recover(&BRIDGE_LOCK);
-    load().to_string()
+    with_team(load(), &team_entries()).to_string()
 }
 
 /// Mark a handoff/plan resolved (sent, applied, dismissed) or a question dismissed.
@@ -659,5 +704,32 @@ mod tests {
     fn skills_and_script_are_embedded() {
         assert!(MCP_SCRIPT.contains("tools/list"));
         assert_eq!(DEFAULT_SKILLS.len(), 6);
+    }
+}
+
+#[cfg(test)]
+mod team_brain_tests {
+    use serde_json::json;
+
+    #[test]
+    fn newest_goal_wins_and_team_notes_join() {
+        let local = json!({ "goal": "mine", "goalTs": 100, "notes": [{ "id": "n-1", "ts": 50, "text": "a" }] });
+        let team = vec![
+            json!({ "id": "g-1", "kind": "goal", "ts": 90, "text": "older" }),
+            json!({ "id": "g-2", "kind": "goal", "ts": 200, "text": "team goal" }),
+            json!({ "id": "n-1", "kind": "note", "ts": 50, "text": "a" }),
+            json!({ "id": "n-2", "kind": "note", "ts": 10, "text": "from Maya", "by": "Maya" }),
+        ];
+        let v = super::with_team(local, &team);
+        assert_eq!(v["goal"], "team goal");
+        let notes = v["notes"].as_array().unwrap();
+        assert_eq!(notes.len(), 2, "own note not duplicated");
+        assert_eq!(notes[0]["text"], "from Maya", "sorted by time");
+    }
+
+    #[test]
+    fn local_goal_kept_when_newer() {
+        let v = super::with_team(json!({ "goal": "mine", "goalTs": 300, "notes": [] }), &[json!({ "id": "g", "kind": "goal", "ts": 200, "text": "old" })]);
+        assert_eq!(v["goal"], "mine");
     }
 }

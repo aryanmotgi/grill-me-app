@@ -292,7 +292,22 @@ function sessionCard(m) {
 // ---- bridge (writes go through Grill Me) -----------------------------------
 
 function bridgeState() {
-  return readJson(join(projectDir().dir, "bridge.json"), { handoffs: [], questions: [], plans: [], notes: [] });
+  const dir = projectDir().dir;
+  const b = readJson(join(dir, "bridge.json"), { handoffs: [], questions: [], plans: [], notes: [] });
+  const team = readJson(join(dir, "brain.json"), []);
+  return withTeam(b, Array.isArray(team) ? team : []);
+}
+
+/** Team half of the brain (brain.json, synced by the room): the newest goal
+ *  from anyone wins; teammates' notes join ours. Mirrors bridge.rs with_team. */
+export function withTeam(b, team) {
+  const out = { ...b, notes: [...(b.notes ?? [])] };
+  const goal = team.filter((e) => e.kind === "goal").sort((x, y) => (y.ts ?? 0) - (x.ts ?? 0))[0];
+  if (goal && (goal.ts ?? 0) > (b.goalTs ?? 0)) { out.goal = goal.text; out.goalTs = goal.ts; }
+  const mine = new Set(out.notes.map((n) => n.id));
+  for (const e of team) if (e.kind === "note" && e.id && !mine.has(e.id)) out.notes.push({ id: e.id, ts: e.ts, text: e.text, by: e.by });
+  out.notes.sort((x, y) => (x.ts ?? 0) - (y.ts ?? 0));
+  return out;
 }
 
 async function push(kind, item) {

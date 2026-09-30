@@ -153,7 +153,7 @@ let roomFeedStarted = false;
  * flag raises the host-offline banner, and the next success clears it.
  */
 /** Files carried live over the room after onboarding — mirrors room.rs. */
-const ROOM_SYNC_FILES = ["tasks.json", "messages.json", "decisions.json"] as const;
+const ROOM_SYNC_FILES = ["tasks.json", "messages.json", "decisions.json", "brain.json"] as const;
 
 export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   if (roomFeedStarted || !isTauri()) return;

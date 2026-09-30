@@ -1089,7 +1089,7 @@ fn grillme_dir() -> PathBuf {
     dir
 }
 
-const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json", "decisions.json"];
+const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json", "decisions.json", "brain.json"];
 
 fn shared_path(name: &str) -> PathBuf {
     if name == "settings.json" {
@@ -1248,7 +1248,7 @@ pub(crate) fn merge_by_id(
 /// Read-merge-write one array file under both locks, with an atomic
 /// temp+rename publish. Path-parameterized so tests can exercise the full
 /// critical section against a temp dir.
-fn upsert_at(
+pub(crate) fn upsert_at(
     target: &std::path::Path,
     incoming: Vec<serde_json::Value>,
     removed_ids: &[String],
@@ -1267,8 +1267,8 @@ fn upsert_at(
 
 #[tauri::command]
 fn shared_upsert(name: String, items_json: String, removed_ids: Vec<String>) -> Result<(), String> {
-    if name != "tasks.json" && name != "messages.json" && name != "decisions.json" {
-        return Err("shared_upsert only supports tasks.json / messages.json / decisions.json".into());
+    if !room::SYNC_FILES.contains(&name.as_str()) {
+        return Err(format!("shared_upsert only supports {}", room::SYNC_FILES.join(" / ")));
     }
     let incoming: Vec<serde_json::Value> = serde_json::from_str(&items_json)
         .map_err(|e| format!("items must be a JSON array of objects: {e}"))?;
