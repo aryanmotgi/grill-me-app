@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildWires, digestChanged, digestSessions, sessionMarks, sessionSentence, teamSessionsByMember } from "./flow";
 import type { BridgeState } from "./bridge";
-import type { Teammate } from "../types";
+import type { Teammate, TeamBridgeItem } from "../types";
 
 const bridge: BridgeState = {
   handoffs: [
@@ -99,5 +99,25 @@ describe("team session digest", () => {
     const by = teamSessionsByMember(all, now);
     expect([...by.keys()]).toEqual(["m1"]);
     expect(by.get("m1")!.map((d) => d.title)).toEqual(["a", "b"]);
+  });
+});
+
+describe("buildWires with teammates", () => {
+  it("routes outbound hand-offs to the teammate, inbound ones from them, and lists their questions", () => {
+    const b: BridgeState = {
+      handoffs: [
+        { id: "out", ts: 1, status: "pending", kind: "handoff", session: "api", sessionTitle: "API", message: "go", userExplanation: "", to: "m2", toName: "Maya" },
+        { id: "in", ts: 2, status: "pending", kind: "handoff", session: "ui", sessionTitle: "UI", message: "please", userExplanation: "", from: "Maya" },
+      ],
+      plans: [], questions: [], notes: [],
+    };
+    const tq: TeamBridgeItem[] = [{ id: "tq", kind: "question", from: "m2", fromName: "Maya", to: null, session: "api", sessionTitle: "API", message: "Redis or memory?", ts: 3, status: "pending" }];
+    const w = buildWires(b, (id) => id, tq);
+    expect(w.map((x) => x.id)).toEqual(["out", "in", "tq"]);
+    expect(w[0].to).toEqual({ kind: "teammate", member: "m2", name: "Maya", session: "api", sessionTitle: "API" });
+    expect(w[1].from).toEqual({ kind: "teammate", member: "", name: "Maya" });
+    expect(w[1].to).toEqual({ kind: "session", id: "ui", title: "UI" });
+    expect(w[2]).toMatchObject({ list: "team", action: "answer", to: { kind: "brainstorm" } });
+    expect(w[2].from).toMatchObject({ kind: "teammate", name: "Maya", sessionTitle: "API" });
   });
 });

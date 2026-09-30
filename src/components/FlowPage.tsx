@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { useApp } from "../store";
+import { upsertShared, useApp } from "../store";
 import { sessionTitle } from "../lib/sessionTitle";
 import { buildWires, sessionMarks, sessionSentence, teamSessionsByMember, type FlowEnd, type Wire } from "../lib/flow";
+import { newTeamHandoff, teamQuestionsFor } from "../lib/teamBridge";
+import type { TeamSession } from "../types";
 import { bridgeApply, bridgeResolve, bridgeSend, useBridge } from "./BridgePanel";
 import { useRemote } from "./ClaudeConnect";
 import { useTests } from "./Automations";
@@ -75,9 +77,9 @@ function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string })
       <div className="flex items-center gap-2 pt-0.5">
         <button className="composer-btn on h-7 text-[11.5px]" disabled={busy} onClick={() => void act()}>
           {busy ? <span className="spinner" /> : w.action === "answer" ? <AgentLogo agent="claude" size={11} /> : <Icon name={w.action === "apply" ? "check" : "push"} size={11} />}
-          {w.action === "send" ? "Send to session" : w.action === "apply" ? "Add to board" : "Answer in Claude"}
+          {w.action === "send" ? (w.to.kind === "teammate" ? `Send to ${w.to.name}` : "Send to session") : w.action === "apply" ? "Add to board" : "Answer in Claude"}
         </button>
-        <button className="composer-btn h-7 text-[11.5px]" onClick={() => void bridgeResolve(w.list, w.id, "dismissed")}>Dismiss</button>
+        {w.list === "team" ? null : <button className="composer-btn h-7 text-[11.5px]" onClick={() => void bridgeResolve(w.list, w.id, "dismissed")}>Dismiss</button>}
         <span className="flex-1" />
         <button className="text-[11px] text-faint hover:text-dim cursor-pointer" onClick={() => setBridgeOpen(true)}>details</button>
       </div>
@@ -109,6 +111,59 @@ function SessionRow({ t, wires, onOpen }: { t: Teammate; wires: Wire[]; onOpen: 
   );
 }
 
+/** One of a teammate's sessions, with "Hand a task" (routed over the room;
+ *  they approve before it's typed in). */
+function MateSessionRow({ d, me, meName }: { d: TeamSession; me: string; meName: string }) {
+  const toast = useApp((s) => s.toast);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    const message = (draft ?? "").trim();
+    if (!message) return;
+    setBusy(true);
+    try {
+      await upsertShared("team-bridge.json", [newTeamHandoff({ me, meName, to: d.member, toName: d.memberName, session: d.session, sessionTitle: d.title, message, now: Date.now() })]);
+      toast(`Sent to ${d.memberName} — they approve it before it reaches ${d.title}`);
+      setDraft(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1.5 px-1 py-1.5">
+      <div className="flex items-start gap-2 group/mate">
+        <span className={`status-dot ${d.status} mt-1.5 flex-none`} style={{ width: 7, height: 7 }} aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="text-[12.5px] text-ink truncate">{d.title}</span>
+            {d.tests === null ? null : <span className={`text-[11px] flex-none ${d.tests ? "text-ok" : "text-danger"}`}>{d.tests ? "tests ✓" : "tests ✗"}</span>}
+            <span className="flex-1" />
+            {draft === null ? (
+              <button className="text-[11px] text-faint hover:text-ink cursor-pointer opacity-0 group-hover/mate:opacity-100 focus:opacity-100 transition-opacity flex-none"
+                title={`Write a task for ${d.memberName}'s ${d.title} — ${d.memberName} approves it before it's typed in`}
+                onClick={() => setDraft("")}>hand a task</button>
+            ) : null}
+          </span>
+          <span className="block text-[11px] text-dim truncate">{d.sentence} · <span className="font-mono text-faint">{d.branch}</span></span>
+        </span>
+      </div>
+      {draft !== null ? (
+        <div className="flex flex-col gap-1.5 pl-4">
+          <textarea autoFocus rows={3} value={draft} maxLength={4000} placeholder={`What should ${d.memberName}'s ${d.title} do?`}
+            className="w-full bg-raised/60 hairline rounded-md px-2.5 py-2 text-[12px] text-ink outline-none focus:border-white/20 resize-none"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") setDraft(null); if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send(); }} />
+          <div className="flex items-center gap-2">
+            <button className="composer-btn on h-7 text-[11.5px]" disabled={busy || !draft.trim()} onClick={() => void send()}><Icon name="push" size={11} /> Send to {d.memberName}</button>
+            <button className="composer-btn h-7 text-[11.5px]" onClick={() => setDraft(null)}>Cancel</button>
+            <span className="text-[10.5px] text-faint">⌘↩ sends · they approve it on their side</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function FlowPage() {
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "this project");
   const teammates = useApp((s) => s.teammates);
@@ -120,6 +175,7 @@ export function FlowPage() {
   const roomSelfId = useApp((s) => s.roomSelf?.memberId);
   const roomPresence = useApp((s) => s.roomPresence);
   const teamSessions = useApp((s) => s.teamSessions);
+  const teamBridge = useApp((s) => s.teamBridge);
   const setView = useApp((s) => s.setView);
   const setActive = useApp((s) => s.setActive);
   const state = useBridge((b) => b.state);
@@ -137,7 +193,9 @@ export function FlowPage() {
     return t ? sessionTitle(t, titles) : id;
   };
   const statusOf = (id: string) => teammates.find((x) => x.id === id)?.status ?? "idle";
-  const wires = useMemo(() => buildWires(state, titleOf), [state, teammates, titles]); // eslint-disable-line react-hooks/exhaustive-deps
+  const me = roomSelfId ?? "";
+  const meName = room?.members.find((m) => m.id === me)?.name ?? me;
+  const wires = useMemo(() => buildWires(state, titleOf, teamQuestionsFor(teamBridge, me)), [state, teammates, titles, teamBridge, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mates = room ? room.members.filter((m) => m.id !== roomSelfId) : [];
   const mateSessions = useMemo(() => teamSessionsByMember(teamSessions, Date.now()), [teamSessions]);
@@ -230,18 +288,7 @@ export function FlowPage() {
                     </div>
                     {(mateSessions.get(m.id) ?? []).length ? (
                       <div className="flex flex-col divide-y divide-line/60 -mx-1">
-                        {mateSessions.get(m.id)!.map((d) => (
-                          <div key={d.id} className="flex items-start gap-2 px-1 py-1.5">
-                            <span className={`status-dot ${d.status} mt-1.5 flex-none`} style={{ width: 7, height: 7 }} aria-hidden />
-                            <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-2">
-                                <span className="text-[12.5px] text-ink truncate">{d.title}</span>
-                                {d.tests === null ? null : <span className={`text-[11px] flex-none ${d.tests ? "text-ok" : "text-danger"}`}>{d.tests ? "tests ✓" : "tests ✗"}</span>}
-                              </span>
-                              <span className="block text-[11px] text-dim truncate">{d.sentence} · <span className="font-mono text-faint">{d.branch}</span></span>
-                            </span>
-                          </div>
-                        ))}
+                        {mateSessions.get(m.id)!.map((d) => <MateSessionRow key={d.id} d={d} me={me} meName={meName} />)}
                       </div>
                     ) : (
                       <>

@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { BridgeState } from "./bridge";
-import type { Teammate, TeamSession } from "../types";
+import type { Teammate, TeamBridgeItem, TeamSession } from "../types";
 
 export type FlowEnd =
   | { kind: "brainstorm" }
@@ -24,7 +24,8 @@ export interface Wire {
   ts: number;
   /** the click that lets it through */
   action: "send" | "apply" | "answer";
-  list: "handoffs" | "plans" | "questions";
+  /** "team" = a teammate's question (lives in team-bridge.json, not ours to dismiss) */
+  list: "handoffs" | "plans" | "questions" | "team";
 }
 
 const clip = (s: string, n: number) => {
@@ -32,20 +33,35 @@ const clip = (s: string, n: number) => {
   return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 };
 
-/** Pending bridge items as wires, oldest first (waited longest = top). */
-export function buildWires(b: BridgeState, titleOf: (id: string) => string): Wire[] {
+/** Pending bridge items as wires, oldest first (waited longest = top).
+ *  `teamQuestions` = teammates' open questions (they end at Claude too). */
+export function buildWires(b: BridgeState, titleOf: (id: string) => string, teamQuestions: TeamBridgeItem[] = []): Wire[] {
   const wires: Wire[] = [];
   for (const h of b.handoffs) {
     if (h.status !== "pending") continue;
+    const local: FlowEnd = { kind: "session", id: h.session, title: h.sessionTitle || titleOf(h.session) };
     wires.push({
       id: h.id,
       kind: h.kind === "answer" ? "answer" : "task",
-      from: { kind: "brainstorm" },
-      to: { kind: "session", id: h.session, title: h.sessionTitle || titleOf(h.session) },
+      // inbound from a teammate: their name is the source; outbound to one: their session is the target
+      from: h.from ? { kind: "teammate", member: "", name: h.from } : { kind: "brainstorm" },
+      to: h.to ? { kind: "teammate", member: h.to, name: h.toName || h.to, session: h.session, sessionTitle: h.sessionTitle } : local,
       label: clip(h.message, 110),
       ts: h.ts,
       action: "send",
       list: "handoffs",
+    });
+  }
+  for (const q of teamQuestions) {
+    wires.push({
+      id: q.id,
+      kind: "question",
+      from: { kind: "teammate", member: q.from, name: q.fromName, session: q.session, sessionTitle: q.sessionTitle },
+      to: { kind: "brainstorm" },
+      label: clip(q.message, 110),
+      ts: q.ts,
+      action: "answer",
+      list: "team",
     });
   }
   for (const p of b.plans) {

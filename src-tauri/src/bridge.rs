@@ -161,6 +161,10 @@ pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
                 "sessionTitle": opt_text(item, "sessionTitle"),
                 "message": text(item, "message")?,
                 "userExplanation": text(item, "userExplanation")?,
+                // set when the session lives on a teammate's Mac: approving
+                // here routes it over the room instead of typing it locally
+                "to": opt_text(item, "to"),
+                "toName": opt_text(item, "toName"),
             }),
         ),
         "plan" => {
@@ -201,15 +205,29 @@ pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
             let qid = text(item, "id")?;
             let answer = text(item, "answer")?;
             let qs = v["questions"].as_array_mut().ok_or("corrupt bridge")?;
-            let q = qs.iter_mut().find(|q| q["id"] == qid.as_str()).ok_or("no question with that id")?;
-            q["answered"] = json!(true);
-            q["answer"] = json!(answer);
-            let handoff = json!({
-                "id": new_id("h"), "ts": ts, "status": "pending", "kind": "answer",
-                "session": q["from"], "sessionTitle": q["fromTitle"],
-                "message": format!("Answer from the brainstorm side to your question \"{}\":\n\n{answer}", q["question"].as_str().unwrap_or("")),
-                "userExplanation": "",
-            });
+            let handoff = if let Some(q) = qs.iter_mut().find(|q| q["id"] == qid.as_str()) {
+                q["answered"] = json!(true);
+                q["answer"] = json!(answer);
+                json!({
+                    "id": new_id("h"), "ts": ts, "status": "pending", "kind": "answer",
+                    "session": q["from"], "sessionTitle": q["fromTitle"],
+                    "message": format!("Answer from the brainstorm side to your question \"{}\":\n\n{answer}", q["question"].as_str().unwrap_or("")),
+                    "userExplanation": "",
+                })
+            } else {
+                // a teammate's question (team-bridge.json): the answer goes back
+                // to their session over the room once the user approves it here
+                let tq = team_bridge().into_iter()
+                    .find(|e| e["kind"] == "question" && e["id"] == qid.as_str() && e["status"] == "pending")
+                    .ok_or("no question with that id")?;
+                json!({
+                    "id": new_id("h"), "ts": ts, "status": "pending", "kind": "answer",
+                    "session": tq["session"], "sessionTitle": tq["sessionTitle"],
+                    "to": tq["from"], "toName": tq["fromName"], "questionId": qid,
+                    "message": format!("Answer from the brainstorm side to your question \"{}\":\n\n{answer}", tq["message"].as_str().unwrap_or("")),
+                    "userExplanation": "",
+                })
+            };
             ("handoffs", handoff)
         }
         _ => return Err(format!("unknown kind {kind}")),
@@ -248,6 +266,49 @@ fn team_path() -> PathBuf {
 /// Same locked merge-writer the room sync uses, so the two never race.
 fn append_team(entry: Value) {
     let _ = crate::upsert_at(&team_path(), vec![entry], &[], false);
+}
+
+fn team_bridge() -> Vec<Value> {
+    std::fs::read_to_string(project_dir().join("team-bridge.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+/// An inbound team-bridge item (a hand-off or answer a teammate routed to one
+/// of THIS Mac's sessions) becomes a pending local hand-off, keyed by the
+/// team id so re-imports are no-ops. An answer to one of our questions also
+/// marks that question answered. Returns true when something was added.
+#[tauri::command]
+pub(crate) fn bridge_import(item: Value) -> Result<bool, String> {
+    let id = text(&item, "id")?;
+    let kind = text(&item, "kind")?;
+    if kind != "handoff" && kind != "answer" {
+        return Err("only hand-offs and answers can be imported".into());
+    }
+    let _g = crate::lock_or_recover(&BRIDGE_LOCK);
+    let mut v = load();
+    if v["handoffs"].as_array().is_some_and(|a| a.iter().any(|h| h["id"] == id.as_str())) {
+        return Ok(false);
+    }
+    let session = text(&item, "session")?;
+    let message = text(&item, "message")?;
+    if kind == "answer" {
+        if let Some(qid) = item["questionId"].as_str() {
+            if let Some(q) = v["questions"].as_array_mut().and_then(|qs| qs.iter_mut().find(|q| q["id"] == qid)) {
+                q["answered"] = json!(true);
+                q["answer"] = json!(message);
+            }
+        }
+    }
+    let entry = json!({
+        "id": id, "ts": now_ms(), "status": "pending", "kind": kind,
+        "session": session, "sessionTitle": opt_text(&item, "sessionTitle"),
+        "message": message, "userExplanation": opt_text(&item, "userExplanation"),
+        "from": opt_text(&item, "fromName"),
+    });
+    let arr = v["handoffs"].as_array_mut().ok_or("corrupt bridge")?;
+    arr.push(entry);
+    trim(arr);
+    save(&v)?;
+    Ok(true)
 }
 
 /// Overlay the team's entries on this Mac's bridge: the newest goal from

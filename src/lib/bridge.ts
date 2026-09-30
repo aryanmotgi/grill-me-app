@@ -10,6 +10,12 @@ export interface BridgeHandoff {
   id: string; ts: number; status: "pending" | "sent" | "dismissed";
   kind: "handoff" | "answer";
   session: string; sessionTitle?: string; message: string; userExplanation: string;
+  /** outbound to a teammate's session: approving routes it over the room */
+  to?: string; toName?: string;
+  /** inbound from a teammate (imported from team-bridge.json) */
+  from?: string;
+  /** an answer to a teammate's question */
+  questionId?: string;
 }
 export interface BridgePlanTask { title: string; desc?: string; files?: string[] }
 export interface BridgePlan {
@@ -60,8 +66,11 @@ export function newlyPending(prev: BridgeState, next: BridgeState): string[] {
   const seen = new Set([...prev.handoffs, ...prev.plans, ...prev.questions].map((x) => x.id));
   const p = pending(next);
   return [
-    ...p.handoffs.filter((h) => !seen.has(h.id)).map((h) =>
-      h.kind === "answer" ? `Answer ready for ${h.sessionTitle || h.session}` : `Claude app wants to send a task to ${h.sessionTitle || h.session}`),
+    ...p.handoffs.filter((h) => !seen.has(h.id)).map((h) => {
+      const where = h.to ? `${h.toName || h.to}'s ${h.sessionTitle || h.session}` : h.sessionTitle || h.session;
+      const who = h.from ?? "Claude app";
+      return h.kind === "answer" ? `${who}: answer ready for ${where}` : `${who} wants to send a task to ${where}`;
+    }),
     ...p.plans.filter((x) => !seen.has(x.id)).map((x) => `Claude app proposed a plan: ${x.title}`),
     ...p.questions.filter((q) => !seen.has(q.id)).map((q) => `${q.fromTitle || q.from} asked the brainstorm side a question`),
   ];
