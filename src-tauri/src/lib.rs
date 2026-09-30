@@ -1982,7 +1982,10 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     let playbook = install_delegation(&repo)?;
     ours.push(("SessionStart", cmd(format!("cat {}", sh_quote(&playbook.to_string_lossy())))));
 
-    strip_ours(&mut root, &proj_s);
+    // match on the ~/.grillme ROOT: hooks written while another project was
+    // active point at that project's dir, and must still count as ours
+    let root_s = grillme_root().to_string_lossy().into_owned();
+    strip_ours(&mut root, &root_s);
     let hooks = root
         .as_object_mut()
         .ok_or("bad settings.local.json")?
@@ -2001,7 +2004,7 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     // inherit this Mac's paths
     let shared = dir.join("settings.json");
     if let Some(mut cur) = std::fs::read_to_string(&shared).ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) {
-        if strip_ours(&mut cur, &proj_s) {
+        if strip_ours(&mut cur, &root_s) {
             if cur.as_object().is_some_and(|o| o.is_empty()) && committed(&repo, ".claude/settings.json").is_none() {
                 let _ = std::fs::remove_file(&shared);
             } else {
@@ -2236,7 +2239,7 @@ fn install_delegation(repo_path: &Path) -> Result<PathBuf, String> {
         .ok()
         .filter(|s| s.contains(DELEGATION_MARKER))
         .unwrap_or_else(|| DELEGATION_MD.to_string());
-    let bin = grillme_dir().join("bin");
+    let bin = grillme_root().join("bin");
     std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
     let path = bin.join("delegation-playbook.md");
     if std::fs::read_to_string(&path).map(|cur| cur != template).unwrap_or(true) {
