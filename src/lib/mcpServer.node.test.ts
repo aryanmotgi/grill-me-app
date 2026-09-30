@@ -17,7 +17,8 @@ function rpc(lines: object[], seed?: (home: string) => void): Promise<Record<str
       const msgs = out.split("\n").filter(Boolean);
       if (msgs.length >= lines.filter((l) => "id" in l).length) {
         child.kill();
-        resolve(msgs.map((m) => JSON.parse(m)));
+        // async tools can answer out of order — hand back in request order
+        resolve(msgs.map((m) => JSON.parse(m)).sort((a, b) => a.id - b.id));
       }
     });
     child.on("error", reject);
@@ -86,5 +87,30 @@ describe("grill-me MCP server", () => {
     expect(text).toContain("blocked: tests failing");
     expect(text).toContain("1 commit ahead of main");
     expect(text).toContain("login breaks");
+  });
+
+  it("scopes a call to one project by name, and refuses unknown ones", async () => {
+    const init = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } };
+    const [, scoped, unknown, list] = await rpc([
+      init,
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "whats_new", arguments: { project: "rouge hack" } } },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "whats_new", arguments: { project: "nope" } } },
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "list_projects", arguments: {} } },
+    ], (home) => {
+      const g = join(home, ".grillme");
+      mkdirSync(join(g, "projects", "rouge"), { recursive: true });
+      mkdirSync(join(home, "a")); mkdirSync(join(home, "b"));
+      writeFileSync(join(g, "projects.json"), JSON.stringify([{ id: "rouge", name: "Rouge Hack", path: join(home, "b") }]));
+      writeFileSync(join(g, "config.json"), JSON.stringify({ teammates: [{ id: "alpha-session", repoPath: join(home, "a") }] }));
+      writeFileSync(join(g, "projects", "rouge", "config.json"), JSON.stringify({ teammates: [{ id: "bravo-session", repoPath: join(home, "b") }] }));
+    });
+    const s = JSON.stringify(scoped.result);
+    expect(s).toContain("bravo-session");
+    expect(s).not.toContain("alpha-session");
+    expect((unknown.result as { isError?: boolean }).isError).toBe(true);
+    expect(JSON.stringify(unknown.result)).toContain("Rouge Hack");
+    const l = JSON.stringify(list.result);
+    expect(l).toContain("Rouge Hack (id: rouge)");
+    expect(l).not.toContain(tmpdir()); // project paths never leave the Mac
   });
 });

@@ -54,8 +54,28 @@ pub(crate) fn install() {
     }
 }
 
+thread_local! {
+    /// Project a /bridge/push targets (set only for that call's duration).
+    static TARGET: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+fn project_dir() -> PathBuf {
+    TARGET.with(|t| t.borrow().clone()).unwrap_or_else(crate::grillme_dir)
+}
+
+/// `push` into a named project (the MCP server says which one it read from);
+/// None = the project open in the app. Unknown ids are refused, not guessed.
+pub(crate) fn push_to(project: Option<&str>, kind: &str, item: &Value) -> Result<Value, String> {
+    let Some(id) = project else { return push(kind, item) };
+    let dir = crate::project_dir_for(id).ok_or_else(|| format!("unknown project {id:?}"))?;
+    TARGET.with(|t| *t.borrow_mut() = Some(dir));
+    let r = push(kind, item);
+    TARGET.with(|t| *t.borrow_mut() = None);
+    r
+}
+
 fn bridge_path() -> PathBuf {
-    crate::grillme_dir().join("bridge.json")
+    project_dir().join("bridge.json")
 }
 
 fn load() -> Value {
@@ -222,7 +242,7 @@ fn set_goal(goal: &str) -> Result<Value, String> {
 // notes arrive here; `with_team` overlays them for reading. Solo, it's inert.
 
 fn team_path() -> PathBuf {
-    crate::grillme_dir().join("brain.json")
+    project_dir().join("brain.json")
 }
 
 /// Same locked merge-writer the room sync uses, so the two never race.
