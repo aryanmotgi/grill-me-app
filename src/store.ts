@@ -299,16 +299,20 @@ interface AppState {
 
 let toastSeq = 0;
 
-export const useApp = create<AppState>((set, get) => ({
-  teammates,
-  tasks,
-  messages,
-  activity,
-  ciWorkflows,
-  sponsorChecklist,
-  mergeQueue,
+// Sample data is a browser-dev seam only. The real app starts EMPTY — before
+// a project loads (or with none), Mei/Devon/"App shell" must never appear.
+const DEV = !isTauri();
 
-  activeId: "aryan",
+export const useApp = create<AppState>((set, get) => ({
+  teammates: DEV ? teammates : [],
+  tasks: DEV ? tasks : [],
+  messages: DEV ? messages : [],
+  activity: DEV ? activity : [],
+  ciWorkflows: DEV ? ciWorkflows : [],
+  sponsorChecklist: DEV ? sponsorChecklist : [],
+  mergeQueue: DEV ? mergeQueue : [],
+
+  activeId: DEV ? "aryan" : "",
   splitId: null,
   railTab: "files",
   focusMode: false,

@@ -116,6 +116,12 @@ body,
 .ground {
   background: var(--bg);
 }
+/* translucent (vibrancy) mode makes --bg see-through — full-screen covers
+   like the project picker must stay OPAQUE or the app bleeds through */
+:root.vibrant .ground {
+  background-color: #16171a;
+  background-image: radial-gradient(40% 40% at 50% 40%, rgba(40, 42, 48, 0.55) 0%, transparent 80%);
+}
 :root.bg-gradient[data-theme="monocode"] .ground {
   background-color: var(--ground-color);
   background-image: var(--ground-image);
