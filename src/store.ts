@@ -15,6 +15,7 @@ import type {
   RoomState,
   Task,
   Teammate,
+  TeamSession,
   Toast,
 } from "./types";
 import { dedupeDecisions, makeDecision } from "./lib/decisions";
@@ -236,11 +237,14 @@ interface AppState {
     sponsorChecklist?: typeof sponsorChecklist;
     standupLines?: string[];
     decisions?: Decision[];
+    teamSessions?: TeamSession[];
   }) => void;
   advanceMergeQueue: () => void;
 
   /** Shared, append-only team decisions log (decisions.json), newest-first. */
   decisions: Decision[];
+  /** Teammates' session digests over the room (team-sessions.json). */
+  teamSessions: TeamSession[];
   /** Decisions-log overlay (⌘K + features.ts). */
   decisionsOpen: boolean;
   /** Append a decision: shapes it via makeDecision, prepends locally, and
@@ -587,6 +591,7 @@ export const useApp = create<AppState>((set, get) => ({
   setShared: (p) =>
     set(() => ({
       ...(p.tasks ? { tasks: p.tasks } : {}),
+      ...(p.teamSessions ? { teamSessions: p.teamSessions } : {}),
       ...(p.messages ? { messages: p.messages } : {}),
       ...(p.mergeQueue
         ? {
@@ -605,6 +610,8 @@ export const useApp = create<AppState>((set, get) => ({
     })),
 
   decisions: [],
+
+  teamSessions: [],
   decisionsOpen: false,
   addDecision: (text, tag) => {
     const meId = get().members[0]?.id ?? "me";
@@ -1160,8 +1167,11 @@ async function persistShared(name: string, data: unknown) {
  *  delta to the host so remote teammates converge. The room push is
  *  fire-and-forget: a failed push (host down) leaves the local write intact
  *  and the room feed re-pushes the unsynced entry on reconnect. */
+/** Files the room carries live (mirrors room.rs SYNC_FILES). */
+export type SyncFile = "tasks.json" | "messages.json" | "decisions.json" | "brain.json" | "team-sessions.json" | "team-bridge.json";
+
 export async function upsertShared(
-  name: "tasks.json" | "messages.json" | "decisions.json",
+  name: SyncFile,
   items: unknown[],
   removedIds: string[] = [],
 ) {

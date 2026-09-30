@@ -43,6 +43,7 @@ interface FeedStore {
     sponsorChecklist?: { sponsor: string; requirement: string; done: boolean }[];
     standupLines?: string[];
     decisions?: import("../../types").Decision[];
+    teamSessions?: import("../../types").TeamSession[];
   }) => void;
   claudeMissing: boolean;
   setClaudeMissing: (missing: boolean) => void;
@@ -153,7 +154,7 @@ let roomFeedStarted = false;
  * flag raises the host-offline banner, and the next success clears it.
  */
 /** Files carried live over the room after onboarding — mirrors room.rs. */
-const ROOM_SYNC_FILES = ["tasks.json", "messages.json", "decisions.json", "brain.json"] as const;
+const ROOM_SYNC_FILES = ["tasks.json", "messages.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json"] as const;
 
 export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   if (roomFeedStarted || !isTauri()) return;
@@ -207,6 +208,35 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
     }
   };
 
+  // my sessions as a digest (title/status/branch/tests — never the
+  // conversation) for teammates' Flow pages. Published when something moves,
+  // and at least every 30s so it never reads as stale.
+  let lastDigest: import("../../types").TeamSession[] = [];
+  let lastPublish = 0;
+  const publishSessions = async (state: import("../../types").RoomState) => {
+    const st = store.getState();
+    const self = st.roomSelf;
+    if (!self) return;
+    const [{ digestSessions, digestChanged }, { sessionTitle }, { lastTestOk }, { upsertShared }] = await Promise.all([
+      import("../../lib/flow"), import("../../lib/sessionTitle"), import("../../lib/testsStore"), import("../../store"),
+    ]);
+    const own = st.members.map((m) => st.teammates.find((t) => t.id === m.id)).filter((t): t is Teammate => !!t);
+    const now = Date.now();
+    const next = digestSessions({
+      sessions: own,
+      titleOf: (t) => sessionTitle(t, st.appSettings.sessionTitles),
+      testsOf: lastTestOk,
+      member: self.memberId,
+      memberName: state.members.find((m) => m.id === self.memberId)?.name ?? self.memberId,
+      now,
+    });
+    if (!digestChanged(lastDigest, next) && now - lastPublish < 30_000) return;
+    const removed = lastDigest.filter((d) => !next.some((n) => n.id === d.id)).map((d) => d.id);
+    lastDigest = next;
+    lastPublish = now;
+    await upsertShared("team-sessions.json", next, removed);
+  };
+
   let busy = false;
   let fails = 0;
   const tick = async () => {
@@ -228,7 +258,10 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       const state = JSON.parse(raw) as import("../../types").RoomState;
       store.getState().setRoom(state); // no-op guard on identical JSON inside
       // once past onboarding, keep local shared docs converged with the team
-      if (state.phase === "done") await reconcile(state);
+      if (state.phase === "done") {
+        await reconcile(state);
+        await publishSessions(state);
+      }
       fails = 0;
       if (store.getState().roomOffline) store.setState({ roomOffline: false });
     } catch (e) {
@@ -708,15 +741,17 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         if (!seeded) return; // members not loaded yet — retry next tick
       }
       const me = store.getState().members[0]?.id;
-      const [tasks, messages, decisions, team, standupLines] = await Promise.all([
+      const [tasks, messages, decisions, team, standupLines, teamSessions] = await Promise.all([
         read("tasks.json"),
         read("messages.json"),
         read("decisions.json"),
         read("team.json"),
         invoke<string[]>("standup_tail"),
+        read("team-sessions.json").catch(() => null),
       ]);
       store.getState().setShared({
         tasks: tasks === "__unchanged__" ? undefined : tasks ?? undefined,
+        teamSessions: teamSessions === "__unchanged__" ? undefined : teamSessions ?? undefined,
         messages: messages === "__unchanged__" ? undefined : messages ?? undefined,
         decisions: decisions === "__unchanged__" ? undefined : decisions ?? undefined,
         mergeQueue: team === "__unchanged__" ? undefined : team?.mergeQueue,

@@ -1100,7 +1100,7 @@ fn grillme_dir() -> PathBuf {
     dir
 }
 
-const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json", "decisions.json", "brain.json"];
+const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json"];
 
 fn shared_path(name: &str) -> PathBuf {
     if name == "settings.json" {

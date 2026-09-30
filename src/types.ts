@@ -155,6 +155,23 @@ export interface Toast {
 
 export type RoomPhase = "lobby" | "brainstorm" | "plan" | "tasks" | "assign" | "done";
 
+/** One session as a teammate's Grill Me publishes it over the room
+ *  (team-sessions.json, id `<roomMemberId>:<sessionId>`). A digest, never
+ *  the conversation: title, status, branch, last test result. */
+export interface TeamSession {
+  id: string;
+  member: string;
+  memberName: string;
+  session: string;
+  title: string;
+  status: SessionStatus;
+  sentence: string;
+  branch: string;
+  /** last auto-test result; null = not run */
+  tests: boolean | null;
+  ts: number;
+}
+
 /** Live presence a member pushes on each heartbeat (post-onboarding). */
 export interface RoomPresence {
   name?: string;

@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { BridgeState } from "./bridge";
-import type { Teammate } from "../types";
+import type { Teammate, TeamSession } from "../types";
 
 export type FlowEnd =
   | { kind: "brainstorm" }
@@ -100,4 +100,52 @@ export function sessionSentence(t: Teammate): string {
       : "working";
   if (t.lastActiveMin > 0) return `quiet ${t.lastActiveMin}m`;
   return "idle";
+}
+
+// ---- teammates' sessions (team-sessions.json over the room) ---------------
+
+/** What this Mac publishes about its sessions. Titles come from the caller
+ *  (they live in settings); tests from the auto-test store. */
+export function digestSessions(args: {
+  sessions: Teammate[];
+  titleOf: (t: Teammate) => string;
+  testsOf: (id: string) => boolean | null;
+  member: string;
+  memberName: string;
+  now: number;
+}): TeamSession[] {
+  return args.sessions.map((t) => ({
+    id: `${args.member}:${t.id}`,
+    member: args.member,
+    memberName: args.memberName,
+    session: t.id,
+    title: args.titleOf(t),
+    status: t.status,
+    sentence: sessionSentence(t),
+    branch: t.branch,
+    tests: args.testsOf(t.id),
+    ts: args.now,
+  }));
+}
+
+/** True when anything but the timestamp moved — publish only then. */
+export function digestChanged(prev: TeamSession[], next: TeamSession[]): boolean {
+  const strip = (d: TeamSession) => JSON.stringify({ ...d, ts: 0 });
+  if (prev.length !== next.length) return true;
+  const a = prev.map(strip).sort();
+  const b = next.map(strip).sort();
+  return a.some((x, i) => x !== b[i]);
+}
+
+/** Fresh sessions grouped by room member; stale ones (a Mac that went quiet) drop out. */
+export function teamSessionsByMember(all: TeamSession[], now: number, staleMs = 90_000): Map<string, TeamSession[]> {
+  const out = new Map<string, TeamSession[]>();
+  for (const d of all) {
+    if (now - d.ts > staleMs) continue;
+    const list = out.get(d.member) ?? [];
+    list.push(d);
+    out.set(d.member, list);
+  }
+  for (const list of out.values()) list.sort((x, y) => x.title.localeCompare(y.title));
+  return out;
 }

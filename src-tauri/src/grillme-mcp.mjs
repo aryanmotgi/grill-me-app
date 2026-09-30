@@ -907,10 +907,18 @@ async function callTool(name, args = {}) {
       if (settings.appMode !== "team") return "Grill Me is in solo mode — no teammates.";
       const room = readJson(join(ROOT, "room.json"), {});
       const people = Array.isArray(room.members) ? room.members : [];
+      if (!people.length) return "No teammates in the room yet.";
       const tasks = readJson(join(projectDir().dir, "tasks.json"), []);
-      return people.length
-        ? people.map((p) => `- ${p.name ?? p.id}: ${p.presence ?? "?"}; tasks: ${tasks.filter((t) => t.owner === p.id && t.status !== "done").map((t) => t.title).join(", ") || "none"}`).join("\n")
-        : "No teammates in the room yet.";
+      // each teammate's Grill Me publishes a digest of its sessions over the room
+      const digest = readJson(join(projectDir().dir, "team-sessions.json"), []);
+      const sessions = Array.isArray(digest) ? digest.filter((d) => d && Date.now() - (d.ts ?? 0) < 90_000) : [];
+      return people.map((p) => {
+        const mine = sessions.filter((d) => d.member === p.id);
+        const open = tasks.filter((t) => t.owner === p.id && t.status !== "done").map((t) => t.title);
+        const lines = mine.map((d) => `  - "${d.title}" ${d.status}${d.sentence ? ` (${d.sentence})` : ""} on ${d.branch || "?"}${d.tests === true ? " · tests passing" : d.tests === false ? " · TESTS FAILING" : ""}`);
+        const head = `- ${p.name ?? p.id}: ${mine.length ? `${mine.length} session${mine.length === 1 ? "" : "s"}` : p.presence?.status ?? "no sessions shared"}; tasks: ${open.join(", ") || "none"}`;
+        return [head, ...lines].join("\n");
+      }).join("\n");
     }
     default:
       throw new Error(`Unknown tool ${name}`);

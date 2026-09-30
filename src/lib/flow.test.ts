@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWires, sessionMarks, sessionSentence } from "./flow";
+import { buildWires, digestChanged, digestSessions, sessionMarks, sessionSentence, teamSessionsByMember } from "./flow";
 import type { BridgeState } from "./bridge";
 import type { Teammate } from "../types";
 
@@ -62,5 +62,42 @@ describe("sessionSentence", () => {
     expect(sessionSentence({ ...base, status: "working", currentFile: "src/app/login.tsx" } as Teammate)).toBe("working in login.tsx");
     expect(sessionSentence({ ...base, lastActiveMin: 7 } as Teammate)).toBe("quiet 7m");
     expect(sessionSentence(base)).toBe("idle");
+  });
+});
+
+describe("team session digest", () => {
+  const mk = (id: string, status: "idle" | "working" | "needs-input", branch = "main") =>
+    ({ id, status, branch, health: "ok", currentFile: "—", lastActiveMin: 0 }) as unknown as Teammate;
+
+  it("publishes title, status, branch and tests per session under the member's id", () => {
+    const d = digestSessions({
+      sessions: [mk("s1", "working", "feat/x"), mk("s2", "idle")],
+      titleOf: (t) => `T-${t.id}`,
+      testsOf: (id) => (id === "s1" ? false : null),
+      member: "m2", memberName: "Maya", now: 1000,
+    });
+    expect(d.map((x) => x.id)).toEqual(["m2:s1", "m2:s2"]);
+    expect(d[0]).toMatchObject({ member: "m2", memberName: "Maya", session: "s1", title: "T-s1", status: "working", branch: "feat/x", tests: false, ts: 1000 });
+    expect(d[1].tests).toBeNull();
+  });
+
+  it("only counts as changed when something besides the timestamp moved", () => {
+    const base = digestSessions({ sessions: [mk("s1", "idle")], titleOf: () => "A", testsOf: () => null, member: "m", memberName: "M", now: 1 });
+    const later = digestSessions({ sessions: [mk("s1", "idle")], titleOf: () => "A", testsOf: () => null, member: "m", memberName: "M", now: 2 });
+    const moved = digestSessions({ sessions: [mk("s1", "working")], titleOf: () => "A", testsOf: () => null, member: "m", memberName: "M", now: 2 });
+    expect(digestChanged(base, later)).toBe(false);
+    expect(digestChanged(base, moved)).toBe(true);
+    expect(digestChanged(base, [])).toBe(true);
+  });
+
+  it("groups fresh sessions by member and drops stale ones", () => {
+    const now = 100_000;
+    const all = [
+      ...digestSessions({ sessions: [mk("b", "idle"), mk("a", "idle")], titleOf: (t) => t.id, testsOf: () => null, member: "m1", memberName: "A", now }),
+      ...digestSessions({ sessions: [mk("z", "idle")], titleOf: (t) => t.id, testsOf: () => null, member: "m2", memberName: "B", now: now - 120_000 }),
+    ];
+    const by = teamSessionsByMember(all, now);
+    expect([...by.keys()]).toEqual(["m1"]);
+    expect(by.get("m1")!.map((d) => d.title)).toEqual(["a", "b"]);
   });
 });
