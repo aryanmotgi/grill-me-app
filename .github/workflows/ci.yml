@@ -1,5 +1,9 @@
 name: CI
 
+# Private repo: macOS runner minutes bill at 10x Linux. The web + MCP checks
+# run on Linux every time; the Rust suite (macOS-only app) runs only when the
+# backend actually changed.
+
 on:
   pull_request:
   push:
@@ -10,32 +14,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: macos-latest
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src-tauri/**'
+              - '.github/workflows/ci.yml'
 
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
       - run: npm ci
-
-      # typecheck + bundle (tauri's build context needs ../dist to exist)
       - run: npm run build
-
       - run: npx vitest run
-
       - name: MCP server parses
         run: node --check src-tauri/src/grillme-mcp.mjs
 
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # tauri's build context needs ../dist to exist
+      - run: npm run build
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test --locked
