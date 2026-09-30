@@ -105,7 +105,11 @@ async function runBrainCheck(memberId: string) {
 export function useBridgeFeed() {
   const lastPing = useRef<Record<string, number>>({});
   useEffect(() => {
-    if (!native()) return;
+    if (!native()) {
+      // browser dev: sample items so the Flow view / panel are browsable
+      void import("../data/fakeBridge").then(({ FAKE_BRIDGE }) => useBridge.setState({ state: FAKE_BRIDGE }));
+      return;
+    }
     let alive = true;
     let unlisten: (() => void) | undefined;
     void refresh(false);
@@ -137,6 +141,47 @@ export function useBridgeFeed() {
   }, []);
 }
 
+// ---- actions (shared with the Flow view) -----------------------------------
+
+export async function bridgeResolve(list: string, id: string, status: string) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("bridge_resolve", { list, id, status }).catch((e) => useApp.getState().toast(`Bridge: ${e}`, "warn"));
+  await refresh(false);
+}
+
+/** Approve a handoff: make sure the session is up, then type the message in. */
+export async function bridgeSend(h: BridgeHandoff): Promise<boolean> {
+  const { members, toast } = useApp.getState();
+  const m = members.find((x) => x.id === h.session);
+  if (!m) { toast(`No session "${h.sessionTitle || h.session}" in this project`, "warn"); return false; }
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("pty_ensure", {
+    id: ptyIdFor(m.id), cwd: m.repoPath, shell: false,
+    remote: m.remote ?? null, tmux: m.tmuxSession ?? null, agent: m.agent ?? null,
+  }).catch(() => {});
+  await bridgeResolve("handoffs", h.id, "sent");
+  toast(`Sending to ${h.sessionTitle || m.name} once it's ready…`);
+  const ok = await deliverBriefWhenReady(ptyIdFor(m.id), h.message.endsWith("\n") ? h.message : `${h.message}\n`);
+  toast(ok ? `Delivered to ${h.sessionTitle || m.name}` : `Couldn't deliver to ${h.sessionTitle || m.name} — it never reached a prompt`, ok ? "info" : "warn");
+  return ok;
+}
+
+/** Approve a plan: its tasks go on the board, its decision into the log. */
+export async function bridgeApply(plan: BridgePlan): Promise<number> {
+  const st = useApp.getState();
+  const tasks = planToTasks(plan, st.members[0]?.id ?? "me");
+  useApp.setState((s) => {
+    const byId = new Map(s.tasks.map((t) => [t.id, t]));
+    for (const t of tasks) byId.set(t.id, t);
+    return { tasks: [...byId.values()] };
+  });
+  await upsertShared("tasks.json", tasks);
+  if (plan.decision) useApp.getState().addDecision(`${plan.title} — ${plan.decision}`, "plan");
+  await bridgeResolve("plans", plan.id, "applied");
+  st.toast(`${tasks.length} tasks added to the board`);
+  return tasks.length;
+}
+
 export function BridgeButton() {
   const count = useBridge((b) => pendingCount(b.state));
   const conn = useBridge((b) => b.conn);
@@ -166,7 +211,6 @@ export function BridgePanel() {
   const setOpen = useBridge((b) => b.setOpen);
   const state = useBridge((b) => b.state);
   const conn = useBridge((b) => b.conn);
-  const members = useApp((s) => s.members);
   const toast = useApp((s) => s.toast);
   const [busy, setBusy] = useState("");
 
@@ -174,11 +218,7 @@ export function BridgePanel() {
   const p = pending(state);
   const connected = !!(conn?.desktop || conn?.code);
 
-  const resolve = async (list: string, id: string, status: string) => {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("bridge_resolve", { list, id, status }).catch((e) => toast(`Bridge: ${e}`, "warn"));
-    await refresh(false);
-  };
+  const resolve = bridgeResolve;
 
   const connect = async () => {
     setBusy("connect");
@@ -194,40 +234,13 @@ export function BridgePanel() {
   };
 
   const send = async (h: BridgeHandoff) => {
-    const m = members.find((x) => x.id === h.session);
-    if (!m) { toast(`No session "${h.sessionTitle || h.session}" in this project`, "warn"); return; }
     setBusy(h.id);
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("pty_ensure", {
-        id: ptyIdFor(m.id), cwd: m.repoPath, shell: false,
-        remote: m.remote ?? null, tmux: m.tmuxSession ?? null, agent: m.agent ?? null,
-      }).catch(() => {});
-      await resolve("handoffs", h.id, "sent");
-      toast(`Sending to ${h.sessionTitle || m.name} once it's ready…`);
-      const ok = await deliverBriefWhenReady(ptyIdFor(m.id), h.message.endsWith("\n") ? h.message : `${h.message}\n`);
-      toast(ok ? `Delivered to ${h.sessionTitle || m.name}` : `Couldn't deliver to ${h.sessionTitle || m.name} — it never reached a prompt`, ok ? "info" : "warn");
-    } finally {
-      setBusy("");
-    }
+    try { await bridgeSend(h); } finally { setBusy(""); }
   };
 
   const apply = async (plan: BridgePlan) => {
     setBusy(plan.id);
-    try {
-      const tasks = planToTasks(plan, members[0]?.id ?? "me");
-      useApp.setState((s) => {
-        const byId = new Map(s.tasks.map((t) => [t.id, t]));
-        for (const t of tasks) byId.set(t.id, t);
-        return { tasks: [...byId.values()] };
-      });
-      await upsertShared("tasks.json", tasks);
-      if (plan.decision) useApp.getState().addDecision(`${plan.title} — ${plan.decision}`, "plan");
-      await resolve("plans", plan.id, "applied");
-      toast(`${tasks.length} tasks added to the board`);
-    } finally {
-      setBusy("");
-    }
+    try { await bridgeApply(plan); } finally { setBusy(""); }
   };
 
   return (
