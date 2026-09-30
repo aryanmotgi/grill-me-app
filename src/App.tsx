@@ -16,6 +16,7 @@ import { ConflictBanner, Toasts } from "./components/Chrome";
 import { SettingsModal } from "./components/Settings";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { Onboarding } from "./components/Onboarding";
+import { InstallConsent } from "./components/InstallConsent";
 import { ReviewModal } from "./components/ReviewModal";
 import { SessionHandoff } from "./components/SessionHandoff";
 import { HomeDashboard } from "./components/HomeDashboard";
@@ -429,6 +430,7 @@ export default function App() {
       <QuickSwitcher />
       <SettingsModal />
       <ProjectPicker />
+      <InstallConsent />
       <Onboarding />
       <ReviewModal />
       <SessionHandoff />
