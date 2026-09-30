@@ -21,5 +21,7 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  // node-side tests (spawn real processes) — vitest runs them; the app has no node types
+  "exclude": ["src/**/*.node.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
