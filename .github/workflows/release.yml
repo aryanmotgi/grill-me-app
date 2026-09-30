@@ -1,6 +1,7 @@
 name: Release
 
-# Push a tag like v0.2.0 → builds a universal macOS app and attaches the
+# Bump "version" in src-tauri/tauri.conf.json, then push a matching tag
+# (v0.2.0) or run it by hand → builds a universal macOS app and attaches the
 # .dmg to a DRAFT GitHub release (publish it by hand after a quick check).
 #
 # Signing + notarization turn on automatically once these repo secrets exist
@@ -58,8 +59,8 @@ jobs:
 
       - uses: tauri-apps/tauri-action@v0
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Grill Me ${{ github.ref_name }}
+          tagName: v__VERSION__
+          releaseName: Grill Me v__VERSION__
           releaseBody: |
             Download the .dmg, drag Grill Me to Applications.
             Needs Claude Code installed (`curl -fsSL https://claude.ai/install.sh | bash`).
