@@ -36,7 +36,14 @@ pub const ROOM_PORT: u16 = 4518;
 /// append-only list, so the id merge never has to resolve an edit conflict.
 /// team-sessions.json: each member's session digest (title/status/branch/tests).
 /// team-bridge.json: hand-offs, questions and answers routed between members.
-pub const SYNC_FILES: &[&str] = &["tasks.json", "messages.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json"];
+/// team-chat.json: the team chat (append-only messages; capped, see CHAT_CAP).
+pub const SYNC_FILES: &[&str] = &["tasks.json", "messages.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json", "team-chat.json"];
+
+/// Team chat keeps only its newest messages on the host. Older ones are
+/// TOMBSTONED (not just dropped) so every peer's reconcile deletes its local
+/// copy instead of re-pushing it up forever.
+const CHAT_FILE: &str = "team-chat.json";
+const CHAT_CAP: usize = 500;
 
 /// Per-file tombstone cap — a bounded ring so a long session can't grow the
 /// removed-id set without limit. Deletions older than this many removals may
@@ -525,6 +532,17 @@ fn value_id(v: &serde_json::Value) -> Option<String> {
 /// tombstoned id from the incoming items BEFORE merge; (3) run the same
 /// id-keyed merge the local writer uses; (4) sweep tombstoned ids out of the
 /// result. Returns the merged array (also stored back into `shared[file]`).
+/// Ids of the oldest chat messages (by `ts`) beyond the newest `cap`.
+fn chat_overflow(items: &[serde_json::Value], cap: usize) -> std::collections::HashSet<String> {
+    let mut by_ts: Vec<(u64, String)> = items
+        .iter()
+        .filter_map(|it| Some((it.get("ts").and_then(|t| t.as_u64()).unwrap_or(0), value_id(it)?)))
+        .collect();
+    by_ts.sort();
+    let n = by_ts.len().saturating_sub(cap);
+    by_ts.into_iter().take(n).map(|(_, id)| id).collect()
+}
+
 fn apply_sync(
     state: &mut RoomState,
     file: &str,
@@ -566,6 +584,22 @@ fn apply_sync(
 
     // (4) final sweep — drop anything tombstoned (covers ids removed this call)
     merged.retain(|it| value_id(it).map(|id| !tomb_set.contains(&id)).unwrap_or(true));
+
+    // (5) team chat: keep the newest CHAT_CAP by ts; tombstone the rest
+    if file == CHAT_FILE && merged.len() > CHAT_CAP {
+        let dropped = chat_overflow(&merged, CHAT_CAP);
+        let tombs = state.tombstones.entry(file.to_string()).or_default();
+        for id in &dropped {
+            if !tombs.contains(id) {
+                tombs.push(id.clone());
+            }
+        }
+        if tombs.len() > TOMBSTONE_CAP {
+            let overflow = tombs.len() - TOMBSTONE_CAP;
+            tombs.drain(0..overflow);
+        }
+        merged.retain(|it| value_id(it).map(|id| !dropped.contains(&id)).unwrap_or(false));
+    }
 
     state.shared.insert(file.to_string(), merged.clone());
     merged
@@ -1369,6 +1403,31 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert!(v["items"].as_array().unwrap().is_empty(), "tombstoned t1 not resurrected");
         assert_eq!(v["tombstones"].as_array().unwrap()[0], "t1");
+    }
+
+    #[test]
+    fn sync_team_chat_appends_and_caps_by_tombstoning_oldest() {
+        let (mut room, code) = hosted_room();
+        // a reconnecting peer pushes an OLD message last — the cap goes by ts, not order
+        let mut items: Vec<serde_json::Value> = (1..=super::CHAT_CAP as u64)
+            .map(|i| serde_json::json!({"id": format!("tc-{i}"), "ts": 1_000 + i, "text": "hi"}))
+            .collect();
+        items.push(serde_json::json!({"id": "tc-old", "ts": 5, "text": "ancient"}));
+        let (st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "team-chat.json", "items": items
+        }), 2_000);
+        assert_eq!(st, 200);
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let merged = ids(&v["items"]);
+        assert_eq!(merged.len(), super::CHAT_CAP);
+        assert!(!merged.contains(&"tc-old".to_string()), "oldest by ts dropped");
+        assert_eq!(merged[0], "tc-1", "append order kept");
+        assert!(v["tombstones"].as_array().unwrap().iter().any(|t| t == "tc-old"), "dropped id tombstoned so peers delete it");
+        // the peer's re-push of the dropped message is refused
+        let (_st, body) = post(&mut room, "/room/sync", serde_json::json!({
+            "code": code, "memberId": "m1", "file": "team-chat.json", "items": [{"id": "tc-old", "ts": 5}]
+        }), 2_100);
+        assert!(!ids(&serde_json::from_str::<serde_json::Value>(&body).unwrap()["items"]).contains(&"tc-old".to_string()));
     }
 
     #[test]

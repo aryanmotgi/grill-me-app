@@ -24,16 +24,17 @@ pub const SKILLS: [(&str, &str, &str); 6] = [
     ("pitch", "Pitch", "Demo script and slides"),
 ];
 
-pub const WRITE_TOOLS: [&str; 5] = ["save_plan", "send_to_coder", "ask_brainstorm", "answer_question", "set_goal"];
+pub const WRITE_TOOLS: [&str; 6] = ["save_plan", "send_to_coder", "ask_brainstorm", "answer_question", "set_goal", "post_team_chat"];
 // Writes that land as PENDING items the user approves in Grill Me. The rest
-// (goal, notes, questions) flow straight into every session's context, so
-// they're never allowed from the internet — even with proposals on.
+// (goal, notes, questions, team chat posts) flow straight into sessions'
+// context or teammates' screens, so they're never allowed from the internet —
+// even with proposals on.
 pub const REMOTE_PROPOSALS: [&str; 3] = ["save_plan", "send_to_coder", "answer_question"];
 
 // MCP tool annotations: clients (claude.ai, Claude Code) use readOnlyHint to
 // skip the permission prompt on reads and to flag the tools that change things.
 // Nothing here reaches outside the Mac, so openWorldHint is false everywhere.
-const TITLES: [(&str, &str); 16] = [
+const TITLES: [(&str, &str); 18] = [
     ("whats_new", "What's new in my sessions"),
     ("read_session", "Read a session"),
     ("get_diff", "Get a session's diff"),
@@ -50,6 +51,8 @@ const TITLES: [(&str, &str); 16] = [
     ("team_status", "Team status"),
     ("ship_status", "Ship status"),
     ("list_projects", "List projects"),
+    ("team_chat", "Read the team chat"),
+    ("post_team_chat", "Post to the team chat"),
 ];
 const IDEMPOTENT: [&str; 1] = ["set_goal"];
 
@@ -442,7 +445,7 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
                 .into_iter()
                 .filter(|d| truthy(Some(d)) && now - super::data::num_or0(get(d, "ts")) < 90_000.0)
                 .collect();
-            Ok(people
+            let roster = people
                 .iter()
                 .map(|p| {
                     let pid = get(p, "id");
@@ -480,10 +483,65 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
                     std::iter::once(head).chain(lines).collect::<Vec<_>>().join("\n")
                 })
                 .collect::<Vec<_>>()
+                .join("\n");
+            let chat = ctx.team_chat();
+            if chat.is_empty() {
+                return Ok(roster);
+            }
+            let (me, read) = chat_reader(&settings, &ctx.project_dir().id);
+            let unread = chat_unread(&chat, &me, read);
+            Ok(format!(
+                "{roster}\n\nTeam chat: {} message{}, {unread} unread — read it with team_chat.",
+                chat.len(),
+                plural(chat.len())
+            ))
+        }
+        "team_chat" => {
+            let chat = ctx.team_chat();
+            if chat.is_empty() {
+                return Ok("The team chat is empty (or Grill Me isn't in a live team room).".into());
+            }
+            let c = js::to_num(arg("count"));
+            let n = if c.is_nan() || c < 1.0 { 20 } else { c.min(100.0) as usize };
+            Ok(js::tail(&chat, n)
+                .iter()
+                .map(|m| {
+                    let who = if eq_str(get(m, "role"), Some("system")) { "·".to_string() } else { s(get(m, "fromName")) };
+                    let reply = if truthy(get(m, "replyTo")) { format!(" ↩{}", s(get(m, "replyTo"))) } else { String::new() };
+                    format!("[{}] {} {who}{reply}: {}", s(get(m, "id")), super::data::ago(get(m, "ts")), clip(&s(get(m, "text")), 2000))
+                })
+                .collect::<Vec<_>>()
                 .join("\n"))
+        }
+        "post_team_chat" => {
+            let text = s(arg("text"));
+            if js::trim(&text).is_empty() {
+                return Err("Write something to post.".into());
+            }
+            let mut item = json!({ "text": text });
+            if truthy(arg("replyTo")) {
+                item["replyTo"] = json!(s(arg("replyTo")));
+            }
+            push(ctx, "team_chat", item)?;
+            Ok("Posted to the team chat.".into())
         }
         _ => Err(format!("Unknown tool {name}")),
     }
+}
+
+/// The app mirrors who this Mac is in the room (`teamChatMe.id`) and when the
+/// chat was last read per project (`teamChatRead[project]`) into settings.json.
+fn chat_reader(settings: &Value, project: &str) -> (String, f64) {
+    let me = s(get(settings, "teamChatMe").and_then(|m| get(m, "id")));
+    let read = super::data::num_or0(get(settings, "teamChatRead").and_then(|r| get(r, project)));
+    (me, read)
+}
+
+/// Messages from someone else (people, their Claudes, system lines) after `read`.
+fn chat_unread(chat: &[Value], me: &str, read: f64) -> usize {
+    chat.iter()
+        .filter(|m| super::data::num_or0(get(m, "ts")) > read && (me.is_empty() || !eq_str(get(m, "from"), Some(me))))
+        .count()
 }
 
 /// JS `===` between two JSON values (objects/arrays compare by identity, so
@@ -655,4 +713,61 @@ pub fn scrub_outgoing(mut msg: Value) -> Value {
         }
     }
     msg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::data::Remote;
+    use super::*;
+
+    fn ctx(remote: Remote) -> Ctx {
+        let home = std::env::temp_dir().join(format!("grillme-tools-{}-{}", std::process::id(), js::now_ms()));
+        let home = home.to_string_lossy().into_owned();
+        Ctx { root: format!("{home}/.grillme"), home, remote, scope: None, forced: None }
+    }
+
+    fn names(ctx: &Ctx) -> Vec<String> {
+        tools_for(ctx).iter().map(|t| name_of(t).to_string()).collect()
+    }
+
+    #[test]
+    fn post_team_chat_is_local_only_and_flagged_as_a_write() {
+        let local = ctx(Remote::default());
+        let all = tools_for(&local);
+        let ann = |n: &str| all.iter().find(|t| name_of(t) == n).map(|t| t["annotations"].clone()).unwrap();
+        assert_eq!(ann("team_chat")["readOnlyHint"], true);
+        assert_eq!(ann("post_team_chat")["readOnlyHint"], false);
+        // claude.ai over the Funnel: never, not even with proposals allowed
+        for allow_writes in [false, true] {
+            let remote = ctx(Remote { on: true, allow_writes, no_transcripts: false });
+            let n = names(&remote);
+            assert!(n.contains(&"team_chat".to_string()), "reading the chat stays available remotely");
+            assert!(!n.contains(&"post_team_chat".to_string()), "allow_writes={allow_writes}");
+        }
+    }
+
+    #[test]
+    fn remote_call_to_post_team_chat_is_refused() {
+        let remote = ctx(Remote { on: true, allow_writes: true, no_transcripts: false });
+        let req = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "post_team_chat", "arguments": { "text": "hi" } } });
+        let res = handle(&remote, &req).unwrap().unwrap();
+        assert_eq!(res["result"]["isError"], true);
+        assert!(res["result"]["content"][0]["text"].as_str().unwrap().contains("isn't available"));
+    }
+
+    #[test]
+    fn unread_counts_only_others_after_the_read_mark() {
+        let chat = vec![
+            json!({ "id": "a", "from": "m1", "ts": 10 }),
+            json!({ "id": "b", "from": "m2", "ts": 20 }),
+            json!({ "id": "c", "from": "m2", "ts": 30 }),
+            json!({ "id": "d", "from": "m1", "ts": 40 }),
+        ];
+        assert_eq!(chat_unread(&chat, "m1", 15.0), 2);
+        assert_eq!(chat_unread(&chat, "m1", 0.0), 2);
+        assert_eq!(chat_unread(&chat, "", 25.0), 2, "unknown self: everything after the mark");
+        let settings = json!({ "teamChatMe": { "id": "m1", "name": "Aryan" }, "teamChatRead": { "proj": 25 } });
+        assert_eq!(chat_reader(&settings, "proj"), ("m1".to_string(), 25.0));
+        assert_eq!(chat_reader(&settings, "other").1, 0.0);
+    }
 }

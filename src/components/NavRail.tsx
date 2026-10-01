@@ -6,6 +6,7 @@ import { ProjectIcon } from "./ProjectIcon";
 import { GrillWordmark } from "./GrillMark";
 import { PanelControls, togglePanel, useLayout } from "./Dock";
 import { addProjectFromFinder } from "../lib/addProject";
+import { useChatUnread } from "./teamChatActions";
 
 // ---------------------------------------------------------------------------
 // Monocode-style far-left nav rail: Search / Inbox / team surfaces up top,
@@ -54,6 +55,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
   const setSettingsOpen = useApp((s) => s.setSettingsOpen);
   const setSwitcherOpen = useApp((s) => s.setSwitcherOpen);
   const unanswered = messages.filter((m) => !m.answered).length;
+  const chatUnread = useChatUnread();
   const claudeOpen = useLayout()[0].claude.open;
   const moreSetting = useApp((s) => s.appSettings.navMoreOpen === true);
   const moreOpen = moreSetting || ["automations", "tasks", "inbox", "feed", "team"].includes(view);
@@ -102,7 +104,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
         <button className="flex items-center gap-2 px-2.5 h-7 mt-1 text-[12px] text-faint hover:text-dim cursor-pointer"
           aria-expanded={moreOpen} onClick={() => setAppSetting("navMoreOpen", !moreOpen)}>
           <Icon name="chevron" size={9} className={`transition-transform ${moreOpen ? "rotate-90" : ""}`} />
-          More{!moreOpen && unanswered ? <span className="text-warn num ml-1">{unanswered}</span> : null}
+          More{!moreOpen && unanswered + chatUnread ? <span className="text-warn num ml-1">{unanswered + chatUnread}</span> : null}
         </button>
         {moreOpen ? (
           <>
@@ -115,7 +117,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
             ) : null}
             <NavItem icon="clock" label="Feed" active={view === "feed"} onClick={() => go("feed")} />
             {surfaceVisible(appMode, "rail-team-tab") ? (
-              <NavItem icon="team" label="Team" active={view === "team"} onClick={() => go("team")} />
+              <NavItem icon="team" label="Team" badge={chatUnread} title={chatUnread ? `Team chat · ${chatUnread} unread` : "Team"} active={view === "team"} onClick={() => go("team")} />
             ) : null}
           </>
         ) : null}

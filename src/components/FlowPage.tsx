@@ -13,6 +13,8 @@ import { useTests } from "./Automations";
 import { togglePanel } from "./Dock";
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
+import { TeamChat } from "./TeamChat";
+import { postSystemLine, shareSessionToChat } from "./teamChatActions";
 import type { Teammate } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -170,12 +172,18 @@ function ReviewLine({ id }: { id: string }) {
   );
 }
 
-function SessionRow({ t, wires, onOpen }: { t: Teammate; wires: Wire[]; onOpen: () => void }) {
+function SessionRow({ t, wires, onOpen, canShare }: { t: Teammate; wires: Wire[]; onOpen: () => void; canShare: boolean }) {
   const titles = useApp((s) => s.appSettings.sessionTitles);
   const test = useTests((s) => s.results[t.id]);
   const marks = sessionMarks(wires, t.id);
+  // digest only — title/status/branch/tests and a one-line summary, never the transcript
+  const share = () => void shareSessionToChat({
+    session: t.id, title: sessionTitle(t, titles), status: t.status, branch: t.branch,
+    tests: test && !test.running ? test.ok : null,
+    summary: [t.taskLabel && t.taskLabel !== "—" ? t.taskLabel : "", sessionSentence(t)].filter(Boolean).join(" — "),
+  });
   return (
-    <div className="overflow-hidden first:rounded-t-xl last:rounded-b-xl">
+    <div className="relative group/srow overflow-hidden first:rounded-t-xl last:rounded-b-xl">
       <button className="w-full flex items-start gap-3 px-3.5 py-2.5 text-left hover:bg-raised/50 transition-colors cursor-pointer"
         onClick={onOpen}>
         <span className={`status-dot ${t.status} mt-1.5 flex-none`} aria-hidden />
@@ -193,6 +201,11 @@ function SessionRow({ t, wires, onOpen }: { t: Teammate; wires: Wire[]; onOpen: 
         </span>
       </button>
       <ReviewLine id={t.id} />
+      {canShare ? (
+        <button className="absolute right-2 top-2 text-[11px] text-faint hover:text-ink cursor-pointer opacity-0 group-hover/srow:opacity-100 focus:opacity-100 transition-opacity px-1.5 py-0.5 rounded bg-panel/80"
+          title="Post this session's status card (title, status, branch, tests — not the conversation) to the team chat"
+          onClick={share}>share to team chat</button>
+      ) : null}
     </div>
   );
 }
@@ -209,6 +222,7 @@ function MateSessionRow({ d, me, meName }: { d: TeamSession; me: string; meName:
     setBusy(true);
     try {
       await upsertShared("team-bridge.json", [newTeamHandoff({ me, meName, to: d.member, toName: d.memberName, session: d.session, sessionTitle: d.title, message, now: Date.now() })]);
+      await postSystemLine(`${meName} handed a task to ${d.memberName}'s “${d.title}”`);
       toast(`Sent to ${d.memberName} — they approve it before it reaches ${d.title}`);
       setDraft(null);
     } finally {
@@ -284,6 +298,7 @@ export function FlowPage() {
   const wires = useMemo(() => buildWires(state, titleOf, teamQuestionsFor(teamBridge, me), { me, teamBridge }), [state, teammates, titles, teamBridge, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mates = room ? room.members.filter((m) => m.id !== roomSelfId) : [];
+  const roomLive = !!(room && roomSelfId && room.phase === "done");
   const mateSessions = useMemo(() => teamSessionsByMember(teamSessions, Date.now()), [teamSessions]);
   const openTasks = tasks.filter((t) => t.status !== "done").length;
   const anyClaude = !!(conn?.desktop || conn?.code || remote?.url);
@@ -340,7 +355,7 @@ export function FlowPage() {
             <div className="panel-label">sessions · {sessions.length}</div>
             <div className="composer-card rounded-xl divide-y divide-line/60">
               {sessions.map((t) => (
-                <SessionRow key={t.id} t={t} wires={wires} onOpen={() => { setActive(t.id); setView("session"); }} />
+                <SessionRow key={t.id} t={t} wires={wires} canShare={roomLive} onOpen={() => { setActive(t.id); setView("session"); }} />
               ))}
               <button className="w-full flex items-center gap-2 px-3.5 py-2.5 text-[12px] text-faint hover:text-dim cursor-pointer last:rounded-b-xl" onClick={() => setView("new")}>
                 <Icon name="plus" size={11} /> new session
@@ -388,6 +403,18 @@ export function FlowPage() {
             </div>
           )}
         </div>
+
+        {/* team chat — teammates and their Claudes, once the room is live */}
+        {roomLive ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="panel-label">team chat</span>
+              <span className="flex-1" />
+              <button className="text-[11px] text-faint hover:text-dim cursor-pointer" onClick={() => setView("team")}>open full view</button>
+            </div>
+            <TeamChat variant="embed" />
+          </div>
+        ) : null}
       </div>
     </div>
   );

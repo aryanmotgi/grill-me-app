@@ -10,7 +10,6 @@ import { XtermPane } from "./components/XtermPane";
 import { TaskBoard } from "./components/TaskBoard";
 import { Inbox } from "./components/Inbox";
 import { ActivityTimeline } from "./components/ActivityTimeline";
-import { TeamPanel } from "./components/TeamPanel";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { ConflictBanner, Toasts } from "./components/Chrome";
 import { SettingsModal } from "./components/Settings";
@@ -56,6 +55,8 @@ import { ShipQueue } from "./components/ShipQueue";
 import { PreviewPage } from "./components/PreviewPage";
 import { StatusBar } from "./components/StatusBar";
 import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
+import { TeamView } from "./components/TeamView";
+import { useTeamChatFeed } from "./components/teamChatActions";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
 
@@ -316,6 +317,7 @@ export default function App() {
   const openFileCount = useApp((s) => s.openFiles.length);
   // Claude bridge: live pending requests + "coder finished" pings
   useBridgeFeed();
+  useTeamChatFeed();
   useWelcomeBack();
   useAutomations();
   useRemoteAutostart();
@@ -365,7 +367,7 @@ export default function App() {
               {view === "tasks" ? <TaskBoard /> : null}
               {view === "inbox" ? <Inbox /> : null}
               {view === "feed" ? <ActivityTimeline /> : null}
-              {view === "team" ? <TeamPanel /> : null}
+              {view === "team" ? <TeamView /> : null}
             </div>
           ) : (
           <>

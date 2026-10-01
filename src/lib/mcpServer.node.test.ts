@@ -50,6 +50,40 @@ describe("grill-me MCP server", () => {
     expect(byName.send_to_coder.readOnlyHint).toBe(false);
     expect(byName.save_plan.readOnlyHint).toBe(false);
     expect(byName.notes.readOnlyHint).toBe(false);
+    expect(byName.team_chat.readOnlyHint).toBe(true);
+    expect(byName.post_team_chat.readOnlyHint).toBe(false);
+  });
+
+  it("team_chat reads the last N messages oldest-first; team_status counts unread", async () => {
+    const now = Date.now();
+    const [, chat, all, status] = await rpc([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "team_chat", arguments: { count: 2 } } },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "team_chat", arguments: {} } },
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "team_status", arguments: {} } },
+    ], (home) => {
+      const g = join(home, ".grillme");
+      mkdirSync(g, { recursive: true });
+      writeFileSync(join(g, "settings.json"), JSON.stringify({ appMode: "team", teamChatMe: { id: "m1", name: "Aryan" }, teamChatRead: { default: now - 25_000 } }));
+      writeFileSync(join(g, "room.json"), JSON.stringify({ members: [{ id: "m1", name: "Aryan" }, { id: "m2", name: "Maya" }] }));
+      writeFileSync(join(g, "team-chat.json"), JSON.stringify([
+        { id: "tc-3", from: "m2", fromName: "Maya", role: "user", text: "@claude is the API done?", ts: now - 10_000 },
+        { id: "tc-1", from: "m1", fromName: "Aryan", role: "user", text: "kicking off auth", ts: now - 30_000 },
+        { id: "tc-2", from: "m2", fromName: "", role: "system", text: "Maya joined the room", ts: now - 20_000 },
+        { id: "tc-4", from: "m2", fromName: "Claude (via Maya)", role: "assistant", text: "Not yet — tests failing.", ts: now - 5_000, replyTo: "tc-3" },
+      ]));
+    });
+    const text = (r: Record<string, unknown>) => (r.result as { content: { text: string }[] }).content[0].text;
+    const two = text(chat).split("\n");
+    expect(two).toHaveLength(2);
+    expect(two[0]).toContain("[tc-3]");
+    expect(two[0]).toContain("Maya: @claude is the API done?");
+    expect(two[1]).toContain("Claude (via Maya) ↩tc-3: Not yet — tests failing.");
+    const lines = text(all).split("\n");
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain("Aryan: kicking off auth");
+    expect(lines[1]).toContain("·: Maya joined the room");
+    expect(text(status)).toContain("Team chat: 4 messages, 3 unread — read it with team_chat.");
   });
 
   it("catch_up shows a teammate's goal and notes from the synced team brain", async () => {

@@ -637,6 +637,16 @@ impl Ctx {
             .collect()
     }
 
+    /// Team chat (team-chat.json over the room), oldest first by ts.
+    pub fn team_chat(&self) -> Vec<Value> {
+        let mut all: Vec<Value> = read_list(&self.project_dir().dir.join("team-chat.json"))
+            .into_iter()
+            .filter(|m| get(m, "id").is_some_and(Value::is_string) && get(m, "text").is_some_and(Value::is_string))
+            .collect();
+        all.sort_by(|a, b| num_or0(get(a, "ts")).total_cmp(&num_or0(get(b, "ts"))));
+        all
+    }
+
     /// Teammates' open questions (team-bridge.json). `mine` = local ids to skip.
     pub fn team_questions(&self, mine: &[Value]) -> Vec<Value> {
         read_list(&self.project_dir().dir.join("team-bridge.json"))
