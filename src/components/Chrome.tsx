@@ -30,8 +30,9 @@ export function ConflictBanner() {
 
 export function Toasts() {
   const { toasts, dismissToast } = useApp();
+  // bottom-centre: bottom-right is where the native claude.ai view sits, and it draws above the page
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-[300px]">
+    <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-[340px] max-w-[90vw]">
       {toasts.map((t) => (
         <div
           key={t.id}
