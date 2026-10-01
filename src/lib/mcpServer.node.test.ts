@@ -269,4 +269,59 @@ describe("grill-me MCP server", () => {
     // no transcript yet: the session hasn't taken a turn on the hand-off
     expect(run("--reply-input", "h-1")).toBe("");
   });
+
+  // ---- brain upgrades: search, starter kits ------------------------------------
+
+  /** A session with a commit, a decision, notes, goal history and a past lesson. */
+  function seedBrain(home: string) {
+    const { gm } = seedSession(home);
+    const now = Date.now();
+    writeFileSync(join(gm, "decisions.json"), JSON.stringify([{ id: "d-1", text: "Google login only — no email/password", author: "me", epochMs: now }]));
+    writeFileSync(join(gm, "bridge.json"), JSON.stringify({
+      goal: "Leaderboard for the chess club", goalTs: now, plans: [], handoffs: [],
+      notes: [{ id: "n-1", ts: now, text: "Login must work on the demo laptop", by: "Maya" }],
+      questions: [{ id: "q-1", ts: now, answered: true, from: "s1", question: "Which login provider?", answer: "Google, per the decision" }],
+    }));
+    writeFileSync(join(gm, "brain.json"), JSON.stringify([{ id: "g-0", kind: "goal", ts: now - 86_400_000, text: "Puzzle trainer (dropped)" }]));
+    writeFileSync(join(gm, "lessons.json"), JSON.stringify([{ project: "old", name: "Spring hack", date: "1700000000", summary: "Auth ate half the time", stack: ["Next.js"] }]));
+    writeFileSync(join(gm, "starter-kits.json"), JSON.stringify([{ project: "old", name: "Spring hack", stack: ["Next.js", "Supabase"], decisions: ["Magic links"], files: [{ path: "lib/auth.ts", purpose: "auth helper", repo: "/x" }], playbook: [] }]));
+  }
+
+  it("search_brain ranks decisions, notes, questions and commits; read-only", async () => {
+    const init = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } };
+    const [, list, hit, phrase, none, goal, lessons] = await rpc([
+      init,
+      { jsonrpc: "2.0", id: 2, method: "tools/list" },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "search_brain", arguments: { query: "Why did we pick Google login?" } } },
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "search_brain", arguments: { query: "\"demo laptop\"" } } },
+      { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "search_brain", arguments: { query: "kubernetes" } } },
+      { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "search_brain", arguments: { query: "puzzle", limit: 3 } } },
+      { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "past_lessons", arguments: {} } },
+    ], seedBrain);
+    const tools = (list.result as { tools: { name: string; annotations: Record<string, unknown> }[] }).tools;
+    expect(tools.find((t) => t.name === "search_brain")?.annotations.readOnlyHint).toBe(true);
+    const text = (r: Record<string, unknown>) => (r.result as { content: { text: string }[] }).content[0].text;
+    const h = text(hit);
+    expect(h).toMatch(/^\d+ results? for "Why did we pick Google login\?":\n1\. \[decision\] Google login only/);
+    expect(h).toContain("[question] Which login provider?");
+    expect(text(phrase)).toContain("[note] Login must work on the demo laptop");
+    expect(text(none)).toContain('Nothing in the brain matches "kubernetes"');
+    expect(text(goal)).toContain("[goal] Puzzle trainer (dropped)");
+    expect(text(lessons)).toContain("**Starter kits:**\n- **Spring hack** starter kit");
+    expect(text(lessons)).toContain("reusable files: lib/auth.ts (auth helper)");
+    expect(text(lessons)).not.toContain("/x"); // kit repo paths stay local
+  });
+
+  it("--search= returns ranked JSON (commits included) for the Brain page", () => {
+    const home = mkdtempSync(join(tmpdir(), "grillme-search-"));
+    seedBrain(home);
+    const run = (...a: string[]) => execFileSync(MCP_CMD[0], [...MCP_CMD.slice(1), ...a], { env: { ...process.env, HOME: home } }).toString();
+    const r = JSON.parse(run("--search=login", "--limit=10")) as { kind: string; title: string; ref: string }[];
+    expect(r[0].kind).toBe("decision");
+    const commit = r.find((x) => x.kind === "commit");
+    expect(commit?.title).toBe("add login");
+    expect(commit?.ref).toMatch(/^s1:[0-9a-f]+$/);
+    // a query that looks like a flag is just text
+    expect(JSON.parse(run("--search=--sync", "--limit=5"))).toEqual([]);
+  });
 });

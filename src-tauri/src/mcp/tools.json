@@ -181,10 +181,29 @@
   },
   {
     "name": "past_lessons",
-    "description": "Lessons from past hackathons (stack, what worked, mistakes, reusable pieces). Use when starting a new project or choosing a stack.",
+    "description": "Lessons from past hackathons (stack, what worked, mistakes, reusable pieces) and their starter kits (stack, key decisions, reusable files). Use when starting a new project or choosing a stack.",
     "inputSchema": {
       "type": "object",
       "properties": {}
+    }
+  },
+  {
+    "name": "search_brain",
+    "description": "Search everything the project's brain remembers: decisions, notes, plans, goal history, past lessons, hand-offs and replies, questions and answers, reviews, commit messages, and session conversations. Every word must match; put \"exact phrases\" in quotes. Use it to answer 'why did we…', 'when did we…', or 'what did we decide about…'.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "query"
+      ],
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Max results (default 15, max 50)"
+        }
+      }
     }
   },
   {

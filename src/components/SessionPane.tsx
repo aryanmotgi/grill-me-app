@@ -8,6 +8,7 @@ async function shipRaw(memberId: string, data: string) {
 }
 import type { Teammate } from "../types";
 import { isHelpPending } from "../lib/help";
+import { usePaneJump } from "../lib/paneJump";
 import { XtermPane } from "./XtermPane";
 import { Composer } from "./Composer";
 import { ChatView } from "./ChatView";
@@ -344,6 +345,13 @@ export function SessionPane({ mate }: { mate: Teammate }) {
   const member = members.find((m) => m.id === mate.id);
   // Claude sessions open as chat (Monocode-style); other agents keep the TUI
   const [tab, setTab] = useState<PaneTab>((member?.agent ?? "claude") === "claude" ? "chat" : "terminal");
+  // a jump from elsewhere (brain search: a commit → this session's Changes)
+  const jump = usePaneJump((j) => j.req);
+  useEffect(() => {
+    if (!jump || jump.session !== mate.id) return;
+    setTab(jump.tab === "chat" && (member?.agent ?? "claude") !== "claude" ? "terminal" : jump.tab);
+    usePaneJump.setState({ req: null });
+  }, [jump, mate.id, member?.agent]);
 
   return (
     <section className={`flex-1 min-w-0 flex flex-col ${tab === "chat" ? "" : "bg-term-bg"}`}>

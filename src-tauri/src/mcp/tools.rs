@@ -34,7 +34,8 @@ pub const REMOTE_PROPOSALS: [&str; 3] = ["save_plan", "send_to_coder", "answer_q
 // MCP tool annotations: clients (claude.ai, Claude Code) use readOnlyHint to
 // skip the permission prompt on reads and to flag the tools that change things.
 // Nothing here reaches outside the Mac, so openWorldHint is false everywhere.
-const TITLES: [(&str, &str); 18] = [
+const TITLES: [(&str, &str); 19] = [
+    ("search_brain", "Search the brain"),
     ("whats_new", "What's new in my sessions"),
     ("read_session", "Read a session"),
     ("get_diff", "Get a session's diff"),
@@ -206,7 +207,18 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
         }
         "past_lessons" => {
             let l = ctx.lessons_text(None, 20)?;
-            Ok(if l.is_empty() { "No past hackathons wrapped up yet.".into() } else { l })
+            let kits = ctx.kits_text(None, 10);
+            Ok(match (l.is_empty(), kits.is_empty()) {
+                (true, true) => "No past hackathons wrapped up yet.".into(),
+                (false, true) => l,
+                (true, false) => format!("**Starter kits:**\n{kits}"),
+                (false, false) => format!("{l}\n\n**Starter kits:**\n{kits}"),
+            })
+        }
+        "search_brain" => {
+            let n = js::to_num(arg("limit"));
+            let limit = if n.is_nan() || n < 1.0 { 15.0 } else { n.min(50.0) };
+            ctx.search_text(&s(arg("query")), limit as usize)
         }
         "get_plan" => {
             let dir = ctx.project_dir().dir;

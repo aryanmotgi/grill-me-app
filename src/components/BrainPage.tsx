@@ -4,6 +4,7 @@ import { useBridge } from "./BridgePanel";
 import { Markdown } from "./Markdown";
 import { Icon } from "./Icon";
 import { LessonsCard, PitchCard, QuizCard } from "./BrainTools";
+import { BrainSearch, SpottedDecisions } from "./BrainSearch";
 
 // ---------------------------------------------------------------------------
 // The project's shared brain (nav rail → Brain). One notebook that the Claude
@@ -144,8 +145,9 @@ export function BrainPage() {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto">
-      <div className="max-w-[820px] mx-auto px-6 py-8 flex flex-col gap-5 select-text">
+    <div className="@container flex-1 min-h-0 overflow-y-auto">
+      <div className="max-w-[820px] mx-auto px-4 @2xl:px-6 py-6 @2xl:py-8 flex flex-col gap-5 select-text">
+        <BrainSearch />
         <div>
           <div className="text-[11px] tracking-[0.12em] uppercase text-faint">Brain · {projectName}</div>
           <p className="text-[12.5px] text-faint mt-1">
@@ -186,6 +188,8 @@ export function BrainPage() {
             </button>
           )}
         </div>
+
+        <SpottedDecisions />
 
         <DeadlineCard />
 

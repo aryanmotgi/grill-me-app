@@ -8,6 +8,7 @@ import {
   type BridgeHandoff, type BridgePlan, type BridgeState,
 } from "../lib/bridge";
 import { inboundFor, questionMirrorsToPush, toTeamHandoff } from "../lib/teamBridge";
+import { automationOn } from "../lib/automations";
 import { Icon } from "./Icon";
 import type { Task } from "../types";
 
@@ -131,15 +132,19 @@ const CHECK_EVERY_MS = 3 * 60_000;
 
 async function runBrainCheck(memberId: string) {
   const st = useApp.getState();
-  if (st.appSettings.brainChecks === false) return;
+  // one model call serves both: the plan check and spotting agreed decisions
+  const checks = st.appSettings.brainChecks !== false;
+  const spot = automationOn(st.appSettings, "spot-decisions");
+  if (!checks && !spot) return;
   const now = Date.now();
   if (now - (lastCheck[memberId] ?? 0) < CHECK_EVERY_MS) return;
   lastCheck[memberId] = now;
   const { invoke } = await import("@tauri-apps/api/core");
-  const r = await invoke<{ session: string; mismatch: boolean; reason: string; doneTaskIds: string[]; startedTaskIds: string[] } | null>(
-    "brain_check", { memberId },
+  const r = await invoke<{ session: string; mismatch: boolean; reason: string; doneTaskIds: string[]; startedTaskIds: string[]; proposed?: number } | null>(
+    "brain_check", { memberId, checks, spot },
   ).catch(() => null);
   if (!r) return;
+  if (r.proposed) void import("./BrainWatch").then((w) => w.announceProposed(r.session, r.proposed ?? 0));
   if (r.mismatch) {
     st.toast(`⚠ ${r.session} may be off-plan: ${r.reason}`, "warn");
     void import("./Automations").then(({ alertEverywhere }) => alertEverywhere("Off-plan work", `${r.session}: ${r.reason}`));
@@ -163,16 +168,25 @@ export function useBridgeFeed() {
   useEffect(() => {
     if (!native()) {
       // browser dev: sample items so the Flow view / panel are browsable
-      void import("../data/fakeBridge").then(({ FAKE_BRIDGE }) => useBridge.setState({ state: FAKE_BRIDGE }));
+      void import("../data/fakeBridge").then(({ FAKE_BRIDGE, FAKE_DRIFT }) => {
+        useBridge.setState({ state: FAKE_BRIDGE });
+        void import("./BrainWatch").then((w) => w.useDrift.setState({ conflicts: FAKE_DRIFT }));
+      });
       return;
     }
     let alive = true;
-    let unlisten: (() => void) | undefined;
+    const unlisten: (() => void)[] = [];
     void refresh(false);
     void refreshConn();
-    import("@tauri-apps/api/event").then(({ listen }) =>
-      listen("bridge-changed", () => void refresh(true)).then((u) => { if (alive) unlisten = u; else u(); }),
-    );
+    import("@tauri-apps/api/event").then(async ({ listen }) => {
+      const subs = await Promise.all([
+        listen("bridge-changed", () => void refresh(true)),
+        // a Grill Me Chat reply landed (any chat, panel open or not): spot decisions in it
+        listen<{ chatId: string; isError: boolean }>("brainstorm-done", (e) =>
+          void import("./BrainWatch").then((w) => w.onChatDone(e.payload.chatId, e.payload.isError))),
+      ]);
+      if (alive) unlisten.push(...subs); else subs.forEach((u) => u());
+    });
     const poll = setInterval(() => void refresh(true), 5000);
     // reviews on disk, then the phone's approve buttons (no-op unless phone pings are on)
     void import("./BridgeLoop").then((l) => l.loadReviews());
@@ -188,6 +202,8 @@ export function useBridgeFeed() {
           void runBrainCheck(t.id);
           // auto review + hand-off replies
           void import("./BridgeLoop").then((l) => l.onSessionIdle(t.id));
+          // drift alarm: compare sessions once several have finished recently
+          void import("./BrainWatch").then((w) => w.onSessionFinished(t.id));
         }
         if (was === "working" && t.status === "idle" && (conn?.desktop || conn?.code)) {
           const now = Date.now();
@@ -200,7 +216,7 @@ export function useBridgeFeed() {
       }
       prev = new Map(s.teammates.map((t) => [t.id, t.status]));
     });
-    return () => { alive = false; unlisten?.(); clearInterval(poll); clearInterval(phone); unsub(); };
+    return () => { alive = false; unlisten.forEach((u) => u()); clearInterval(poll); clearInterval(phone); unsub(); };
   }, []);
 }
 

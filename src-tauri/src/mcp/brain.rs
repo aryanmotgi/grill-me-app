@@ -10,6 +10,7 @@
 
 use super::data::{arr_of, eq_str, read_json_or, read_list, read_text, ts_of, Ctx};
 use super::js::{self, clip, get, nn, to_str, truthy};
+use super::redact::safe_name;
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
@@ -57,6 +58,15 @@ fn goal_or_empty(b: &Value) -> Value {
 /// A string field, "" when missing or not a string.
 fn str_of(v: Option<&Value>) -> String {
     v.and_then(Value::as_str).unwrap_or("").to_string()
+}
+
+/// A chat ask without the <grill-me-sync> block Grill Me prepends to it.
+pub fn strip_sync(ask: &str) -> String {
+    const CLOSE: &str = "</grill-me-sync>";
+    match (ask.find("<grill-me-sync>"), ask.find(CLOSE)) {
+        (Some(a), Some(b)) if b > a => format!("{}{}", &ask[..a], &ask[b + CLOSE.len()..]).trim().to_string(),
+        _ => ask.trim().to_string(),
+    }
 }
 
 /// The turns a session took on a delivered hand-off: from the turn whose ask
@@ -256,7 +266,9 @@ impl Ctx {
 
     /// Mismatch + board check for one session's latest turn. Empty when
     /// there's nothing to compare against or no new turn since the last check.
-    pub fn check_input(&self, member: Option<&str>) -> Result<String, String> {
+    /// `spot` = also spotting agreed decisions, so a project with no plan
+    /// yet still gets checked.
+    pub fn check_input(&self, member: Option<&str>, spot: bool) -> Result<String, String> {
         let Some(m) = self.members().into_iter().find(|x| eq_str(get(x, "id"), member)) else { return Ok(String::new()) };
         let b = self.bridge_state();
         let decisions = self.decision_texts(15);
@@ -264,7 +276,7 @@ impl Ctx {
             .iter()
             .map(|t| obj(vec![("id", get(t, "id").cloned()), ("title", get(t, "title").cloned()), ("status", get(t, "status").cloned())]))
             .collect();
-        if !truthy(get(&b, "goal")) && decisions.as_array().is_some_and(Vec::is_empty) && tasks.is_empty() {
+        if !spot && !truthy(get(&b, "goal")) && decisions.as_array().is_some_and(Vec::is_empty) && tasks.is_empty() {
             return Ok(String::new());
         }
         let key = format!("check:{}", member.unwrap_or("undefined"));
@@ -383,7 +395,137 @@ impl Ctx {
             "notes": arr_of(js::tail(&notes, 25).iter().map(|n| get(n, "text"))),
             "tasks": read_list(&proj.dir.join("tasks.json")).iter().map(|t| format!("[{}] {}", to_str(get(t, "status")), to_str(get(t, "title")))).collect::<Vec<_>>(),
             "work": self.work_summary(4)?,
+            "files": self.kit_candidates(),
+            // stripped by Grill Me before the prompt: where each session's files live
+            "repos": self.kit_repos(),
         });
+        Ok(js::stringify(&v, 1))
+    }
+
+    /// Files each session added or changed vs its base branch — the only
+    /// paths a starter kit may list. Secret-named files never appear.
+    fn kit_candidates(&self) -> Vec<Value> {
+        let mut out = Vec::new();
+        for m in self.members() {
+            let repo = to_str(get(&m, "repoPath"));
+            let (base, branch, _) = Ctx::commit_log(&repo);
+            if base.is_empty() || base == branch {
+                continue;
+            }
+            let names = super::data::git(&repo, &["diff", "--name-only", "--diff-filter=AM", &format!("{base}...HEAD")]);
+            for f in names.lines().filter(|f| safe_name(f)).take(80) {
+                out.push(json!({ "session": self.label_v(&m), "path": f }));
+            }
+        }
+        out
+    }
+
+    /// session label → { worktree, main } (the main checkout outlives the worktree).
+    fn kit_repos(&self) -> Value {
+        let mut out = Map::new();
+        for m in self.members() {
+            let repo = to_str(get(&m, "repoPath"));
+            let common = super::data::git(&repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+            let main = common.strip_suffix("/.git").unwrap_or("").to_string();
+            out.insert(self.label(&m), json!({ "worktree": repo, "main": main }));
+        }
+        Value::Object(out)
+    }
+
+    /// Starter kits from past projects (~/.grillme/starter-kits.json), newest first.
+    pub fn kits_text(&self, except: Option<&str>, n: usize) -> String {
+        let all: Vec<Value> = read_list(&self.root_path().join("starter-kits.json"))
+            .into_iter()
+            .filter(|k| except.is_none_or(|e| !eq_str(get(k, "project"), Some(e))))
+            .collect();
+        js::tail(&all, n)
+            .iter()
+            .rev()
+            .map(|k| {
+                let list = |key: &str| -> String { get(k, key).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")).unwrap_or_default() };
+                let files: Vec<String> = get(k, "files")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().map(|f| format!("{} ({})", str_of(get(f, "path")), str_of(get(f, "purpose")))).collect())
+                    .unwrap_or_default();
+                let mut lines = vec![format!("- **{}** starter kit", str_of(nn(get(k, "name")).or(get(k, "project"))))];
+                for (label, v) in [("stack", list("stack")), ("decisions", list("decisions")), ("reusable files", files.join("; ")), ("playbook tweaks", list("playbook"))] {
+                    if !v.is_empty() {
+                        lines.push(format!("  - {label}: {v}"));
+                    }
+                }
+                lines.join("\n")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    // ---- brain upgrades: decision spotting in chats, drift ------------------------
+
+    /// A Grill Me Chat's latest exchange, for spotting agreed decisions.
+    /// Empty when the chat has no finished reply.
+    pub fn chat_input(&self, chat_id: Option<&str>) -> Result<String, String> {
+        let Some(id) = chat_id else { return Ok(String::new()) };
+        let turns = self.chat_turns(id);
+        let Some(last) = turns.last().filter(|t| !t.reply.is_empty()) else { return Ok(String::new()) };
+        let title = read_list(&self.root_path().join("brainstorm-chats.json"))
+            .into_iter()
+            .find(|c| eq_str(get(c, "id"), Some(id)))
+            .map(|c| str_of(get(&c, "title")))
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "Grill Me Chat".into());
+        let prev = turns.len().checked_sub(2).and_then(|i| turns.get(i));
+        let v = json!({
+            "source": format!("Chat: {title}"),
+            "decisions": self.decision_texts(30),
+            "previousTurn": prev.map(|t| json!({ "user": clip(&strip_sync(&t.ask), 800), "assistant": clip(&t.reply, 1200) })),
+            "latestTurn": { "user": clip(&strip_sync(&last.ask), 1500), "assistant": clip(&last.reply, 3000) },
+        });
+        Ok(js::stringify(&v, 1))
+    }
+
+    /// What each recently active session is doing, for the drift check.
+    /// Empty when fewer than two sessions (mine + teammates') are in play.
+    pub fn drift_input(&self) -> Result<String, String> {
+        let now = js::now_ms();
+        let mut sessions = Vec::new();
+        for m in self.members() {
+            let (ts, updated) = self.turns(&m)?;
+            if updated.is_none_or(|u| now - u > 45.0 * 60_000.0) || ts.is_empty() {
+                continue;
+            }
+            let repo = to_str(get(&m, "repoPath"));
+            let (base, branch, _) = Ctx::commit_log(&repo);
+            let mut files: Vec<String> = super::data::changed_files(&repo).iter().filter_map(|l| l.get(3..)).map(|f| js::trim(f).to_string()).collect();
+            if !base.is_empty() && base != branch {
+                files.extend(super::data::git(&repo, &["diff", "--name-only", &format!("{base}...HEAD")]).lines().map(str::to_owned));
+            }
+            let mut uniq: Vec<String> = Vec::new();
+            for f in files.into_iter().filter(|f| safe_name(f)) {
+                if !uniq.contains(&f) {
+                    uniq.push(f);
+                }
+            }
+            uniq.truncate(30);
+            let last = ts.last();
+            sessions.push(json!({
+                "name": self.label_v(&m),
+                "branch": branch,
+                "lastAsks": js::tail(&ts, 2).iter().map(|t| clip(&strip_sync(&t.ask), 300)).collect::<Vec<_>>(),
+                "tools": last.map(|t| js::tail(&t.tools, 12).to_vec()).unwrap_or_default(),
+                "lastReply": last.map(|t| clip(&t.reply, 400)).unwrap_or_default(),
+                "files": uniq,
+            }));
+        }
+        let teammates: Vec<Value> = self
+            .team_sessions()
+            .iter()
+            .map(|d| json!({ "name": format!("{}'s {}", str_of(get(d, "memberName")), str_of(get(d, "title"))), "doing": str_of(get(d, "sentence")), "branch": str_of(get(d, "branch")) }))
+            .collect();
+        if sessions.is_empty() || sessions.len() + teammates.len() < 2 {
+            return Ok(String::new());
+        }
+        let b = self.bridge_state();
+        let v = json!({ "goal": goal_or_empty(&b), "decisions": self.decision_texts(15), "sessions": sessions, "teammates": teammates });
         Ok(js::stringify(&v, 1))
     }
 
@@ -661,6 +803,82 @@ mod tests {
         assert_eq!(r, vec!["- **Auth** (done) on \"Add login\": Login works.".to_string()]);
         assert!(ctx.reply_lines(now as f64, false).is_empty());
         assert!(ctx.catch_up((now - 1000) as f64, None, false).unwrap().contains("**Replies to your hand-offs:**"));
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn strips_the_sync_block_from_chat_asks() {
+        assert_eq!(strip_sync("<grill-me-sync>\nnews\n</grill-me-sync>\n\nLet's use Postgres"), "Let's use Postgres");
+        assert_eq!(strip_sync("  plain ask "), "plain ask");
+        assert_eq!(strip_sync("</grill-me-sync> odd <grill-me-sync>"), "</grill-me-sync> odd <grill-me-sync>");
+    }
+
+    #[test]
+    fn chat_input_reads_the_latest_exchange() {
+        let (ctx, home) = temp_ctx("chat");
+        let id = "0123abcd-0000-4000-8000-00000000abcd";
+        let key: String = ctx.root.chars().map(|c| if c == '/' || c == '.' { '-' } else { c }).collect();
+        let dir = home.join(".claude").join("projects").join(key);
+        std::fs::create_dir_all(&dir).unwrap();
+        let lines = [
+            json!({ "type": "user", "message": { "content": "<grill-me-sync>\nstuff\n</grill-me-sync>\n\nPostgres or SQLite?" }, "timestamp": "2026-01-01T10:00:00Z" }),
+            json!({ "type": "assistant", "message": { "content": [{ "type": "text", "text": "Postgres — we need JSON columns." }] } }),
+            json!({ "type": "user", "message": { "content": "Agreed, let's use Postgres." }, "timestamp": "2026-01-01T10:01:00Z" }),
+            json!({ "type": "assistant", "message": { "content": [{ "type": "text", "text": "Locked in: Postgres." }] } }),
+        ];
+        std::fs::write(dir.join(format!("{id}.jsonl")), lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n")).unwrap();
+        std::fs::write(home.join(".grillme").join("brainstorm-chats.json"), json!([{ "id": id, "title": "DB choice" }]).to_string()).unwrap();
+        let v: Value = serde_json::from_str(&ctx.chat_input(Some(id)).unwrap()).unwrap();
+        assert_eq!(v["source"], "Chat: DB choice");
+        assert_eq!(v["latestTurn"]["user"], "Agreed, let's use Postgres.");
+        assert_eq!(v["previousTurn"]["user"], "Postgres or SQLite?");
+        assert_eq!(ctx.chat_input(Some("../../etc/passwd")).unwrap(), "");
+        assert_eq!(ctx.chat_input(Some("0123abcd-0000-4000-8000-00000000ffff")).unwrap(), "");
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn drift_input_needs_two_sessions() {
+        let (ctx, home) = temp_ctx("drift");
+        let g = home.join(".grillme");
+        // no sessions at all
+        assert_eq!(ctx.drift_input().unwrap(), "");
+        // one local session (with a fresh transcript) + one teammate = enough
+        let repo = home.join("app");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(g.join("config.json"), json!({ "teammates": [{ "id": "s1", "name": "Auth", "repoPath": repo.to_string_lossy() }] }).to_string()).unwrap();
+        let key: String = repo.to_string_lossy().chars().map(|c| if c == '/' || c == '.' { '-' } else { c }).collect();
+        let tdir = home.join(".claude").join("projects").join(key);
+        std::fs::create_dir_all(&tdir).unwrap();
+        std::fs::write(tdir.join("t.jsonl"), json!({ "type": "user", "message": { "content": "Build email login" }, "timestamp": "2026-01-01T10:00:00Z" }).to_string()).unwrap();
+        assert_eq!(ctx.drift_input().unwrap(), "", "one session alone can't drift");
+        std::fs::write(
+            g.join("team-sessions.json"),
+            json!([{ "id": "m2:x", "member": "m2", "memberName": "Maya", "session": "x", "title": "Login", "sentence": "working in google.ts", "branch": "feat/google", "ts": js::now_ms() as i64 }]).to_string(),
+        )
+        .unwrap();
+        let v: Value = serde_json::from_str(&ctx.drift_input().unwrap()).unwrap();
+        assert_eq!(v["sessions"][0]["lastAsks"][0], "Build email login");
+        assert_eq!(v["teammates"][0]["name"], "Maya's Login");
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn kits_text_lists_reusable_files() {
+        let (ctx, home) = temp_ctx("kits");
+        std::fs::write(
+            home.join(".grillme").join("starter-kits.json"),
+            json!([
+                { "project": "a", "name": "Hack A", "stack": ["Next.js", "Supabase"], "decisions": ["Magic links"], "files": [{ "path": "lib/auth.ts", "purpose": "auth helper" }], "playbook": [] },
+                { "project": "b", "name": "Hack B", "stack": ["Vite"] },
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        let t = ctx.kits_text(None, 5);
+        assert!(t.starts_with("- **Hack B** starter kit\n  - stack: Vite\n- **Hack A**"), "{t}");
+        assert!(t.contains("reusable files: lib/auth.ts (auth helper)"), "{t}");
+        assert!(!ctx.kits_text(Some("b"), 5).contains("Hack B"));
         let _ = std::fs::remove_dir_all(home);
     }
 

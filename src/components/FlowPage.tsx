@@ -6,6 +6,8 @@ import { newTeamHandoff, teamQuestionsFor } from "../lib/teamBridge";
 import type { TeamSession } from "../types";
 import { bridgeApply, bridgeResolve, bridgeSend, useBridge } from "./BridgePanel";
 import { ackReply, bridgeAnswer, teamFlag, useReviews } from "./BridgeLoop";
+import { dismissDrift, dismissProposal, saveProposal, useDrift } from "./BrainWatch";
+import { pendingProposals } from "../lib/decisionSpot";
 import { automationOn } from "../lib/automations";
 import { VERDICT_LABEL, type Review } from "../lib/bridgeLoop";
 import { useRemote } from "./ClaudeConnect";
@@ -30,6 +32,9 @@ function EndChip({ end, status }: { end: FlowEnd; status?: string }) {
   if (end.kind === "brain") {
     return <span className="inline-flex items-center gap-1.5 text-[12px] text-ink"><Icon name="note" size={12} /> Brain</span>;
   }
+  if (end.kind === "named") {
+    return <span className="inline-flex items-center gap-1.5 text-[12px] text-ink min-w-0"><Icon name="terminal" size={11} className="text-faint flex-none" /><span className="truncate">{end.title}</span></span>;
+  }
   if (end.kind === "teammate") {
     return <span className="inline-flex items-center gap-1.5 text-[12px] text-ink"><Icon name="team" size={12} /> {end.name}{end.sessionTitle ? <span className="text-dim"> · {end.sessionTitle}</span> : null}</span>;
   }
@@ -41,7 +46,30 @@ function EndChip({ end, status }: { end: FlowEnd; status?: string }) {
   );
 }
 
-const KIND_LABEL: Record<Wire["kind"], string> = { task: "Task", answer: "Answer", plan: "Plan", question: "Question", reply: "Reply" };
+const KIND_LABEL: Record<Wire["kind"], string> = {
+  task: "Task", answer: "Answer", plan: "Plan", question: "Question", reply: "Reply", decision: "Decision?", drift: "Drifting apart",
+};
+
+/** A decision Claude spotted ("let's use Postgres"): Save logs it for the team. */
+function DecisionActions({ w }: { w: Wire }) {
+  const p = useBridge((b) => b.state.decisionProposals?.find((x) => x.id === w.id));
+  const [busy, setBusy] = useState(false);
+  if (!p) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {w.detail ? <div className="text-[11.5px] text-dim border-l-2 border-line pl-2.5">“{w.detail}”</div> : null}
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        <button className="composer-btn on h-7 text-[11.5px]" disabled={busy}
+          onClick={() => { setBusy(true); void saveProposal(p).finally(() => setBusy(false)); }}
+          title="Log it in the decisions log — teammates and every session see it">
+          {busy ? <span className="spinner" /> : <Icon name="check" size={11} />} Save
+        </button>
+        <button className="composer-btn h-7 text-[11.5px]" onClick={() => void dismissProposal(p.id)}>Dismiss</button>
+        <span className="text-[11px] text-faint">Spotted by Claude — nothing is logged until you save.</span>
+      </div>
+    </div>
+  );
+}
 
 /** Claude's drafted answer to a coder's question: edit it, send it (that
  *  click is the approval), or set it aside. */
@@ -96,12 +124,36 @@ function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string })
   };
   const endStatus = (e: FlowEnd) => (e.kind === "session" ? statusOf(e.id) : undefined);
   const drafting = useApp((s) => automationOn(s.appSettings, "draft-answers"));
+  const drift = useDrift((d) => d.conflicts.find((c) => c.id === w.id));
   const dismiss = () => {
-    if (w.list === "team") void teamFlag(w.id, "teamDismiss");
+    if (w.list === "decisions") void dismissProposal(w.id);
+    else if (w.list === "drift") { if (drift) dismissDrift(drift); }
+    else if (w.list === "team") void teamFlag(w.id, "teamDismiss");
     else if (w.list === "replies") void ackReply(w.id);
     else if (w.list === "team-replies") void teamFlag(w.id, "teamReplyAck");
     else void bridgeResolve(w.list, w.id, "dismissed");
   };
+  if (w.kind === "drift") {
+    return (
+      <div className="composer-card rounded-xl px-3.5 py-3 flex flex-col gap-2 border-warn/50" role="alert">
+        <div className="flex items-center gap-2 min-w-0">
+          <EndChip end={w.from} />
+          <span className="flex-1 flex items-center gap-1 min-w-[40px] text-warn">
+            <span className="flex-1 h-px bg-warn/60" />
+            <Icon name="swap" size={11} />
+            <span className="flex-1 h-px bg-warn/60" />
+          </span>
+          <EndChip end={w.to} />
+        </div>
+        <div className="text-[12.5px] text-ink leading-snug"><span className="text-warn">{KIND_LABEL.drift} · </span>{w.label}</div>
+        {w.detail ? <div className="text-[11.5px] text-dim">{w.detail}</div> : null}
+        <div className="flex items-center gap-2 pt-0.5">
+          <button className="composer-btn h-7 text-[11.5px]" onClick={dismiss} title="Hide this warning for 2 hours">Dismiss</button>
+          <span className="text-[11px] text-faint">Tell one of them to change course — or dismiss if it's fine.</span>
+        </div>
+      </div>
+    );
+  }
   // a question with a draft (or one on the way) gets the draft box instead of the plain button
   const draft = w.kind === "question" && w.draft && drafting && (w.draft.status === "ready" || w.draft.status === "drafting") ? w.draft : null;
   return (
@@ -117,7 +169,9 @@ function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string })
       <div className="text-[12.5px] text-ink leading-snug">
         <span className="text-faint">{KIND_LABEL[w.kind]}{w.kind === "reply" ? (w.done ? " · done" : " · not done yet") : ""} · </span>{w.label}
       </div>
-      {w.kind === "reply" ? (
+      {w.kind === "decision" ? (
+        <DecisionActions w={w} />
+      ) : w.kind === "reply" ? (
         <div className="flex items-center gap-2 pt-0.5">
           <button className="composer-btn h-7 text-[11.5px]" onClick={dismiss}><Icon name="check" size={11} /> Got it</button>
           <span className="text-[11px] text-faint">Claude sees this on its next catch-up.</span>
@@ -295,7 +349,12 @@ export function FlowPage() {
   const statusOf = (id: string) => teammates.find((x) => x.id === id)?.status ?? "idle";
   const me = roomSelfId ?? "";
   const meName = room?.members.find((m) => m.id === me)?.name ?? me;
-  const wires = useMemo(() => buildWires(state, titleOf, teamQuestionsFor(teamBridge, me), { me, teamBridge }), [state, teammates, titles, teamBridge, me]); // eslint-disable-line react-hooks/exhaustive-deps
+  const drift = useDrift((d) => d.conflicts);
+  const wires = useMemo(() => buildWires(state, titleOf, teamQuestionsFor(teamBridge, me), {
+    me, teamBridge, drift,
+    proposals: pendingProposals(state, decisions),
+    sessions: teammates.map((t) => ({ id: t.id, title: sessionTitle(t, titles) })),
+  }), [state, teammates, titles, teamBridge, me, drift, decisions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mates = room ? room.members.filter((m) => m.id !== roomSelfId) : [];
   const roomLive = !!(room && roomSelfId && room.phase === "done");

@@ -44,6 +44,13 @@ export interface BridgeState {
   goal?: string;
   /** keyed by team-bridge id */
   teamLocal?: Record<string, TeamLocal>;
+  /** agreed decisions Claude spotted in a session turn or chat — logged only on Save */
+  decisionProposals?: DecisionProposal[];
+}
+
+export interface DecisionProposal {
+  id: string; text: string; source: string; quote: string; ts: number;
+  status: "pending" | "saved" | "dismissed";
 }
 
 export const EMPTY_BRIDGE: BridgeState = { handoffs: [], plans: [], questions: [], notes: [] };
@@ -56,6 +63,7 @@ export function parseBridge(raw: string): BridgeState {
       handoffs: arr(v.handoffs), plans: arr(v.plans), questions: arr(v.questions), notes: arr(v.notes),
       ...(typeof v.goal === "string" ? { goal: v.goal } : {}),
       ...(v.teamLocal && typeof v.teamLocal === "object" && !Array.isArray(v.teamLocal) ? { teamLocal: v.teamLocal } : {}),
+      ...(Array.isArray(v.decisionProposals) ? { decisionProposals: v.decisionProposals } : {}),
     };
   } catch {
     return EMPTY_BRIDGE;

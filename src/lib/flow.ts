@@ -5,33 +5,39 @@
 // click from the user, so the view is the approval queue drawn as a map.
 // ---------------------------------------------------------------------------
 
-import type { BridgeState } from "./bridge";
+import type { BridgeState, DecisionProposal } from "./bridge";
 import { draftStatus, teamReplies, unreadReplies, type DraftStatus } from "./bridgeLoop";
+import type { DriftConflict } from "./drift";
 import type { Teammate, TeamBridgeItem, TeamSession } from "../types";
 
 export type FlowEnd =
   | { kind: "brainstorm" }
   | { kind: "brain" }
   | { kind: "session"; id: string; title: string }
-  | { kind: "teammate"; member: string; name: string; session?: string; sessionTitle?: string };
+  | { kind: "teammate"; member: string; name: string; session?: string; sessionTitle?: string }
+  /** a session known only by its title (drift warnings, decision sources) */
+  | { kind: "named"; title: string };
 
 export interface Wire {
   id: string;
   /** what is moving along it */
-  kind: "task" | "answer" | "plan" | "question" | "reply";
+  kind: "task" | "answer" | "plan" | "question" | "reply" | "decision" | "drift";
   from: FlowEnd;
   to: FlowEnd;
   label: string;
   ts: number;
-  /** the click that lets it through ("ack" = a reply: just read it) */
-  action: "send" | "apply" | "answer" | "ack";
+  /** the click that lets it through ("ack" = a reply: just read it; "save" = log a
+   *  spotted decision; "dismiss" = a drift warning, nothing to approve) */
+  action: "send" | "apply" | "answer" | "ack" | "save" | "dismiss";
   /** "team" = a teammate's question (lives in team-bridge.json; dismissing hides it on this Mac);
    *  "replies" / "team-replies" = a session's result report on a hand-off */
-  list: "handoffs" | "plans" | "questions" | "team" | "replies" | "team-replies";
+  list: "handoffs" | "plans" | "questions" | "team" | "replies" | "team-replies" | "decisions" | "drift";
   /** questions: Claude's drafted answer */
   draft?: { status: DraftStatus; text: string };
   /** replies: did the session finish the task? */
   done?: boolean;
+  /** decisions: the words that showed it was agreed; drift: what to do about it */
+  detail?: string;
 }
 
 export interface WireOpts {
@@ -39,6 +45,12 @@ export interface WireOpts {
   /** my room id — teammates' replies to hand-offs I routed */
   me?: string;
   teamBridge?: TeamBridgeItem[];
+  /** pending "Decision?" proposals (already filtered against the log) */
+  proposals?: DecisionProposal[];
+  /** live drift warnings, minus dismissed ones */
+  drift?: (DriftConflict & { id: string; ts: number })[];
+  /** session id → title, to put a decision's source on its session */
+  sessions?: { id: string; title: string }[];
 }
 
 const clip = (s: string, n: number) => {
@@ -133,6 +145,33 @@ export function buildWires(b: BridgeState, titleOf: (id: string) => string, team
       action: "ack",
       list: "team-replies",
       done: !!e.result?.done,
+    });
+  }
+  for (const p of opts.proposals ?? []) {
+    const local = opts.sessions?.find((s) => s.title === p.source);
+    wires.push({
+      id: p.id,
+      kind: "decision",
+      from: p.source.startsWith("Chat:") ? { kind: "brainstorm" } : local ? { kind: "session", id: local.id, title: local.title } : { kind: "named", title: p.source },
+      to: { kind: "brain" },
+      label: clip(p.text, 200),
+      ts: p.ts,
+      action: "save",
+      list: "decisions",
+      ...(p.quote ? { detail: clip(p.quote, 200) } : {}),
+    });
+  }
+  for (const d of opts.drift ?? []) {
+    wires.push({
+      id: d.id,
+      kind: "drift",
+      from: { kind: "named", title: d.a },
+      to: { kind: "named", title: d.b },
+      label: clip(d.why, 220),
+      ts: d.ts,
+      action: "dismiss",
+      list: "drift",
+      ...(d.suggestion ? { detail: clip(d.suggestion, 220) } : {}),
     });
   }
   return wires.sort((a, b2) => a.ts - b2.ts);

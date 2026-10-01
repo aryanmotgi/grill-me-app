@@ -121,3 +121,25 @@ describe("buildWires with teammates", () => {
     expect(w[2].from).toMatchObject({ kind: "teammate", name: "Maya", sessionTitle: "API" });
   });
 });
+
+describe("buildWires: brain upgrades", () => {
+  it("adds Decision? wires (from the session or the chat) and drift warnings", () => {
+    const empty: BridgeState = { handoffs: [], plans: [], questions: [], notes: [] };
+    const wires = buildWires(empty, (id) => id, [], {
+      sessions: [{ id: "s1", title: "Auth" }],
+      proposals: [
+        { id: "dp-1", text: "Use Postgres", source: "Auth", quote: "let's use postgres", ts: 5, status: "pending" },
+        { id: "dp-2", text: "Skip OAuth", source: "Chat: scope", quote: "", ts: 6, status: "pending" },
+        { id: "dp-3", text: "Light theme", source: "Maya's UI", quote: "", ts: 7, status: "pending" },
+      ],
+      drift: [{ id: "drift-x", a: "Auth", b: "Maya's Login", why: "email vs Google login", suggestion: "Pick Google", ts: 1 }],
+    });
+    expect(wires.map((w) => w.id)).toEqual(["drift-x", "dp-1", "dp-2", "dp-3"]);
+    const [drift, d1, d2, d3] = wires;
+    expect(drift).toMatchObject({ kind: "drift", action: "dismiss", from: { kind: "named", title: "Auth" }, to: { kind: "named", title: "Maya's Login" }, detail: "Pick Google" });
+    expect(d1).toMatchObject({ kind: "decision", action: "save", list: "decisions", from: { kind: "session", id: "s1" }, to: { kind: "brain" }, detail: "let's use postgres" });
+    expect(d2.from).toEqual({ kind: "brainstorm" });
+    expect(d2.detail).toBeUndefined();
+    expect(d3.from).toEqual({ kind: "named", title: "Maya's UI" });
+  });
+});

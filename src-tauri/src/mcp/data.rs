@@ -571,9 +571,28 @@ impl Ctx {
 
     fn turns_at(&self, repo: &str) -> (Vec<Turn>, Option<f64>) {
         let Some((f, t)) = self.transcript_file(repo) else { return (Vec::new(), None) };
+        (self.turns_in(&f), Some(t))
+    }
+
+    /// A Grill Me Chat's turns (its transcript lives under the ~/.grillme
+    /// project key, one file per chat id). Empty for a bad id or no file.
+    pub fn chat_turns(&self, chat_id: &str) -> Vec<Turn> {
+        let ok = chat_id.len() == 36 && chat_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+        if !ok || (self.remote.on && self.remote.no_transcripts) {
+            return Vec::new();
+        }
+        let key: String = self.root.trim_end_matches('/').chars().map(|c| if c == '/' || c == '.' { '-' } else { c }).collect();
+        let f = Path::new(&self.home).join(".claude").join("projects").join(key).join(format!("{chat_id}.jsonl"));
+        if !f.is_file() {
+            return Vec::new();
+        }
+        self.turns_in(&f)
+    }
+
+    fn turns_in(&self, f: &Path) -> Vec<Turn> {
         let mut out: Vec<Turn> = Vec::new();
         let mut have_cur = false;
-        for line in tail_lines(&f, 1_500_000) {
+        for line in tail_lines(f, 1_500_000) {
             let Some(o) = js::parse(&line) else { continue };
             if truthy(get(&o, "isSidechain")) || truthy(get(&o, "isMeta")) {
                 continue;
@@ -623,7 +642,7 @@ impl Ctx {
                 }
             }
         }
-        (out, Some(t))
+        out
     }
 
     // ---- team + tests ------------------------------------------------------------

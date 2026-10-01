@@ -17,9 +17,10 @@
 //   grill-me --mcp                                   stdio MCP server
 //   grill-me --mcp --sync <member> --project <dir> [--full]   hook
 //   grill-me --mcp --catchup-chat <id> | --digest <ms>
-//   grill-me --mcp --check-input <member> | --cut-input | --pitch-input
+//   grill-me --mcp --check-input <member> [--spot] | --cut-input | --pitch-input
 //            | --quiz-input <member> | --wrapup-input | --kickoff-input
 //            | --answer-input <questionId> | --review-input <member> | --reply-input <handoffId>
+//            | --chat-input <chatId> | --drift-input | --search=<query> [--limit=<n>]
 //   grill-me --mcp --http <port> --secret-file <path> [--allow-writes] [--no-transcripts]
 // ---------------------------------------------------------------------------
 
@@ -28,9 +29,13 @@ mod data;
 mod http;
 mod js;
 mod redact;
+mod search;
 mod tools;
 
 pub use data::Ctx;
+/// The secret-file name rule (.env, keys, credentials…) — shared with the
+/// starter-kit file copy so it skips exactly what diffs skip.
+pub use redact::secret_file;
 
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
@@ -89,6 +94,13 @@ fn cli_mode(ctx: &mut Ctx, argv: &[String]) -> Result<bool, String> {
         ctx.forced = Some(p.to_string());
     }
     let now = js::now_ms();
+    // first: the query is free text, so it rides in one `--search=<q>` arg
+    // and can never be mistaken for another flag
+    if let Some(q) = argv.iter().find_map(|a| a.strip_prefix("--search=")) {
+        let limit = argv.iter().find_map(|a| a.strip_prefix("--limit=")).map(js::str_to_num).filter(|n| n.is_finite() && *n >= 1.0).unwrap_or(30.0);
+        out(&js::stringify(&Value::Array(ctx.search(q, limit as usize)?), 0));
+        return Ok(true);
+    }
     if has("--sync") {
         // Claude Code hook (SessionStart / UserPromptSubmit): stdout becomes context
         let member = flag(argv, "--sync");
@@ -112,7 +124,15 @@ fn cli_mode(ctx: &mut Ctx, argv: &[String]) -> Result<bool, String> {
         return Ok(true);
     }
     if has("--check-input") {
-        out(&ctx.check_input(flag(argv, "--check-input"))?);
+        out(&ctx.check_input(flag(argv, "--check-input"), has("--spot"))?);
+        return Ok(true);
+    }
+    if has("--chat-input") {
+        out(&ctx.chat_input(flag(argv, "--chat-input"))?);
+        return Ok(true);
+    }
+    if has("--drift-input") {
+        out(&ctx.drift_input()?);
         return Ok(true);
     }
     if has("--answer-input") {
