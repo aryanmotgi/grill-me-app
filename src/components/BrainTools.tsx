@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { sessionTitle } from "../lib/sessionTitle";
 import { Markdown } from "./Markdown";
 import { Icon } from "./Icon";
+import { loadKits, type StarterKit } from "./Kickoff";
 
 // ---------------------------------------------------------------------------
 // Brain page, round 3: pitch writer, code quiz, and past-hackathon lessons.
@@ -195,10 +196,12 @@ export function LessonsCard() {
   const project = useApp((s) => s.activeProject) ?? "default";
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "this project");
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [kits, setKits] = useState<StarterKit[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
     if (!native()) return;
+    void loadKits().then(setKits);
     const { readTextFile } = await import("@tauri-apps/plugin-fs");
     const { homeDir, join } = await import("@tauri-apps/api/path");
     try {
@@ -216,7 +219,7 @@ export function LessonsCard() {
     try {
       await call("brain_wrapup", { projectId: project, projectName });
       await load();
-      toast("Lessons saved — your next project's sessions start with them");
+      toast("Lessons and starter kit saved — your next project starts with them");
     } catch (e) {
       toast(`Couldn't wrap up: ${e}`, "warn");
     } finally {
@@ -243,6 +246,16 @@ export function LessonsCard() {
               {l.summary ? <div>{l.summary}</div> : null}
               {l.worked?.length ? <div className="text-faint">✓ {l.worked.join(" · ")}</div> : null}
               {l.mistakes?.length ? <div className="text-faint">✗ {l.mistakes.join(" · ")}</div> : null}
+              {(() => {
+                const k = kits.find((x) => x.project === l.project);
+                if (!k) return null;
+                const n = k.files?.length ?? 0;
+                return (
+                  <div className="text-faint">
+                    Starter kit{k.stack?.length ? `: ${k.stack.join(", ")}` : ""}{n ? ` · ${n} reusable file${n === 1 ? "" : "s"}` : ""} — pick it in “Start a hackathon”
+                  </div>
+                );
+              })()}
             </li>
           ))}
         </ul>

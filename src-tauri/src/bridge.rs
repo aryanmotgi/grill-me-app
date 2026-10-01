@@ -18,6 +18,8 @@ use std::sync::Mutex;
 
 /// Drafted answers, auto reviews, hand-off replies, phone approvals.
 pub(crate) mod live;
+/// Auto decisions, brain search, drift alarm, starter kits.
+pub(crate) mod brain;
 
 const SERVER_NAME: &str = "grill-me";
 const LIST_CAP: usize = 200;
@@ -533,12 +535,18 @@ fn id_list(v: &Value, allowed: &[String]) -> Vec<String> {
 /// After a session's turn: does it contradict the plan, and which tasks did
 /// it finish/start? A mismatch is also written to the brain as a note, so
 /// the session (via its sync hook) and the Claude side both see it.
+/// `checks` = the plan check is on (default); `spot` = also spot agreed
+/// decisions in the same call (they become proposals, never decisions).
 #[tauri::command(async)]
-pub(crate) fn brain_check(app: tauri::AppHandle, member_id: String) -> Result<Value, String> {
+pub(crate) fn brain_check(app: tauri::AppHandle, member_id: String, checks: Option<bool>, spot: Option<bool>) -> Result<Value, String> {
     use tauri::Emitter;
     crate::validate_member_id(&member_id)?;
+    let (checks, spot) = (checks.unwrap_or(true), spot.unwrap_or(false));
+    if !checks && !spot {
+        return Ok(Value::Null);
+    }
     install();
-    let input = run_script(&["--check-input", &member_id])?;
+    let input = if spot { run_script(&["--check-input", &member_id, "--spot"])? } else { run_script(&["--check-input", &member_id])? };
     if input.trim().is_empty() {
         return Ok(Value::Null);
     }
@@ -548,20 +556,25 @@ pub(crate) fn brain_check(app: tauri::AppHandle, member_id: String) -> Result<Va
         .as_array()
         .map(|a| a.iter().filter_map(|t| t["id"].as_str().map(str::to_owned)).collect())
         .unwrap_or_default();
-    let reply = claude_quick(&input, CHECK_PROMPT, "haiku")?;
+    let prompt = if spot { format!("{CHECK_PROMPT}{}", brain::SPOT_ADDENDUM) } else { CHECK_PROMPT.to_string() };
+    let reply = claude_quick(&input, &prompt, "haiku")?;
     let r = extract_json(&reply).ok_or("check returned no JSON")?;
     let reason: String = r["reason"].as_str().unwrap_or("").trim().chars().take(300).collect();
-    let mismatch = r["mismatch"].as_bool().unwrap_or(false) && !reason.is_empty();
+    let mismatch = checks && r["mismatch"].as_bool().unwrap_or(false) && !reason.is_empty();
     if mismatch {
         push("note", &json!({ "text": format!("⚠ Mismatch in {session}: {reason}"), "by": "Mismatch check" }))?;
+    }
+    let proposed = if spot { brain::propose(&session, &brain::parse_spotted(&r["decisions"]))? } else { 0 };
+    if mismatch || proposed > 0 {
         let _ = app.emit("bridge-changed", ());
     }
     Ok(json!({
         "session": session,
         "mismatch": mismatch,
-        "reason": reason,
-        "doneTaskIds": id_list(&r["doneTaskIds"], &allowed),
-        "startedTaskIds": id_list(&r["startedTaskIds"], &allowed),
+        "reason": if checks { reason } else { String::new() },
+        "doneTaskIds": if checks { id_list(&r["doneTaskIds"], &allowed) } else { Vec::new() },
+        "startedTaskIds": if checks { id_list(&r["startedTaskIds"], &allowed) } else { Vec::new() },
+        "proposed": proposed,
     }))
 }
 
@@ -601,7 +614,7 @@ Reply with ONLY JSON, no prose, no fences: {\"goal\": string, \"decision\": stri
 
 /// One-click hackathon start: idea → goal, decision, parallel task briefs.
 #[tauri::command(async)]
-pub(crate) fn brain_kickoff(idea: String, hours: u32, max_sessions: u32) -> Result<Value, String> {
+pub(crate) fn brain_kickoff(idea: String, hours: u32, max_sessions: u32, kit: Option<String>) -> Result<Value, String> {
     let idea = idea.trim();
     if idea.is_empty() || idea.len() > 5000 {
         return Err("describe the idea (under 5000 characters)".into());
@@ -611,7 +624,12 @@ pub(crate) fn brain_kickoff(idea: String, hours: u32, max_sessions: u32) -> Resu
     input["idea"] = json!(idea);
     input["hours"] = json!(hours.clamp(1, 72));
     input["maxSessions"] = json!(max_sessions.clamp(1, 6));
-    let r = extract_json(&claude_quick(&input.to_string(), KICKOFF_PROMPT, "sonnet")?).ok_or("plan came back empty — try again")?;
+    let mut prompt = KICKOFF_PROMPT.to_string();
+    if let Some(k) = kit.as_deref().filter(|k| !k.is_empty()).and_then(brain::kit_for_prompt) {
+        input["starterKit"] = k;
+        prompt.push_str(" The team chose to start from a past project's starterKit: reuse its stack and decisions where they fit the idea, and mention its reusable files in the briefs that can use them (they'll be copied into the repo).");
+    }
+    let r = extract_json(&claude_quick(&input.to_string(), &prompt, "sonnet")?).ok_or("plan came back empty — try again")?;
     let tasks: Vec<Value> = r["tasks"]
         .as_array()
         .map(|a| {
@@ -689,8 +707,13 @@ fn str_list(v: &Value) -> Vec<String> {
 #[tauri::command(async)]
 pub(crate) fn brain_wrapup(project_id: String, project_name: String) -> Result<Value, String> {
     install();
-    let r = extract_json(&claude_quick(&run_script(&["--wrapup-input"])?, WRAPUP_PROMPT, "sonnet")?)
-        .ok_or("wrap-up came back empty")?;
+    let mut input: Value = serde_json::from_str(&run_script(&["--wrapup-input"])?).unwrap_or_else(|_| json!({}));
+    // local paths stay here: the kit maps picked files back to their repo
+    let repos = input.as_object_mut().and_then(|o| o.remove("repos")).unwrap_or_else(|| json!({}));
+    let candidates = input["files"].as_array().cloned().unwrap_or_default();
+    let prompt = format!("{WRAPUP_PROMPT}{}", brain::KIT_ADDENDUM);
+    let r = extract_json(&claude_quick(&input.to_string(), &prompt, "sonnet")?).ok_or("wrap-up came back empty")?;
+    let kit = brain::save_kit(&project_id, &project_name, brain::parse_kit(&r["kit"], &candidates, &repos))?;
     let secs = now_ms() / 1000;
     let entry = json!({
         "project": project_id,
@@ -710,7 +733,9 @@ pub(crate) fn brain_wrapup(project_id: String, project_name: String) -> Result<V
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-    Ok(entry)
+    let mut out = entry;
+    out["kit"] = kit;
+    Ok(out)
 }
 
 /// Hack clock end (epoch ms; 0 clears) — the brain tells sessions time left.

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { useApp, upsertShared } from "../store";
 import { promptSlug } from "./NewSession";
@@ -15,6 +15,88 @@ import { Icon } from "./Icon";
 
 interface DraftTask { title: string; files: string[]; brief: string; keep: boolean }
 interface Plan { goal: string; decision: string; tasks: DraftTask[] }
+/** A past project's starter kit (~/.grillme/starter-kits.json, written at wrap-up). */
+export interface StarterKit {
+  project: string; name?: string; date?: string;
+  stack?: string[]; decisions?: string[]; playbook?: string[];
+  files?: { path: string; purpose?: string }[];
+}
+
+export async function loadKits(): Promise<StarterKit[]> {
+  if (!native()) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  const v = await invoke<unknown>("starter_kits_read").catch(() => []);
+  return Array.isArray(v) ? (v as StarterKit[]).filter((k) => k && typeof k.project === "string") : [];
+}
+
+/** Where kit files get copied: the project's repo (or the first session's checkout). */
+function destRepo(): string {
+  const st = useApp.getState();
+  return st.projects.find((p) => p.id === st.activeProject)?.path || st.members[0]?.repoPath || "";
+}
+
+/** Reusable files from the chosen kit: pick, confirm, copy (Rust refuses
+ *  paths outside the old repo, secret-named files, and overwrites). */
+function KitFiles({ kit }: { kit: StarterKit }) {
+  const toast = useApp((s) => s.toast);
+  const files = kit.files ?? [];
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(files.map((f) => f.path)));
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<{ copied: string[]; skipped: { path: string; why: string }[] } | null>(null);
+  const dest = destRepo();
+  if (!files.length) return null;
+  const copy = async () => {
+    setBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const r = await invoke<{ copied: string[]; skipped: { path: string; why: string }[] }>("starter_kit_copy", { project: kit.project, paths: [...picked], dest });
+      setDone(r);
+      setConfirm(false);
+      toast(r.copied.length ? `Copied ${r.copied.length} file${r.copied.length === 1 ? "" : "s"} — commit them so new sessions start with them` : "Nothing copied", r.copied.length ? "info" : "warn");
+    } catch (e) {
+      toast(`Couldn't copy: ${e}`, "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="rounded-xl border border-line p-3 flex flex-col gap-2">
+      <div className="text-[11px] tracking-[0.1em] uppercase text-faint">Reusable files from {kit.name ?? kit.project}</div>
+      {files.map((f) => (
+        <label key={f.path} className="flex items-start gap-2 text-[12px] cursor-pointer">
+          <input type="checkbox" className="accent-(--accent) mt-0.5" disabled={!!done} checked={picked.has(f.path)}
+            onChange={(e) => setPicked((s) => { const n = new Set(s); if (e.target.checked) n.add(f.path); else n.delete(f.path); return n; })} />
+          <span className="min-w-0 flex flex-col">
+            <span className="font-mono text-[11.5px] text-ink break-all">{f.path}</span>
+            {f.purpose ? <span className="text-faint">{f.purpose}</span> : null}
+          </span>
+        </label>
+      ))}
+      {done ? (
+        <div className="text-[11.5px] text-dim flex flex-col gap-0.5">
+          {done.copied.length ? <span className="text-ok">Copied: {done.copied.join(", ")}</span> : null}
+          {done.skipped.map((s) => <span key={s.path} className="text-faint">Skipped {s.path}: {s.why}</span>)}
+        </div>
+      ) : confirm ? (
+        <div className="flex flex-col gap-2 text-[12px] text-dim">
+          <span>Copy {picked.size} file{picked.size === 1 ? "" : "s"} into <span className="font-mono text-ink break-all">{dest}</span>? Existing files are never overwritten and secret-named files (.env, keys) are skipped.</span>
+          <span className="flex gap-2">
+            <button className="composer-btn on" disabled={busy} onClick={() => void copy()}>{busy ? <span className="spinner" /> : <Icon name="download" size={11} />} Copy files</button>
+            <button className="composer-btn" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button>
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="composer-btn" disabled={!picked.size || !dest} onClick={() => setConfirm(true)}>
+            <Icon name="download" size={11} /> Copy {picked.size} into this repo…
+          </button>
+          {!dest ? <span className="text-[11px] text-faint">Open a project first — there's no repo to copy into.</span> : null}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const useKickoff = create<{ open: boolean; setOpen: (o: boolean) => void }>((set) => ({
   open: false,
@@ -33,6 +115,10 @@ export function Kickoff() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState<"" | "plan" | "start">("");
   const [progress, setProgress] = useState("");
+  const [kits, setKits] = useState<StarterKit[]>([]);
+  const [kitId, setKitId] = useState("");
+  useEffect(() => { if (open) void loadKits().then(setKits); }, [open]);
+  const kit = kits.find((k) => k.project === kitId);
 
   if (!open) return null;
   const close = () => { if (!busy) setOpen(false); };
@@ -43,7 +129,7 @@ export function Kickoff() {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const r = await invoke<{ goal: string; decision: string; tasks: { title: string; files: string[]; brief: string }[] }>(
-        "brain_kickoff", { idea, hours, maxSessions: max },
+        "brain_kickoff", { idea, hours, maxSessions: max, kit: kitId || null },
       );
       setPlan({ goal: r.goal, decision: r.decision, tasks: r.tasks.map((t) => ({ ...t, keep: true })) });
     } catch (e) {
@@ -148,6 +234,25 @@ export function Kickoff() {
                   </select>
                 </label>
               </div>
+              {kits.length ? (
+                <div className="flex flex-col gap-1.5">
+                  <label className="flex flex-wrap items-center gap-2 text-[12.5px] text-dim">Start from a past project
+                    <select className="composer-btn max-w-full" value={kitId} onChange={(e) => setKitId(e.target.value)}>
+                      <option value="">Fresh start</option>
+                      {kits.map((k) => (
+                        <option key={k.project} value={k.project}>{k.name ?? k.project}{k.stack?.length ? ` · ${k.stack.slice(0, 3).join(", ")}` : ""}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {kit ? (
+                    <div className="text-[11.5px] text-faint flex flex-col gap-0.5 pl-0.5">
+                      {kit.stack?.length ? <span>Stack: {kit.stack.join(", ")}</span> : null}
+                      {kit.decisions?.length ? <span>Decisions: {kit.decisions.join("; ")}</span> : null}
+                      {kit.files?.length ? <span>{kit.files.length} reusable file{kit.files.length === 1 ? "" : "s"} — you can copy them in after the plan is drafted.</span> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <p className="text-[11.5px] text-faint">Claude drafts a goal and tasks that can run side by side (using your playbooks and past lessons). You review before anything starts.</p>
             </>
           ) : (
@@ -177,6 +282,7 @@ export function Kickoff() {
                     onChange={(e) => edit(i, { brief: e.target.value })} />
                 </div>
               ))}
+              {kit ? <KitFiles key={kit.project} kit={kit} /> : null}
             </>
           )}
         </div>
