@@ -117,7 +117,7 @@ impl Ctx {
 
     /// Full view: always show time left. Incremental: only when a threshold
     /// was crossed since the reader last looked.
-    fn deadline_line(&self, since: f64, full: bool) -> String {
+    pub fn deadline_line(&self, since: f64, full: bool) -> String {
         let end = js::to_num(get(&self.bridge_state(), "deadline"));
         if end == 0.0 || end.is_nan() {
             return String::new();
@@ -231,6 +231,13 @@ impl Ctx {
         let replies = self.reply_lines(since, full);
         if !replies.is_empty() {
             out.push(format!("**Replies to your hand-offs:**\n{}", replies.join("\n")));
+        }
+        // the brainstorm side's own requests (a session's hook skips these)
+        if exclude.is_none() {
+            let outcomes = super::actions::outcome_lines(&b, since, full);
+            if !outcomes.is_empty() {
+                out.push(format!("**Actions you requested:**\n{}", outcomes.join("\n")));
+            }
         }
 
         let open_q: Vec<&Value> = get(&b, "questions")

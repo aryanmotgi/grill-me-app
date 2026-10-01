@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWires, digestChanged, digestSessions, sessionMarks, sessionSentence, teamSessionsByMember } from "./flow";
+import { actionCopy, buildWires, digestChanged, digestSessions, sessionMarks, sessionSentence, teamSessionsByMember } from "./flow";
 import type { BridgeState } from "./bridge";
 import type { Teammate, TeamBridgeItem } from "../types";
 
@@ -141,5 +141,26 @@ describe("buildWires: brain upgrades", () => {
     expect(d2.from).toEqual({ kind: "brainstorm" });
     expect(d2.detail).toBeUndefined();
     expect(d3.from).toEqual({ kind: "named", title: "Maya's UI" });
+  });
+});
+
+describe("buildWires with requested actions", () => {
+  const base: BridgeState = { handoffs: [], plans: [], questions: [], notes: [] };
+  it("pending and running actions wait on Run; finished ones show their outcome until read", () => {
+    const b: BridgeState = { ...base, actions: [
+      { id: "a1", ts: 10, status: "pending", kind: "run_tests", session: "s1", sessionTitle: "Auth", args: {}, reason: "before merge" },
+      { id: "a2", ts: 20, status: "running", kind: "restart_session", session: "s2", args: {}, reason: "looping for 20 minutes" },
+      { id: "a3", ts: 5, status: "failed", kind: "open_preview", args: {}, reason: "", outcome: { ok: false, summary: "No dev script found." }, outcomeTs: 30 },
+      { id: "a4", ts: 1, status: "done", kind: "create_session", args: { branch: "feat/x", task: "t" }, reason: "parallel search work", outcome: { ok: true, summary: "Started" }, outcomeTs: 2, outcomeAck: true },
+      { id: "a5", ts: 1, status: "dismissed", kind: "run_tests", session: "s1", args: {}, reason: "" },
+    ] };
+    const w = buildWires(b, (id) => (id === "s2" ? "Search" : id));
+    expect(w.map((x) => x.id)).toEqual(["a1", "a2", "a3"]);
+    expect(w[0]).toMatchObject({ kind: "action", action: "run", list: "actions", label: "run tests in Auth", from: { kind: "brainstorm" }, to: { kind: "session", id: "s1", title: "Auth" } });
+    expect(w[1].to).toEqual({ kind: "session", id: "s2", title: "Search" });
+    expect(w[2]).toMatchObject({ action: "ack", done: false, label: "No dev script found.", to: { kind: "named", title: "Preview" } });
+    // an action headed for a session counts as waiting to go in; a read-me outcome doesn't
+    expect(sessionMarks(w, "s1").waiting).toBe(1);
+    expect(actionCopy(b.actions![1], () => "Search").note).toContain("the turn it's on right now is lost");
   });
 });

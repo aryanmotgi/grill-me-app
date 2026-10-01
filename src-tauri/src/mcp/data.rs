@@ -526,7 +526,7 @@ impl Ctx {
 
     // ---- transcripts -------------------------------------------------------------
 
-    fn transcript_file(&self, repo: &str) -> Option<(PathBuf, f64)> {
+    pub fn transcript_file(&self, repo: &str) -> Option<(PathBuf, f64)> {
         let key: String = repo.trim_end_matches('/').chars().map(|c| if c == '/' || c == '.' { '-' } else { c }).collect();
         let dir = Path::new(&self.home).join(".claude").join("projects").join(key);
         let mut names: Vec<String> = std::fs::read_dir(&dir)

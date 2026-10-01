@@ -22,13 +22,19 @@
 //            | --answer-input <questionId> | --review-input <member> | --reply-input <handoffId>
 //            | --chat-input <chatId> | --drift-input | --search=<query> [--limit=<n>]
 //   grill-me --mcp --http <port> --secret-file <path> [--allow-writes] [--no-transcripts]
+//
+// stdio also pushes: resource updates, list changes and "needs you" notices
+// (push.rs). HTTP is stateless JSON and never pushes.
 // ---------------------------------------------------------------------------
 
+mod actions;
 mod brain;
 mod data;
 mod http;
 mod js;
+mod push;
 mod redact;
+mod resources;
 mod search;
 mod tools;
 
@@ -178,14 +184,22 @@ fn cli_mode(ctx: &mut Ctx, argv: &[String]) -> Result<bool, String> {
     Ok(false)
 }
 
+/// The one stdout writer: responses (main loop) and notifications (watcher
+/// thread) each go out as one whole line under this lock.
+static OUT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn send(msg: &Value) {
+    let line = format!("{}\n", js::stringify(msg, 0));
+    let _g = OUT.lock().unwrap_or_else(|e| e.into_inner());
     let mut o = std::io::stdout().lock();
-    let _ = o.write_all(format!("{}\n", js::stringify(msg, 0)).as_bytes());
+    let _ = o.write_all(line.as_bytes());
     let _ = o.flush();
 }
 
 /// stdio (Claude app + Claude Code, local): one JSON-RPC message per line.
 fn serve_stdio(ctx: &Ctx) -> ! {
+    let sess = std::sync::Arc::new(std::sync::Mutex::new(push::Session::default()));
+    push::spawn_watcher(ctx.clone(), sess.clone(), send);
     let stdin = std::io::stdin();
     let mut reader = stdin.lock();
     let mut raw = Vec::new();
@@ -212,8 +226,12 @@ fn serve_stdio(ctx: &Ctx) -> ! {
                 continue;
             };
             match tools::handle(ctx, &req) {
-                Ok(Some(msg)) => send(&msg),
-                Ok(None) => {}
+                Ok(Some(msg)) => {
+                    let ok = msg.get("result").is_some();
+                    sess.lock().unwrap_or_else(|e| e.into_inner()).note(&req, ok);
+                    send(&msg);
+                }
+                Ok(None) => sess.lock().unwrap_or_else(|e| e.into_inner()).note(&req, true),
                 Err(e) => eprintln!("[grill-me mcp] TypeError: {e}"),
             }
         }

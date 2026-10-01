@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { upsertShared, useApp } from "../store";
 import { sessionTitle } from "../lib/sessionTitle";
-import { buildWires, sessionMarks, sessionSentence, teamSessionsByMember, type FlowEnd, type Wire } from "../lib/flow";
+import { actionCopy, buildWires, sessionMarks, sessionSentence, teamSessionsByMember, type FlowEnd, type Wire } from "../lib/flow";
+import { describeAction } from "../lib/bridge";
 import { newTeamHandoff, teamQuestionsFor } from "../lib/teamBridge";
 import type { TeamSession } from "../types";
-import { bridgeApply, bridgeResolve, bridgeSend, useBridge } from "./BridgePanel";
+import { ackAction, bridgeApply, bridgeResolve, bridgeRunAction, bridgeSend, useBridge } from "./BridgePanel";
 import { ackReply, bridgeAnswer, teamFlag, useReviews } from "./BridgeLoop";
 import { dismissDrift, dismissProposal, saveProposal, useDrift } from "./BrainWatch";
 import { pendingProposals } from "../lib/decisionSpot";
@@ -47,7 +48,7 @@ function EndChip({ end, status }: { end: FlowEnd; status?: string }) {
 }
 
 const KIND_LABEL: Record<Wire["kind"], string> = {
-  task: "Task", answer: "Answer", plan: "Plan", question: "Question", reply: "Reply", decision: "Decision?", drift: "Drifting apart",
+  task: "Task", answer: "Answer", plan: "Plan", question: "Question", reply: "Reply", decision: "Decision?", drift: "Drifting apart", action: "Action",
 };
 
 /** A decision Claude spotted ("let's use Postgres"): Save logs it for the team. */
@@ -66,6 +67,46 @@ function DecisionActions({ w }: { w: Wire }) {
         </button>
         <button className="composer-btn h-7 text-[11.5px]" onClick={() => void dismissProposal(p.id)}>Dismiss</button>
         <span className="text-[11px] text-faint">Spotted by Claude — nothing is logged until you save.</span>
+      </div>
+    </div>
+  );
+}
+
+/** Something Claude asked to run: Run / Dismiss while pending, a spinner
+ *  while it runs, then its outcome until "Got it". */
+function ActionControls({ w, titleOf }: { w: Wire; titleOf: (id: string) => string }) {
+  const a = w.request!;
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try { await bridgeRunAction(a); } finally { setBusy(false); }
+  };
+  if (a.status === "done" || a.status === "failed") {
+    return (
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        <button className="composer-btn h-7 text-[11.5px]" onClick={() => void ackAction(a.id)}><Icon name="check" size={11} /> Got it</button>
+        {a.kind === "open_preview" && a.status === "done" ? (
+          <button className="composer-btn h-7 text-[11.5px]" onClick={() => useApp.getState().setView("preview")}><Icon name="eye" size={11} /> Preview</button>
+        ) : null}
+        <span className="text-[11px] text-faint">Claude sees the outcome on its next catch-up.</span>
+      </div>
+    );
+  }
+  const copy = actionCopy(a, titleOf);
+  const running = a.status === "running" || busy;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {a.reason ? <div className="text-[11.5px] text-dim border-l-2 border-line pl-2.5"><span className="text-faint">Claude's reason: </span>{a.reason}</div> : null}
+      {a.kind === "create_session" && a.args.task ? (
+        <div className="text-[11.5px] text-dim whitespace-pre-wrap max-h-28 overflow-y-auto bg-raised/40 rounded-md px-2.5 py-1.5">{a.args.task}</div>
+      ) : null}
+      <div className={`text-[11px] ${a.kind === "restart_session" ? "text-warn" : "text-faint"}`}>{copy.note}</div>
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        <button className="composer-btn on h-7 text-[11.5px]" disabled={running} onClick={() => void run()}>
+          {running ? <span className="spinner" /> : <Icon name={a.kind === "restart_session" ? "swap" : "push"} size={11} />}
+          {running ? "Running…" : copy.run}
+        </button>
+        {running ? null : <button className="composer-btn h-7 text-[11.5px]" onClick={() => void bridgeResolve("actions", a.id, "dismissed")}>Dismiss</button>}
       </div>
     </div>
   );
@@ -100,7 +141,7 @@ function DraftAnswer({ w, onDismiss }: { w: Wire; onDismiss: () => void }) {
   );
 }
 
-function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string }) {
+function WireRow({ w, statusOf, titleOf }: { w: Wire; statusOf: (id: string) => string; titleOf: (id: string) => string }) {
   const state = useBridge((b) => b.state);
   const setBridgeOpen = useBridge((b) => b.setOpen);
   const [busy, setBusy] = useState(false);
@@ -122,7 +163,7 @@ function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string })
       setBusy(false);
     }
   };
-  const endStatus = (e: FlowEnd) => (e.kind === "session" ? statusOf(e.id) : undefined);
+  const endStatus = (e: FlowEnd) => (e.kind === "session" && e.id ? statusOf(e.id) : undefined);
   const drafting = useApp((s) => automationOn(s.appSettings, "draft-answers"));
   const drift = useDrift((d) => d.conflicts.find((c) => c.id === w.id));
   const dismiss = () => {
@@ -167,10 +208,19 @@ function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string })
         <EndChip end={w.to} status={endStatus(w.to)} />
       </div>
       <div className="text-[12.5px] text-ink leading-snug">
-        <span className="text-faint">{KIND_LABEL[w.kind]}{w.kind === "reply" ? (w.done ? " · done" : " · not done yet") : ""} · </span>{w.label}
+        <span className="text-faint">
+          {KIND_LABEL[w.kind]}
+          {w.kind === "reply" ? (w.done ? " · done" : " · not done yet") : ""}
+          {w.kind === "action" && w.action === "ack" ? (w.done ? " · done" : " · failed") : ""}
+          {" · "}
+        </span>
+        {w.kind === "action" && w.action === "ack" && w.request ? <span className="text-faint">{describeAction(w.request, titleOf)} — </span> : null}
+        {w.label}
       </div>
       {w.kind === "decision" ? (
         <DecisionActions w={w} />
+      ) : w.kind === "action" && w.request ? (
+        <ActionControls w={w} titleOf={titleOf} />
       ) : w.kind === "reply" ? (
         <div className="flex items-center gap-2 pt-0.5">
           <button className="composer-btn h-7 text-[11.5px]" onClick={dismiss}><Icon name="check" size={11} /> Got it</button>
@@ -406,7 +456,7 @@ export function FlowPage() {
                 <span className="text-[11.5px] text-faint">Ask Claude “what are my sessions doing?” or “plan the next feature and send it to a coder” — it shows up here for your OK.</span>
                 {anyClaude ? null : <button className="composer-btn on h-7 text-[11.5px] self-center mt-1" onClick={() => setBridgeOpen(true)}>Connect Claude</button>}
               </div>
-            ) : wires.map((w) => <WireRow key={w.id} w={w} statusOf={statusOf} />)}
+            ) : wires.map((w) => <WireRow key={w.id} w={w} statusOf={statusOf} titleOf={titleOf} />)}
           </div>
 
           {/* coders */}

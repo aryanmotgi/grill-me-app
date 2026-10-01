@@ -71,7 +71,10 @@ fn post(port: u16, path: &str, token: &str, body: &str) -> Result<(u16, String),
 }
 
 pub fn push(ctx: &Ctx, kind: &str, item: Value) -> Result<(), String> {
-    push_to(API_PORT, ctx, kind, item)
+    // GRILLME_API_PORT: tests point writes at a stand-in (or a closed port)
+    // instead of a Grill Me that may be running on this Mac
+    let port = std::env::var("GRILLME_API_PORT").ok().and_then(|p| p.parse::<u16>().ok()).filter(|p| *p != 0).unwrap_or(API_PORT);
+    push_to(port, ctx, kind, item)
 }
 
 fn push_to(port: u16, ctx: &Ctx, kind: &str, item: Value) -> Result<(), String> {

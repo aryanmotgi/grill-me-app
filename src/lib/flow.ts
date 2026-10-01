@@ -5,7 +5,7 @@
 // click from the user, so the view is the approval queue drawn as a map.
 // ---------------------------------------------------------------------------
 
-import type { BridgeState, DecisionProposal } from "./bridge";
+import { describeAction, type BridgeAction, type BridgeState, type DecisionProposal } from "./bridge";
 import { draftStatus, teamReplies, unreadReplies, type DraftStatus } from "./bridgeLoop";
 import type { DriftConflict } from "./drift";
 import type { Teammate, TeamBridgeItem, TeamSession } from "../types";
@@ -21,23 +21,26 @@ export type FlowEnd =
 export interface Wire {
   id: string;
   /** what is moving along it */
-  kind: "task" | "answer" | "plan" | "question" | "reply" | "decision" | "drift";
+  kind: "task" | "answer" | "plan" | "question" | "reply" | "decision" | "drift" | "action";
   from: FlowEnd;
   to: FlowEnd;
   label: string;
   ts: number;
-  /** the click that lets it through ("ack" = a reply: just read it; "save" = log a
-   *  spotted decision; "dismiss" = a drift warning, nothing to approve) */
-  action: "send" | "apply" | "answer" | "ack" | "save" | "dismiss";
+  /** the click that lets it through ("ack" = a reply or an action's outcome: just
+   *  read it; "save" = log a spotted decision; "dismiss" = a drift warning, nothing
+   *  to approve; "run" = run an action Claude requested) */
+  action: "send" | "apply" | "answer" | "ack" | "save" | "dismiss" | "run";
   /** "team" = a teammate's question (lives in team-bridge.json; dismissing hides it on this Mac);
    *  "replies" / "team-replies" = a session's result report on a hand-off */
-  list: "handoffs" | "plans" | "questions" | "team" | "replies" | "team-replies" | "decisions" | "drift";
+  list: "handoffs" | "plans" | "questions" | "team" | "replies" | "team-replies" | "decisions" | "drift" | "actions";
   /** questions: Claude's drafted answer */
   draft?: { status: DraftStatus; text: string };
-  /** replies: did the session finish the task? */
+  /** replies: did the session finish the task? actions: did it work? */
   done?: boolean;
   /** decisions: the words that showed it was agreed; drift: what to do about it */
   detail?: string;
+  /** actions: the request itself (status, reason, outcome) */
+  request?: BridgeAction;
 }
 
 export interface WireOpts {
@@ -174,7 +177,44 @@ export function buildWires(b: BridgeState, titleOf: (id: string) => string, team
       ...(d.suggestion ? { detail: clip(d.suggestion, 220) } : {}),
     });
   }
+  // actions Claude asked to run: pending/running ones wait on Run; finished
+  // ones stay until the user has read the outcome
+  for (const a of b.actions ?? []) {
+    const finished = a.status === "done" || a.status === "failed";
+    if (!(a.status === "pending" || a.status === "running" || (finished && !a.outcomeAck))) continue;
+    wires.push({
+      id: a.id,
+      kind: "action",
+      from: { kind: "brainstorm" },
+      to: actionTarget(a, titleOf),
+      label: finished ? clip(a.outcome?.summary ?? "", 220) : clip(describeAction(a, titleOf), 110),
+      ts: finished ? a.outcomeTs ?? a.ts : a.ts,
+      action: finished ? "ack" : "run",
+      list: "actions",
+      done: finished ? a.status === "done" && a.outcome?.ok !== false : undefined,
+      request: a,
+    });
+  }
   return wires.sort((a, b2) => a.ts - b2.ts);
+}
+
+/** Where an action lands: its session, or a stand-in for preview / a new session. */
+function actionTarget(a: BridgeAction, titleOf: (id: string) => string): FlowEnd {
+  if (a.kind === "create_session") return { kind: "named", title: `new session · ${a.args?.branch ?? "?"}` };
+  if (a.session) return { kind: "session", id: a.session, title: a.sessionTitle || titleOf(a.session) };
+  return { kind: "named", title: "Preview" };
+}
+
+/** The Run button's words and the warning shown next to it. */
+export function actionCopy(a: BridgeAction, titleOf: (id: string) => string = (x) => x): { run: string; note: string } {
+  const who = a.sessionTitle || (a.session ? titleOf(a.session) : "the session");
+  switch (a.kind) {
+    case "run_tests": return { run: "Run tests", note: `Runs your test command in ${who}'s worktree.` };
+    case "restart_session": return { run: "Restart", note: `Restarting kills ${who}'s terminal — the turn it's on right now is lost.` };
+    case "open_preview": return { run: "Open preview", note: "Uses a running dev server, or starts the dev script in a shell tab." };
+    case "create_session": return { run: "Create session", note: `New worktree on ${a.args?.branch ?? "?"}; the task is typed in as its first message.` };
+    default: return { run: "Run", note: "" };
+  }
 }
 
 /** Per-session badges: things waiting to go in, questions waiting to come out. */
@@ -182,7 +222,7 @@ export function sessionMarks(wires: Wire[], sessionId: string): { waiting: numbe
   let waiting = 0;
   let asked = 0;
   for (const w of wires) {
-    if (w.to.kind === "session" && w.to.id === sessionId) waiting++;
+    if (w.to.kind === "session" && w.to.id === sessionId && w.action !== "ack") waiting++;
     if (w.kind === "question" && w.from.kind === "session" && w.from.id === sessionId) asked++;
   }
   return { waiting, asked };

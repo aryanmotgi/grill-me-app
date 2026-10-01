@@ -289,5 +289,89 @@
         }
       }
     }
+  },
+  {
+    "name": "run_tests",
+    "description": "Ask Grill Me to run a session's tests (the project's configured test command, in that session's worktree). Nothing runs until the user clicks Run in Grill Me's Flow view; the result then shows in whats_new and ship_status.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "session"
+      ],
+      "properties": {
+        "session": {
+          "type": "string",
+          "description": "Session id or title (see whats_new)."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why, in a sentence (shown to the user)."
+        }
+      }
+    }
+  },
+  {
+    "name": "restart_session",
+    "description": "Ask Grill Me to restart a stuck or crashed session (kills its terminal and starts a fresh one in the same worktree; the current turn is lost). Nothing happens until the user clicks Run in Grill Me. Say why in `reason`.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "session",
+        "reason"
+      ],
+      "properties": {
+        "session": {
+          "type": "string",
+          "description": "Session id or title (see whats_new)."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why it needs a restart (at least 10 characters, shown to the user)."
+        }
+      }
+    }
+  },
+  {
+    "name": "open_preview",
+    "description": "Ask Grill Me to open the live preview of the app being built: it reports the running dev server's URL, or starts the project's dev script in a shell tab. Runs after the user clicks Run in Grill Me.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string",
+          "description": "Session whose worktree to preview (default: the first session)."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why, in a sentence (shown to the user)."
+        }
+      }
+    }
+  },
+  {
+    "name": "create_session",
+    "description": "Ask Grill Me to start a new coding session: a new git worktree on `branch` with `task` typed in as its first message. Nothing is created until the user clicks Run in Grill Me. Say why in `reason`.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "branch",
+        "task",
+        "reason"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "description": "New branch name, e.g. feat/search."
+        },
+        "task": {
+          "type": "string",
+          "description": "The first message for the new session: what to build, the files it owns, done-when."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why a new session (at least 10 characters, shown to the user)."
+        }
+      }
+    }
   }
 ]

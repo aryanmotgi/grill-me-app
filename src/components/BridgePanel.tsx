@@ -5,7 +5,7 @@ import { deliverBriefWhenReady } from "../lib/ptyReady";
 import { sessionTitle } from "../lib/sessionTitle";
 import {
   EMPTY_BRIDGE, newlyPending, parseBridge, pending, pendingCount, planToTasks,
-  type BridgeHandoff, type BridgePlan, type BridgeState,
+  describeAction, type BridgeAction, type BridgeHandoff, type BridgePlan, type BridgeState,
 } from "../lib/bridge";
 import { inboundFor, questionMirrorsToPush, toTeamHandoff } from "../lib/teamBridge";
 import { automationOn } from "../lib/automations";
@@ -282,6 +282,63 @@ export async function bridgeApply(plan: BridgePlan): Promise<number> {
   return tasks.length;
 }
 
+interface RunResult {
+  action?: BridgeAction;
+  test?: { ok: boolean; ms: number; tail: string; cmd: string; sig: string };
+  /** open_preview: the running server (null = started, not listening yet) */
+  previewUrl?: string | null;
+  /** create_session: the webview spawns it, then reports back */
+  spawn?: { id: string; branch: string; task: string };
+}
+
+/** Run an action Claude requested (the click IS the approval). Rust
+ *  re-validates it and runs it; a new session is spawned here through the
+ *  usual template path, then reported back. */
+export async function bridgeRunAction(a: BridgeAction): Promise<void> {
+  const st = useApp.getState();
+  if (!native()) { st.toast("Running actions needs the native app", "warn"); return; }
+  const { invoke } = await import("@tauri-apps/api/core");
+  let r: RunResult | null = null;
+  try {
+    r = await invoke<RunResult>("bridge_run_action", { id: a.id });
+  } catch (e) {
+    st.toast(`Couldn't run it: ${e}`, "warn");
+  }
+  if (r?.spawn) {
+    const { id, branch, task } = r.spawn;
+    await st.spawnFromTemplate(id, id, branch, task);
+    const ok = useApp.getState().members.some((m) => m.id === id);
+    r.action = await invoke<BridgeAction>("bridge_action_finish", {
+      id: a.id, ok,
+      summary: ok ? `Started session “${id}” on ${branch}; the task goes in once it's ready.` : `Couldn't start a session on ${branch} — see the toast for why.`,
+    }).catch(() => r?.action);
+  }
+  if (r?.test && a.session) {
+    const t = r.test;
+    const sid = a.session;
+    void import("../lib/testsStore").then(({ useTests }) =>
+      useTests.setState((s) => ({ results: { ...s.results, [sid]: { ok: t.ok, ms: t.ms, tail: t.tail, cmd: t.cmd, sig: t.sig, at: Date.now() } } })));
+  }
+  if (a.kind === "open_preview" && r?.action?.outcome?.ok) {
+    if (r.previewUrl) st.setAppSetting("previewUrl", r.previewUrl);
+    st.setView("preview");
+  }
+  const o = r?.action?.outcome;
+  if (o) st.toast(o.summary, o.ok ? "info" : "warn");
+  await refresh(false);
+}
+
+/** "Got it" on a finished action's outcome. */
+export async function ackAction(id: string): Promise<void> {
+  if (!native()) {
+    useBridge.setState((b) => ({ state: { ...b.state, actions: (b.state.actions ?? []).map((a) => (a.id === id ? { ...a, outcomeAck: true } : a)) } }));
+    return;
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("bridge_flag", { id, flag: "actionAck" }).catch(() => {});
+  await refresh(false);
+}
+
 export function BridgeButton() {
   const count = useBridge((b) => pendingCount(b.state));
   const conn = useBridge((b) => b.conn);
@@ -372,7 +429,7 @@ export function BridgePanel() {
             </p>
           )}
 
-          {p.handoffs.length === 0 && p.plans.length === 0 && p.questions.length === 0 ? (
+          {p.handoffs.length === 0 && p.plans.length === 0 && p.questions.length === 0 && p.actions.length === 0 ? (
             <div className="text-[12px] text-faint leading-relaxed border-t border-line pt-4">
               Nothing waiting. In the Claude app, try:
               <div className="mt-2 flex flex-col gap-1 text-dim">
@@ -427,6 +484,20 @@ export function BridgePanel() {
               {q.context ? <div className="text-[11.5px] text-faint whitespace-pre-wrap">{q.context}</div> : null}
               <div className="text-[11.5px] text-dim">Answer it in the Claude app — say “answer the open question”.</div>
               <div><button className="composer-btn" onClick={() => void resolve("questions", q.id, "dismissed")}>Dismiss</button></div>
+            </Card>
+          ))}
+
+          {p.actions.map((a) => (
+            <Card key={a.id}>
+              <div className="text-[11px] tracking-[0.1em] uppercase text-faint">Action</div>
+              <div className="text-[12.5px] text-ink">Claude asks to {describeAction(a)}</div>
+              {a.reason ? <div className="text-[12px] text-dim border-l-2 border-line pl-2.5"><span className="text-faint">Why: </span>{a.reason}</div> : null}
+              <div className="flex gap-2 pt-1">
+                <button className="composer-btn on" onClick={() => { setOpen(false); useApp.getState().setView("flow"); }}>
+                  <Icon name="chevron" size={11} /> Review in Flow
+                </button>
+                <button className="composer-btn" onClick={() => void resolve("actions", a.id, "dismissed")}>Dismiss</button>
+              </div>
             </Card>
           ))}
 

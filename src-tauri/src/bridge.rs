@@ -2,7 +2,8 @@
 // Claude bridge: Grill Me as the hub between the Claude app (brainstorm) and
 // Claude Code sessions (coders), via the grill-me MCP server.
 //
-// * bridge.json (per project) holds handoffs, questions, plans, and notes.
+// * bridge.json (per project) holds handoffs, questions, plans, notes, and
+//   actions Claude asked to run (bridge/actions.rs).
 //   Writes are serialized here (API thread + Tauri commands share one lock).
 // * The MCP server is this app's own binary in `--mcp` mode (src/mcp/, no
 //   Node needed); the hackathon skill playbooks are seeded to
@@ -20,6 +21,8 @@ use std::sync::Mutex;
 pub(crate) mod live;
 /// Auto decisions, brain search, drift alarm, starter kits.
 pub(crate) mod brain;
+/// Actions Claude requested (run tests, restart, preview, new session).
+pub(crate) mod actions;
 
 const SERVER_NAME: &str = "grill-me";
 const LIST_CAP: usize = 200;
@@ -87,7 +90,7 @@ fn load() -> Value {
     if !v.is_object() {
         v = json!({});
     }
-    for k in ["handoffs", "questions", "plans", "notes"] {
+    for k in ["handoffs", "questions", "plans", "notes", "actions"] {
         if !v[k].is_array() {
             v[k] = json!([]);
         }
@@ -205,6 +208,8 @@ pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
             }),
         ),
         "note" => ("notes", json!({ "id": new_id("n"), "ts": ts, "text": text(item, "text")?, "by": opt_text(item, "by") })),
+        // a request to run something; nothing runs until Run is clicked in Flow
+        "action" => ("actions", actions::entry(item, new_id("a"), ts)?),
         "answer" => {
             let qid = text(item, "id")?;
             let answer = text(item, "answer")?;
@@ -762,8 +767,12 @@ pub(crate) fn bridge_read() -> String {
 /// Mark a handoff/plan resolved (sent, applied, dismissed) or a question dismissed.
 #[tauri::command]
 pub(crate) fn bridge_resolve(list: String, id: String, status: String) -> Result<(), String> {
-    if !["handoffs", "plans", "questions"].contains(&list.as_str()) {
+    if !["handoffs", "plans", "questions", "actions"].contains(&list.as_str()) {
         return Err("bad list".into());
+    }
+    // an action is only ever dismissed from here (Run goes through bridge_run_action)
+    if list == "actions" && status != "dismissed" {
+        return Err("bad status".into());
     }
     if !["sent", "applied", "dismissed"].contains(&status.as_str()) {
         return Err("bad status".into());
@@ -777,6 +786,8 @@ pub(crate) fn bridge_resolve(list: String, id: String, status: String) -> Result
     if list == "questions" {
         item["answered"] = json!(true);
         item["dismissed"] = json!(true);
+    } else if list == "actions" && item["status"] != "pending" {
+        return Err("only a pending action can be dismissed".into());
     } else {
         item["status"] = json!(status);
     }

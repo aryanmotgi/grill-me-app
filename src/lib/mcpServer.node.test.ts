@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,11 +11,11 @@ import { join } from "node:path";
 // another command line (whitespace-separated, e.g. "/path/grill-me --mcp").
 const MCP_CMD = (process.env.GRILLME_MCP_CMD ?? "src-tauri/target/debug/grill-me --mcp").trim().split(/\s+/);
 
-function rpc(lines: object[], seed?: (home: string) => void): Promise<Record<string, unknown>[]> {
+function rpc(lines: object[], seed?: (home: string) => void, env: Record<string, string> = {}): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
     const home = mkdtempSync(join(tmpdir(), "grillme-mcp-"));
     seed?.(home);
-    const child = spawn(MCP_CMD[0], MCP_CMD.slice(1), { env: { ...process.env, HOME: home } });
+    const child = spawn(MCP_CMD[0], MCP_CMD.slice(1), { env: { ...process.env, HOME: home, ...env } });
     let out = "";
     child.stdout.on("data", (d) => {
       out += d;
@@ -323,5 +324,155 @@ describe("grill-me MCP server", () => {
     expect(commit?.ref).toMatch(/^s1:[0-9a-f]+$/);
     // a query that looks like a flag is just text
     expect(JSON.parse(run("--search=--sync", "--limit=5"))).toEqual([]);
+  });
+
+  // ---- push updates (resources + notifications) and requested actions -------
+
+  const INIT = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } };
+  type Msg = Record<string, unknown> & { id?: number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> };
+
+  /** A long-lived stdio connection: send lines, wait for matching messages. */
+  function live(seed: (home: string) => void) {
+    const home = mkdtempSync(join(tmpdir(), "grillme-live-"));
+    seed(home);
+    const child = spawn(MCP_CMD[0], MCP_CMD.slice(1), { env: { ...process.env, HOME: home } });
+    const got: Msg[] = [];
+    const waiters: { pred: (m: Msg) => boolean; resolve: (m: Msg) => void }[] = [];
+    let buf = "";
+    child.stdout.on("data", (d) => {
+      buf += d;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(i + 1);
+        if (!line.trim()) continue;
+        const m = JSON.parse(line) as Msg; // a torn or interleaved line would throw here
+        got.push(m);
+        for (const w of [...waiters]) if (w.pred(m)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(m); }
+      }
+    });
+    const wait = (pred: (m: Msg) => boolean, ms: number, what: string) => new Promise<Msg>((resolve, reject) => {
+      const hit = got.find(pred);
+      if (hit) return resolve(hit);
+      const t = setTimeout(() => reject(new Error(`timed out waiting for ${what}; got ${JSON.stringify(got)}`)), ms);
+      waiters.push({ pred, resolve: (m) => { clearTimeout(t); resolve(m); } });
+    });
+    return {
+      home, got,
+      send: (m: object) => child.stdin.write(`${JSON.stringify(m)}\n`),
+      reply: (id: number) => wait((m) => m.id === id, 5000, `reply ${id}`),
+      wait,
+      close: () => child.kill(),
+    };
+  }
+
+  it("lists resources and reads grillme://flow", async () => {
+    const [init, list, templates, flow, missing] = await rpc([
+      INIT,
+      { jsonrpc: "2.0", id: 2, method: "resources/list" },
+      { jsonrpc: "2.0", id: 3, method: "resources/templates/list" },
+      { jsonrpc: "2.0", id: 4, method: "resources/read", params: { uri: "grillme://flow" } },
+      { jsonrpc: "2.0", id: 5, method: "resources/read", params: { uri: "grillme://session/ghost" } },
+    ], (home) => {
+      const { gm } = seedSession(home);
+      writeFileSync(join(gm, "bridge.json"), JSON.stringify({ plans: [], notes: [], handoffs: [],
+        questions: [{ id: "q-1", ts: 1, answered: false, from: "s1", fromTitle: "Auth", question: "Email or Google login?" }],
+        actions: [{ id: "a-1", ts: 2, status: "pending", kind: "run_tests", session: "s1", sessionTitle: "Auth", args: {}, reason: "before the merge" }] }));
+    });
+    expect((init.result as { capabilities: Record<string, unknown> }).capabilities).toMatchObject({ resources: { subscribe: true, listChanged: true }, logging: {} });
+    const uris = (list.result as { resources: { uri: string }[] }).resources.map((r) => r.uri);
+    expect(uris).toEqual(["grillme://project/brain", "grillme://sessions", "grillme://flow", "grillme://session/s1"]);
+    expect(JSON.stringify(templates.result)).toContain("grillme://session/{id}");
+    const text = (flow.result as { contents: { uri: string; text: string }[] }).contents[0].text;
+    expect(text).toContain("[q-1] from Auth: Email or Google login?");
+    expect(text).toContain("[a-1] run tests in Auth — before the merge");
+    expect((missing as { error: { code: number } }).error.code).toBe(-32002);
+  });
+
+  it("pushes notifications/resources/updated over stdio when bridge.json changes", async () => {
+    const c = live((home) => { seedSession(home); });
+    try {
+      c.send(INIT);
+      await c.reply(1);
+      c.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+      c.send({ jsonrpc: "2.0", id: 2, method: "resources/subscribe", params: { uri: "grillme://flow" } });
+      expect((await c.reply(2)).result).toEqual({});
+      await new Promise((r) => setTimeout(r, 300)); // the watcher's baseline poll runs at start
+      writeFileSync(join(c.home, ".grillme", "bridge.json"), JSON.stringify({ handoffs: [], plans: [], notes: [], questions: [],
+        actions: [{ id: "a-9", ts: Date.now(), status: "pending", kind: "open_preview", args: {}, reason: "" }] }));
+      const n = await c.wait((m) => m.method === "notifications/resources/updated", 5000, "resources/updated");
+      expect(n.params).toEqual({ uri: "grillme://flow" });
+      // the server keeps answering requests in between (one writer, whole lines)
+      c.send({ jsonrpc: "2.0", id: 3, method: "resources/read", params: { uri: "grillme://flow" } });
+      expect(JSON.stringify((await c.reply(3)).result)).toContain("open the preview");
+      // only what we subscribed to
+      expect(c.got.some((m) => m.method === "notifications/resources/updated" && m.params?.uri !== "grillme://flow")).toBe(false);
+    } finally {
+      c.close();
+    }
+  }, 15_000);
+
+  /** A port nothing listens on (Grill Me "not running"). */
+  async function closedPort(): Promise<number> {
+    const s: Server = createServer();
+    await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
+    const port = (s.address() as { port: number }).port;
+    await new Promise<void>((r) => s.close(() => r()));
+    return port;
+  }
+
+  it("run_tests without the app fails like every other write — nothing is queued", async () => {
+    const port = await closedPort();
+    let home = "";
+    const [, tests, plan] = await rpc([
+      INIT,
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "run_tests", arguments: { session: "Auth", reason: "before merge" } } },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "save_plan", arguments: { title: "x", tasks: [{ title: "y" }] } } },
+    ], (h) => { home = h; seedSession(h); }, { GRILLME_API_PORT: String(port) });
+    const r = tests.result as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toBe("Grill Me isn't running — open the Grill Me app, then try again.");
+    expect(r.content[0].text).toBe((plan.result as { content: { text: string }[] }).content[0].text);
+    expect(existsSync(join(home, ".grillme", "bridge.json"))).toBe(false);
+  });
+
+  it("run_tests sends a pending action to Grill Me and says it's waiting for your OK", async () => {
+    // a stand-in for the app's loopback API that saves the push into bridge.json the way bridge::push does
+    let home = "";
+    const bodies: { kind: string; item: Record<string, unknown>; project: string }[] = [];
+    const api = createServer((req, res) => {
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", () => {
+        const v = JSON.parse(body);
+        bodies.push({ ...v, url: req.url, auth: req.headers.authorization });
+        const entry = { id: "a-1", ts: Date.now(), status: "pending", ...v.item };
+        writeFileSync(join(home, ".grillme", "bridge.json"), JSON.stringify({ handoffs: [], plans: [], questions: [], notes: [], actions: [entry] }));
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(entry));
+      });
+    });
+    await new Promise<void>((r) => api.listen(0, "127.0.0.1", () => r()));
+    try {
+      const port = (api.address() as { port: number }).port;
+      const [, ok, gated, news] = await rpc([
+        INIT,
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "run_tests", arguments: { session: "Auth", reason: "check before merge" } } },
+        { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "restart_session", arguments: { session: "Auth", reason: "stuck" } } },
+        { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "whats_new", arguments: {} } },
+      ], (h) => { home = h; seedSession(h); writeFileSync(join(h, ".grillme", "api-token"), "tok\n"); }, { GRILLME_API_PORT: String(port) });
+      expect((ok.result as { content: { text: string }[] }).content[0].text).toContain("waiting for your OK in Grill Me");
+      expect(bodies[0]).toEqual({
+        url: "/bridge/push", auth: "Bearer tok", kind: "action", project: "default",
+        item: { kind: "run_tests", reason: "check before merge", session: "s1", sessionTitle: "Auth", args: {} },
+      });
+      const saved = JSON.parse(readFileSync(join(home, ".grillme", "bridge.json"), "utf8"));
+      expect(saved.actions[0]).toMatchObject({ kind: "run_tests", session: "s1", status: "pending" });
+      // the grill gate stops a thin restart before anything is sent
+      expect((gated.result as { isError?: boolean; content: { text: string }[] }).content[0].text).toContain("Grill gate");
+      expect(bodies).toHaveLength(1);
+      expect((news.result as { content: { text: string }[] }).content[0].text).toContain("- action: run tests in Auth — waiting for the user's OK");
+    } finally {
+      api.close();
+    }
   });
 });
