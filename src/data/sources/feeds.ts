@@ -9,6 +9,7 @@ import { fmtTokens } from "../../lib/format";
 import { playAlert } from "../sounds";
 import { notificationsSilenced } from "../../lib/quietHours";
 import { reconcileShared } from "../../lib/roomSync";
+import { mentionsMe, normalizeChat } from "../../lib/teamChat";
 import {
   fetchConflictRadar,
   fetchGitState,
@@ -45,6 +46,7 @@ interface FeedStore {
     decisions?: import("../../types").Decision[];
     teamSessions?: import("../../types").TeamSession[];
     teamBridge?: import("../../types").TeamBridgeItem[];
+    teamChat?: import("../../types").TeamChatMsg[];
   }) => void;
   claudeMissing: boolean;
   setClaudeMissing: (missing: boolean) => void;
@@ -155,7 +157,7 @@ let roomFeedStarted = false;
  * flag raises the host-offline banner, and the next success clears it.
  */
 /** Files carried live over the room after onboarding — mirrors room.rs. */
-const ROOM_SYNC_FILES = ["tasks.json", "messages.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json"] as const;
+const ROOM_SYNC_FILES = ["tasks.json", "messages.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json", "team-chat.json"] as const;
 
 export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   if (roomFeedStarted || !isTauri()) return;
@@ -205,7 +207,8 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         }).catch(() => {});
         lastAuth[file] = authJson;
       }
-      if (pushUp.length > 0) void roomSync(file, pushUp, []);
+      // batched: the host reads at most 256KB per request (a long offline chat can exceed it)
+      for (let i = 0; i < pushUp.length; i += 50) void roomSync(file, pushUp.slice(i, i + 50), []);
     }
   };
 
@@ -708,6 +711,8 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
   const seenMsgs = new Set<string>();
   const SEEN_MSGS_MAX = 5000;
   let first = true;
+  const seenChat = new Set<string>();
+  let firstChat = true;
   // FYI digest: batch quiet messages; interval user-adjustable (default 15m,
   // clamped to >=1m). One cancellable handle, rescheduled after each fire, so
   // setting changes apply without a restart and timers never stack.
@@ -751,7 +756,11 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         read("team-sessions.json").catch(() => null),
         read("team-bridge.json").catch(() => null),
       ]);
+      const chatRaw = await read("team-chat.json").catch(() => null);
+      const teamChat = chatRaw === "__unchanged__" || chatRaw === null ? undefined : normalizeChat(chatRaw);
+      if (chatRaw === null) firstChat = false; // no chat yet: whatever arrives next is new
       store.getState().setShared({
+        teamChat,
         tasks: tasks === "__unchanged__" ? undefined : tasks ?? undefined,
         teamSessions: teamSessions === "__unchanged__" ? undefined : teamSessions ?? undefined,
         teamBridge: teamBridge === "__unchanged__" ? undefined : teamBridge ?? undefined,
@@ -761,6 +770,21 @@ export async function startSharedFeed(store: UseBoundStore<StoreApi<FeedStore>>)
         sponsorChecklist: team === "__unchanged__" ? undefined : team?.sponsor,
         standupLines,
       });
+
+      // team chat: toast + ping when someone @mentions me (my room member id)
+      if (teamChat) {
+        const chatMe = store.getState().roomSelf?.memberId ?? "";
+        for (const m of teamChat) {
+          if (seenChat.has(m.id)) continue;
+          seenChat.add(m.id);
+          if (!firstChat && mentionsMe(m, chatMe)) {
+            store.getState().toast(`@you in team chat — ${m.fromName || "a teammate"}: ${m.text.slice(0, 80)}`);
+            ping(`@you from ${m.fromName || "a teammate"}`, m.text.slice(0, 120), "mention");
+          }
+        }
+        firstChat = false;
+        if (seenChat.size > SEEN_MSGS_MAX) { seenChat.clear(); firstChat = true; } // re-seed silently next pass
+      }
 
       const msgList = messages === "__unchanged__" ? [] : ((messages ?? []) as import("../../types").Message[]);
       for (const m of msgList) {

@@ -86,7 +86,15 @@ async function reflectToTeam(id: string, status: "sent" | "dismissed") {
   const st = useApp.getState();
   const { me, live } = roomMe(st);
   const e = st.teamBridge.find((x) => x.id === id && x.to === me);
-  if (live && e && e.status !== status) await upsertShared("team-bridge.json", [{ ...e, status }]);
+  if (live && e && e.status !== status) {
+    await upsertShared("team-bridge.json", [{ ...e, status }]);
+    // the approver's machine says so in team chat (only this side posts it)
+    if (status === "sent" && e.kind === "handoff") {
+      const { meName } = roomMe(st);
+      void import("./teamChatActions").then(({ postSystemLine }) =>
+        postSystemLine(`${meName} approved ${e.fromName}'s hand-off to “${e.sessionTitle || e.session || "a session"}”`));
+    }
+  }
 }
 
 /** Team brain: in a live room, brain notes + goal ride the room's shared
@@ -219,6 +227,10 @@ export async function bridgeSend(h: BridgeHandoff): Promise<boolean> {
     if (q) items.push({ ...q, status: "answered" });
     await upsertShared("team-bridge.json", items);
     await bridgeResolve("handoffs", h.id, "sent");
+    if (h.kind === "handoff") {
+      void import("./teamChatActions").then(({ postSystemLine }) =>
+        postSystemLine(`${meName} handed a task to ${h.toName || h.to}'s “${h.sessionTitle || h.session}”`));
+    }
     toast(`Sent to ${h.toName || h.to} — they approve it in their Grill Me before it's typed in`);
     return true;
   }

@@ -16,6 +16,7 @@ import type {
   Task,
   Teammate,
   TeamBridgeItem,
+  TeamChatMsg,
   TeamSession,
   Toast,
 } from "./types";
@@ -240,6 +241,7 @@ interface AppState {
     decisions?: Decision[];
     teamSessions?: TeamSession[];
     teamBridge?: TeamBridgeItem[];
+    teamChat?: TeamChatMsg[];
   }) => void;
   advanceMergeQueue: () => void;
 
@@ -249,6 +251,10 @@ interface AppState {
   teamSessions: TeamSession[];
   /** Hand-offs, questions and answers routed between teammates (team-bridge.json). */
   teamBridge: TeamBridgeItem[];
+  /** Team chat (team-chat.json over the room), oldest first, capped. */
+  teamChat: TeamChatMsg[];
+  /** true while this machine waits on an @claude reply (typing indicator). */
+  teamChatTyping: boolean;
   /** Decisions-log overlay (⌘K + features.ts). */
   decisionsOpen: boolean;
   /** Append a decision: shapes it via makeDecision, prepends locally, and
@@ -601,6 +607,7 @@ export const useApp = create<AppState>((set, get) => ({
       ...(p.tasks ? { tasks: p.tasks } : {}),
       ...(p.teamSessions ? { teamSessions: p.teamSessions } : {}),
       ...(p.teamBridge ? { teamBridge: p.teamBridge } : {}),
+      ...(p.teamChat ? { teamChat: p.teamChat } : {}),
       ...(p.messages ? { messages: p.messages } : {}),
       ...(p.mergeQueue
         ? {
@@ -623,6 +630,8 @@ export const useApp = create<AppState>((set, get) => ({
   teamSessions: [],
 
   teamBridge: [],
+  teamChat: [],
+  teamChatTyping: false,
   decisionsOpen: false,
   addDecision: (text, tag) => {
     const meId = get().members[0]?.id ?? "me";
@@ -945,7 +954,9 @@ export const useApp = create<AppState>((set, get) => ({
 
   leaveRoom: async () => {
     const wasHost = get().roomRole === "host";
-    set({ room: null, roomRole: null, roomSelf: null, roomOffline: false, teamSetupDone: false, roomPresence: {} });
+    // the leaver's own machine says so in the team chat (once, while it can still reach the room)
+    await import("./components/teamChatActions").then(({ postLeaveLine }) => postLeaveLine()).catch(() => {});
+    set({ room: null, roomRole: null, roomSelf: null, roomOffline: false, teamSetupDone: false, roomPresence: {}, teamChatTyping: false });
     if (wasHost && isTauri()) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -1034,6 +1045,13 @@ let firedBudgetLevel: BudgetLevel = 0;
   if (!isTauri()) {
     // browser dev: fake data, no feeds
     useApp.setState({ activeProject: "default" });
+    // …including a live team room with chat, so Team Chat is browsable. The
+    // sample room is already set up, so picking "team" skips the setup flow.
+    void import("./data/fakeTeamChat").then((f) => {
+      useApp.getState().setRoom(f.FAKE_ROOM);
+      useApp.setState({ roomSelf: f.FAKE_ROOM_SELF, roomRole: "host", teamSetupDone: true, teamChat: f.FAKE_TEAM_CHAT, teamSessions: f.FAKE_TEAM_SESSIONS });
+      useApp.subscribe((s) => { if (s.teamFlowNeeded && s.room === f.FAKE_ROOM) useApp.setState({ teamFlowNeeded: false }); });
+    });
     return;
   }
   const { invoke } = await import("@tauri-apps/api/core");
@@ -1179,7 +1197,7 @@ async function persistShared(name: string, data: unknown) {
  *  fire-and-forget: a failed push (host down) leaves the local write intact
  *  and the room feed re-pushes the unsynced entry on reconnect. */
 /** Files the room carries live (mirrors room.rs SYNC_FILES). */
-export type SyncFile = "tasks.json" | "messages.json" | "decisions.json" | "brain.json" | "team-sessions.json" | "team-bridge.json";
+export type SyncFile = "tasks.json" | "messages.json" | "decisions.json" | "brain.json" | "team-sessions.json" | "team-bridge.json" | "team-chat.json";
 
 export async function upsertShared(
   name: SyncFile,

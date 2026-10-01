@@ -148,6 +148,9 @@ pub(crate) fn push(kind: &str, item: &Value) -> Result<Value, String> {
     if kind == "goal" {
         return set_goal(&text(item, "goal")?);
     }
+    if kind == "team_chat" {
+        return post_team_chat(item);
+    }
     let _g = crate::lock_or_recover(&BRIDGE_LOCK);
     let mut v = load();
     let ts = now_ms();
@@ -334,6 +337,104 @@ pub(crate) fn with_team(mut v: Value, team: &[Value]) -> Value {
 
 fn team_entries() -> Vec<Value> {
     std::fs::read_to_string(team_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+// ---- team chat ---------------------------------------------------------------
+// team-chat.json is an append-only, id-keyed list synced by the room
+// (room::SYNC_FILES). The app posts through the store; a Claude (MCP
+// post_team_chat, local connections only) posts here via /bridge/push, and
+// the room feed carries it to everyone.
+
+const CHAT_TEXT_CAP: usize = 4000;
+
+/// Who this Mac is in the room. The app mirrors its room identity into
+/// settings.json (`teamChatMe: {id, name}`) whenever a room is live.
+fn chat_self() -> (String, String) {
+    let s = read_json(&root().join("settings.json")).unwrap_or_default();
+    let me = &s["teamChatMe"];
+    let id = me["id"].as_str().unwrap_or("").to_string();
+    let name = me["name"].as_str().filter(|n| !n.trim().is_empty()).map(str::to_owned).unwrap_or_else(|| "you".into());
+    (id, name)
+}
+
+/// One assistant chat message from an MCP post (pure; tested).
+pub(crate) fn chat_entry(item: &Value, me: &str, me_name: &str, ts: u64, nonce: u128) -> Result<Value, String> {
+    let body: String = text(item, "text")?.chars().take(CHAT_TEXT_CAP).collect();
+    let mut e = json!({
+        "id": format!("tc-{}-{}", radix36(ts as u128), radix36(nonce % 1_679_616)),
+        "from": me, "fromName": format!("Claude (via {me_name})"),
+        "role": "assistant", "text": body, "ts": ts,
+    });
+    if let Some(r) = item["replyTo"].as_str().filter(|r| !r.is_empty()) {
+        e["replyTo"] = json!(r.chars().take(80).collect::<String>());
+    }
+    Ok(e)
+}
+
+/// `n.toString(36)`, matching the frontend's ids.
+fn radix36(mut n: u128) -> String {
+    const D: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    if n == 0 {
+        return "0".into();
+    }
+    let mut out = Vec::new();
+    while n > 0 {
+        out.push(D[(n % 36) as usize]);
+        n /= 36;
+    }
+    out.reverse();
+    String::from_utf8(out).unwrap_or_default()
+}
+
+fn post_team_chat(item: &Value) -> Result<Value, String> {
+    let (me, me_name) = chat_self();
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let entry = chat_entry(item, &me, &me_name, now_ms(), nanos)?;
+    crate::upsert_at(&project_dir().join("team-chat.json"), vec![entry.clone()], &[], false)?;
+    Ok(entry)
+}
+
+const TEAM_CHAT_PROMPT: &str = "You are Claude, a member of a small dev team's chat inside Grill Me. \
+The input JSON has the team goal, recent decisions, open tasks, every teammate's coding sessions (a digest: title, status, branch, tests) \
+and the last chat messages (oldest first). Someone just mentioned @claude in the newest message: answer THEM, in the context of the conversation. \
+Be concise and concrete (under 150 words unless they ask for more), use names and task titles, and say plainly when the input doesn't tell you something. \
+You cannot run tools or see code here; suggest who or which session to ask instead. Output only the reply text, light markdown allowed.";
+
+/// Context for an @claude reply (pure; tested): the team picture + the chat.
+pub(crate) fn chat_reply_input(goal: &str, decisions: &[Value], tasks: &[Value], sessions: &[Value], transcript: &Value) -> Value {
+    let clip = |v: &Value, k: &str, n: usize| v[k].as_str().unwrap_or("").chars().take(n).collect::<String>();
+    json!({
+        "goal": goal,
+        "decisions": decisions.iter().take(10).map(|d| clip(d, "text", 300)).collect::<Vec<_>>(),
+        "openTasks": tasks.iter().filter(|t| t["status"] != "done").take(30).map(|t| json!({ "title": clip(t, "title", 200), "owner": t["owner"], "status": t["status"] })).collect::<Vec<_>>(),
+        "sessions": sessions.iter().take(40).map(|d| json!({
+            "who": d["memberName"], "title": clip(d, "title", 120), "status": d["status"],
+            "doing": clip(d, "sentence", 200), "branch": d["branch"], "tests": d["tests"],
+        })).collect::<Vec<_>>(),
+        "chat": transcript.as_array().map(|a| {
+            let skip = a.len().saturating_sub(30);
+            a.iter().skip(skip).map(|m| json!({ "name": clip(m, "name", 80), "role": m["role"], "text": clip(m, "text", 2000) })).collect::<Vec<_>>()
+        }).unwrap_or_default(),
+    })
+}
+
+/// @claude in the team chat: the SENDER's Grill Me calls this (so only one
+/// machine answers). Returns the reply text; the app posts it.
+#[tauri::command(async)]
+pub(crate) fn team_chat_reply(transcript_json: String) -> Result<String, String> {
+    let transcript: Value = serde_json::from_str(&transcript_json).map_err(|e| format!("bad transcript: {e}"))?;
+    let dir = project_dir();
+    let list = |f: &str| read_json(&dir.join(f)).and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    let goal = {
+        let _g = crate::lock_or_recover(&BRIDGE_LOCK);
+        with_team(load(), &team_entries())["goal"].as_str().unwrap_or("").to_string()
+    };
+    let input = chat_reply_input(&goal, &list("decisions.json"), &list("tasks.json"), &list("team-sessions.json"), &transcript);
+    let reply = claude_quick(&input.to_string(), TEAM_CHAT_PROMPT, "sonnet")?;
+    if reply.trim().is_empty() {
+        return Err("Claude returned an empty reply".into());
+    }
+    Ok(reply.chars().take(CHAT_TEXT_CAP).collect())
 }
 
 #[tauri::command]
@@ -802,5 +903,71 @@ mod team_brain_tests {
     fn local_goal_kept_when_newer() {
         let v = super::with_team(json!({ "goal": "mine", "goalTs": 300, "notes": [] }), &[json!({ "id": "g", "kind": "goal", "ts": 200, "text": "old" })]);
         assert_eq!(v["goal"], "mine");
+    }
+}
+
+#[cfg(test)]
+mod team_chat_tests {
+    use serde_json::json;
+
+    #[test]
+    fn chat_entry_is_an_assistant_message_from_this_mac() {
+        let e = super::chat_entry(&json!({ "text": "  build passes  ", "replyTo": "tc-1" }), "m2", "Sam", 1_700_000_000_000, 42).unwrap();
+        assert_eq!(e["role"], "assistant");
+        assert_eq!(e["from"], "m2");
+        assert_eq!(e["fromName"], "Claude (via Sam)");
+        assert_eq!(e["text"], "build passes");
+        assert_eq!(e["replyTo"], "tc-1");
+        assert!(e["id"].as_str().unwrap().starts_with("tc-loyw3v28-"), "{e}");
+        assert!(super::chat_entry(&json!({ "text": "  " }), "m2", "Sam", 1, 1).is_err());
+        let long = "x".repeat(super::CHAT_TEXT_CAP + 10);
+        assert_eq!(super::chat_entry(&json!({ "text": long }), "", "you", 1, 1).unwrap()["text"].as_str().unwrap().len(), super::CHAT_TEXT_CAP);
+    }
+
+    #[test]
+    fn radix36_matches_js_to_string_36() {
+        assert_eq!(super::radix36(0), "0");
+        assert_eq!(super::radix36(35), "z");
+        assert_eq!(super::radix36(1_700_000_000_000), "loyw3v28");
+    }
+
+    #[test]
+    fn team_chat_entries_append_via_the_merge_writer() {
+        let dir = std::env::temp_dir().join(format!("grillme-teamchat-{}-{}", std::process::id(), super::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("team-chat.json");
+        std::fs::write(&path, r#"[{"id":"tc-a","role":"user","text":"@claude status?","ts":1}]"#).unwrap();
+        let e = super::chat_entry(&json!({ "text": "All green." }), "m1", "Aryan", 2, 7).unwrap();
+        crate::upsert_at(&path, vec![e], &[], false).unwrap();
+        let all: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0]["id"], "tc-a", "appends, never prepends");
+        assert_eq!(all[1]["text"], "All green.");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn push_rejects_empty_team_chat_before_touching_disk() {
+        assert_eq!(super::push("team_chat", &json!({ "text": "" })).unwrap_err(), "missing text");
+    }
+
+    #[test]
+    fn reply_input_carries_team_picture_and_last_30_messages() {
+        let chat: Vec<serde_json::Value> = (0..40).map(|i| json!({ "name": "Sam", "role": "user", "text": format!("m{i}") })).collect();
+        let v = super::chat_reply_input(
+            "Ship the demo",
+            &[json!({ "text": "Use SQLite" })],
+            &[json!({ "title": "Auth", "status": "done" }), json!({ "title": "Board", "status": "in-progress", "owner": "sam" })],
+            &[json!({ "memberName": "Sam", "title": "API", "status": "working", "sentence": "working in api.ts", "branch": "feat/api", "tests": true })],
+            &json!(chat),
+        );
+        assert_eq!(v["goal"], "Ship the demo");
+        assert_eq!(v["decisions"][0], "Use SQLite");
+        assert_eq!(v["openTasks"].as_array().unwrap().len(), 1, "done tasks left out");
+        assert_eq!(v["sessions"][0]["who"], "Sam");
+        let c = v["chat"].as_array().unwrap();
+        assert_eq!(c.len(), 30);
+        assert_eq!(c[0]["text"], "m10");
+        assert_eq!(c[29]["text"], "m39");
     }
 }

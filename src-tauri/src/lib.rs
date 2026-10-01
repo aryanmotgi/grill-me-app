@@ -1101,7 +1101,7 @@ fn grillme_dir() -> PathBuf {
     dir
 }
 
-const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json"];
+const SHARED_FILES: &[&str] = &["tasks.json", "messages.json", "team.json", "settings.json", "decisions.json", "brain.json", "team-sessions.json", "team-bridge.json", "team-chat.json"];
 
 fn shared_path(name: &str) -> PathBuf {
     if name == "settings.json" {
@@ -4627,6 +4627,7 @@ pub fn run() {
             bridge::brain_digest,
             bridge::brain_check,
             bridge::brain_cut,
+            bridge::team_chat_reply,
             bridge::brain_pitch,
             bridge::brain_kickoff,
             bridge::brain_quiz,

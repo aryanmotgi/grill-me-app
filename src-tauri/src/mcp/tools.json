@@ -238,5 +238,37 @@
       "type": "object",
       "properties": {}
     }
+  },
+  {
+    "name": "team_chat",
+    "description": "In team mode: the latest messages in the team chat (teammates, their Claudes, and system events like joins and hand-offs), oldest first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "number",
+          "description": "How many recent messages (default 20, max 100)"
+        }
+      }
+    }
+  },
+  {
+    "name": "post_team_chat",
+    "description": "In team mode: post a message to the team chat as \"Claude (via <the user>)\". Everyone in the room sees it. Use for status updates or answers the team asked for; keep it short.",
+    "inputSchema": {
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "replyTo": {
+          "type": "string",
+          "description": "Id of the chat message this answers (from team_chat)"
+        }
+      }
+    }
   }
 ]

@@ -198,6 +198,37 @@ export interface TeamBridgeItem {
   resultTs?: number;
 }
 
+/** A session shared into the team chat as a card — the digest only (title,
+ *  status, branch, tests, a one-line summary), never the conversation. */
+export interface TeamChatSessionCard {
+  kind: "session";
+  member: string;
+  memberName: string;
+  session: string;
+  title: string;
+  status: SessionStatus;
+  branch: string;
+  tests: boolean | null;
+  summary: string;
+}
+
+/** One team chat message (team-chat.json over the room, append-only,
+ *  id `tc-<time36>-<rand>`). `from` is the sender's room member id; a
+ *  Claude reply carries the id of the machine that asked it. */
+export interface TeamChatMsg {
+  id: string;
+  from: string;
+  fromName: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  ts: number;
+  /** id of the message this answers (Claude replies) */
+  replyTo?: string;
+  /** room member ids mentioned (plus "claude") */
+  mentions?: string[];
+  attach?: TeamChatSessionCard;
+}
+
 /** Live presence a member pushes on each heartbeat (post-onboarding). */
 export interface RoomPresence {
   name?: string;
