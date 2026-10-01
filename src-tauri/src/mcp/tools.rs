@@ -147,6 +147,14 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
             for m in &all {
                 parts.push(session_card(ctx, m)?);
             }
+            // results of hand-offs this reader hasn't seen yet (its own cursor,
+            // so catch_up and whats_new each report a reply once)
+            let key = if ctx.remote.on { "replies:remote" } else { "replies:app" };
+            let replies = ctx.reply_lines(ctx.cursor(key), false);
+            if !replies.is_empty() {
+                ctx.set_cursor(key, js::now_ms());
+                parts.push(format!("## Replies to your hand-offs\n{}", replies.join("\n")));
+            }
             parts.push(if waiting.is_empty() { "Nothing waiting.".into() } else { format!("## Waiting\n{}", waiting.join("\n")) });
             Ok(parts.join("\n\n"))
         }
@@ -409,6 +417,7 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
                             lines.push(format!("last test output:\n{}", clip(&s(get(t, "tail")), 800)));
                         }
                     }
+                    lines.extend(ctx.review_line(get(m, "id")));
                     lines.into_iter().filter(|l| !l.is_empty()).collect::<Vec<_>>().join("\n")
                 })
                 .collect::<Vec<_>>()
@@ -502,6 +511,7 @@ fn session_card(ctx: &Ctx, m: &Value) -> Result<String, String> {
         Some(format!("### {}  (id: {})", ctx.label(m), to_str(get(m, "id")))),
         Some(format!("branch: {} · {changed} changed files · {active}", if branch.is_empty() { "?" } else { &branch })),
         ctx.test_line(&repo),
+        ctx.review_line(get(m, "id")),
         Some(match last {
             Some(l) => format!("last ask: \"{}\"", clip(&l.ask, 200)),
             None => "no conversation yet".into(),

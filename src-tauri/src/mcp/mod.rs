@@ -19,6 +19,7 @@
 //   grill-me --mcp --catchup-chat <id> | --digest <ms>
 //   grill-me --mcp --check-input <member> | --cut-input | --pitch-input
 //            | --quiz-input <member> | --wrapup-input | --kickoff-input
+//            | --answer-input <questionId> | --review-input <member> | --reply-input <handoffId>
 //   grill-me --mcp --http <port> --secret-file <path> [--allow-writes] [--no-transcripts]
 // ---------------------------------------------------------------------------
 
@@ -112,6 +113,18 @@ fn cli_mode(ctx: &mut Ctx, argv: &[String]) -> Result<bool, String> {
     }
     if has("--check-input") {
         out(&ctx.check_input(flag(argv, "--check-input"))?);
+        return Ok(true);
+    }
+    if has("--answer-input") {
+        out(&ctx.answer_input(flag(argv, "--answer-input"))?);
+        return Ok(true);
+    }
+    if has("--review-input") {
+        out(&ctx.review_input(flag(argv, "--review-input"))?);
+        return Ok(true);
+    }
+    if has("--reply-input") {
+        out(&ctx.reply_input(flag(argv, "--reply-input"))?);
         return Ok(true);
     }
     if has("--kickoff-input") {

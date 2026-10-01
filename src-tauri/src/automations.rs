@@ -36,7 +36,7 @@ fn git_out(repo: &Path, args: &[&str]) -> String {
 }
 
 /// A cheap fingerprint of the working tree: HEAD + porcelain status.
-fn tree_signature(repo: &Path) -> String {
+pub(crate) fn tree_signature(repo: &Path) -> String {
     let mut h = DefaultHasher::new();
     git_out(repo, &["rev-parse", "HEAD"]).hash(&mut h);
     git_out(repo, &["status", "--porcelain"]).hash(&mut h);
@@ -165,7 +165,7 @@ fn record_test(repo_path: &str, r: &Value) {
     let _ = std::fs::write(&path, serde_json::to_string_pretty(&all).unwrap_or_default());
 }
 
-fn valid_topic(t: &str) -> bool {
+pub(crate) fn valid_topic(t: &str) -> bool {
     (8..=64).contains(&t.len()) && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
@@ -177,17 +177,27 @@ fn header_safe(s: &str, max: usize) -> String {
 /// Push a short notification to the user's phone via ntfy.sh.
 #[tauri::command(async)]
 pub(crate) fn phone_ping(topic: String, title: String, body: String) -> Result<(), String> {
-    if !valid_topic(&topic) {
+    ntfy_send(&topic, &title, &body, None)
+}
+
+/// POST one ntfy message; `actions` = an already-validated Actions header
+/// (approve buttons, see bridge::live).
+pub(crate) fn ntfy_send(topic: &str, title: &str, body: &str, actions: Option<&str>) -> Result<(), String> {
+    if !valid_topic(topic) {
         return Err("bad topic".into());
     }
-    let out = Command::new("/usr/bin/curl")
-        .args(["-sS", "-m", "10", "-o", "/dev/null", "-w", "%{http_code}"])
+    let mut cmd = Command::new("/usr/bin/curl");
+    cmd.args(["-sS", "-m", "10", "-o", "/dev/null", "-w", "%{http_code}"])
         .arg("-H")
-        .arg(format!("Title: {}", header_safe(&title, 120)))
+        .arg(format!("Title: {}", header_safe(title, 120)))
         .arg("-H")
-        .arg("Tags: fire")
+        .arg("Tags: fire");
+    if let Some(a) = actions {
+        cmd.arg("-H").arg(format!("Actions: {}", header_safe(a, 1000)));
+    }
+    let out = cmd
         .arg("--data-binary")
-        .arg(header_safe(&body, 300))
+        .arg(header_safe(body, 300))
         .arg(format!("https://ntfy.sh/{topic}"))
         .output()
         .map_err(|e| e.to_string())?;

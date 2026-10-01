@@ -5,6 +5,9 @@ import { buildWires, sessionMarks, sessionSentence, teamSessionsByMember, type F
 import { newTeamHandoff, teamQuestionsFor } from "../lib/teamBridge";
 import type { TeamSession } from "../types";
 import { bridgeApply, bridgeResolve, bridgeSend, useBridge } from "./BridgePanel";
+import { ackReply, bridgeAnswer, teamFlag, useReviews } from "./BridgeLoop";
+import { automationOn } from "../lib/automations";
+import { VERDICT_LABEL, type Review } from "../lib/bridgeLoop";
 import { useRemote } from "./ClaudeConnect";
 import { useTests } from "./Automations";
 import { togglePanel } from "./Dock";
@@ -36,7 +39,36 @@ function EndChip({ end, status }: { end: FlowEnd; status?: string }) {
   );
 }
 
-const KIND_LABEL: Record<Wire["kind"], string> = { task: "Task", answer: "Answer", plan: "Plan", question: "Question" };
+const KIND_LABEL: Record<Wire["kind"], string> = { task: "Task", answer: "Answer", plan: "Plan", question: "Question", reply: "Reply" };
+
+/** Claude's drafted answer to a coder's question: edit it, send it (that
+ *  click is the approval), or set it aside. */
+function DraftAnswer({ w, onDismiss }: { w: Wire; onDismiss: () => void }) {
+  const [text, setText] = useState(w.draft?.text ?? "");
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    try { await bridgeAnswer(w.id, text); } finally { setBusy(false); }
+  };
+  const to = w.from.kind === "teammate" ? w.from.name : w.from.kind === "session" ? w.from.title : "the session";
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-[11px] text-faint">Claude's draft answer — edit before sending</div>
+      <textarea rows={Math.min(8, Math.max(3, Math.ceil(text.length / 60)))} value={text} maxLength={4000}
+        className="w-full bg-raised/60 hairline rounded-md px-2.5 py-2 text-[12px] text-ink outline-none focus:border-white/20 resize-y leading-snug"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send(); }} />
+      <div className="flex flex-wrap items-center gap-2">
+        <button className="composer-btn on h-7 text-[11.5px]" disabled={busy || !text.trim()} onClick={() => void send()}
+          title={`Sends this answer to ${to} now`}>
+          {busy ? <span className="spinner" /> : <Icon name="push" size={11} />} Send answer
+        </button>
+        <button className="composer-btn h-7 text-[11.5px]" onClick={onDismiss}>Dismiss</button>
+        <span className="text-[10.5px] text-faint">⌘↩ sends</span>
+      </div>
+    </div>
+  );
+}
 
 function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string }) {
   const state = useBridge((b) => b.state);
@@ -61,6 +93,15 @@ function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string })
     }
   };
   const endStatus = (e: FlowEnd) => (e.kind === "session" ? statusOf(e.id) : undefined);
+  const drafting = useApp((s) => automationOn(s.appSettings, "draft-answers"));
+  const dismiss = () => {
+    if (w.list === "team") void teamFlag(w.id, "teamDismiss");
+    else if (w.list === "replies") void ackReply(w.id);
+    else if (w.list === "team-replies") void teamFlag(w.id, "teamReplyAck");
+    else void bridgeResolve(w.list, w.id, "dismissed");
+  };
+  // a question with a draft (or one on the way) gets the draft box instead of the plain button
+  const draft = w.kind === "question" && w.draft && drafting && (w.draft.status === "ready" || w.draft.status === "drafting") ? w.draft : null;
   return (
     <div className="composer-card rounded-xl px-3.5 py-3 flex flex-col gap-2">
       <div className="flex items-center gap-2 min-w-0">
@@ -72,17 +113,59 @@ function WireRow({ w, statusOf }: { w: Wire; statusOf: (id: string) => string })
         <EndChip end={w.to} status={endStatus(w.to)} />
       </div>
       <div className="text-[12.5px] text-ink leading-snug">
-        <span className="text-faint">{KIND_LABEL[w.kind]} · </span>{w.label}
+        <span className="text-faint">{KIND_LABEL[w.kind]}{w.kind === "reply" ? (w.done ? " · done" : " · not done yet") : ""} · </span>{w.label}
       </div>
-      <div className="flex items-center gap-2 pt-0.5">
-        <button className="composer-btn on h-7 text-[11.5px]" disabled={busy} onClick={() => void act()}>
-          {busy ? <span className="spinner" /> : w.action === "answer" ? <AgentLogo agent="claude" size={11} /> : <Icon name={w.action === "apply" ? "check" : "push"} size={11} />}
-          {w.action === "send" ? (w.to.kind === "teammate" ? `Send to ${w.to.name}` : "Send to session") : w.action === "apply" ? "Add to board" : "Answer in Claude"}
-        </button>
-        {w.list === "team" ? null : <button className="composer-btn h-7 text-[11.5px]" onClick={() => void bridgeResolve(w.list, w.id, "dismissed")}>Dismiss</button>}
-        <span className="flex-1" />
-        <button className="text-[11px] text-faint hover:text-dim cursor-pointer" onClick={() => setBridgeOpen(true)}>details</button>
+      {w.kind === "reply" ? (
+        <div className="flex items-center gap-2 pt-0.5">
+          <button className="composer-btn h-7 text-[11.5px]" onClick={dismiss}><Icon name="check" size={11} /> Got it</button>
+          <span className="text-[11px] text-faint">Claude sees this on its next catch-up.</span>
+        </div>
+      ) : draft?.status === "ready" ? (
+        <DraftAnswer w={w} onDismiss={dismiss} />
+      ) : draft?.status === "drafting" ? (
+        <div className="flex items-center gap-2 pt-0.5 text-[11.5px] text-dim">
+          <span className="spinner" /> Claude is drafting…
+          <span className="flex-1" />
+          <button className="composer-btn h-7 text-[11.5px]" onClick={dismiss}>Dismiss</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 pt-0.5">
+          <button className="composer-btn on h-7 text-[11.5px]" disabled={busy} onClick={() => void act()}>
+            {busy ? <span className="spinner" /> : w.action === "answer" ? <AgentLogo agent="claude" size={11} /> : <Icon name={w.action === "apply" ? "check" : "push"} size={11} />}
+            {w.action === "send" ? (w.to.kind === "teammate" ? `Send to ${w.to.name}` : "Send to session") : w.action === "apply" ? "Add to board" : "Answer in Claude"}
+          </button>
+          <button className="composer-btn h-7 text-[11.5px]" onClick={dismiss}>Dismiss</button>
+          <span className="flex-1" />
+          <button className="text-[11px] text-faint hover:text-dim cursor-pointer" onClick={() => setBridgeOpen(true)}>details</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const VERDICT_TONE: Record<Review["verdict"], string> = { ship: "tag ok", fix: "tag danger", wait: "tag" };
+
+/** The session's latest auto-review: verdict pill + summary, risks on expand. */
+function ReviewLine({ id }: { id: string }) {
+  const r = useReviews((s) => s.reviews[id]);
+  const running = useReviews((s) => s.running[id]);
+  const [open, setOpen] = useState(false);
+  if (!r) return running ? <div className="flex items-center gap-1.5 px-3.5 pb-2.5 -mt-1 pl-[34px] text-[11px] text-faint"><span className="spinner" style={{ width: 9, height: 9 }} /> reviewing…</div> : null;
+  return (
+    <div className="px-3.5 pb-2.5 -mt-1 pl-[34px] flex flex-col gap-1">
+      <div className="flex items-start gap-1.5 min-w-0">
+        <span className={`${VERDICT_TONE[r.verdict]} flex-none`} title={r.reason}>{VERDICT_LABEL[r.verdict]}</span>
+        {running ? <span className="spinner flex-none mt-1" style={{ width: 9, height: 9 }} title="Re-reviewing…" /> : null}
       </div>
+      <div className="text-[11.5px] text-dim leading-snug">{r.summary}</div>
+      {r.risks.length ? (
+        <>
+          <button className="self-start text-[11px] text-faint hover:text-dim cursor-pointer" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? "hide risks" : `${r.risks.length} risk${r.risks.length === 1 ? "" : "s"}`}
+          </button>
+          {open ? <ul className="list-disc pl-4 text-[11.5px] text-dim flex flex-col gap-0.5">{r.risks.map((x, i) => <li key={i}>{x}</li>)}</ul> : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -92,22 +175,25 @@ function SessionRow({ t, wires, onOpen }: { t: Teammate; wires: Wire[]; onOpen: 
   const test = useTests((s) => s.results[t.id]);
   const marks = sessionMarks(wires, t.id);
   return (
-    <button className="w-full flex items-start gap-3 px-3.5 py-2.5 text-left hover:bg-raised/50 transition-colors cursor-pointer first:rounded-t-xl last:rounded-b-xl"
-      onClick={onOpen}>
-      <span className={`status-dot ${t.status} mt-1.5 flex-none`} aria-hidden />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="text-[13px] font-medium text-ink truncate">{sessionTitle(t, titles)}</span>
-          {test && !test.running ? <span className={`text-[11px] flex-none ${test.ok ? "text-ok" : "text-danger"}`}>{test.ok ? "tests ✓" : "tests ✗"}</span> : null}
+    <div className="overflow-hidden first:rounded-t-xl last:rounded-b-xl">
+      <button className="w-full flex items-start gap-3 px-3.5 py-2.5 text-left hover:bg-raised/50 transition-colors cursor-pointer"
+        onClick={onOpen}>
+        <span className={`status-dot ${t.status} mt-1.5 flex-none`} aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="text-[13px] font-medium text-ink truncate">{sessionTitle(t, titles)}</span>
+            {test && !test.running ? <span className={`text-[11px] flex-none ${test.ok ? "text-ok" : "text-danger"}`}>{test.ok ? "tests ✓" : "tests ✗"}</span> : null}
+          </span>
+          <span className="block text-[11.5px] text-dim truncate">{sessionSentence(t)}</span>
+          <span className="flex items-center gap-2 mt-0.5 text-[11px]">
+            <span className="font-mono text-faint truncate">{t.branch}</span>
+            {marks.waiting ? <span className="text-warn flex-none">{marks.waiting} waiting to go in</span> : null}
+            {marks.asked ? <span className="text-warn flex-none">asked {marks.asked === 1 ? "a question" : `${marks.asked} questions`}</span> : null}
+          </span>
         </span>
-        <span className="block text-[11.5px] text-dim truncate">{sessionSentence(t)}</span>
-        <span className="flex items-center gap-2 mt-0.5 text-[11px]">
-          <span className="font-mono text-faint truncate">{t.branch}</span>
-          {marks.waiting ? <span className="text-warn flex-none">{marks.waiting} waiting to go in</span> : null}
-          {marks.asked ? <span className="text-warn flex-none">asked {marks.asked === 1 ? "a question" : `${marks.asked} questions`}</span> : null}
-        </span>
-      </span>
-    </button>
+      </button>
+      <ReviewLine id={t.id} />
+    </div>
   );
 }
 
@@ -195,7 +281,7 @@ export function FlowPage() {
   const statusOf = (id: string) => teammates.find((x) => x.id === id)?.status ?? "idle";
   const me = roomSelfId ?? "";
   const meName = room?.members.find((m) => m.id === me)?.name ?? me;
-  const wires = useMemo(() => buildWires(state, titleOf, teamQuestionsFor(teamBridge, me)), [state, teammates, titles, teamBridge, me]); // eslint-disable-line react-hooks/exhaustive-deps
+  const wires = useMemo(() => buildWires(state, titleOf, teamQuestionsFor(teamBridge, me), { me, teamBridge }), [state, teammates, titles, teamBridge, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mates = room ? room.members.filter((m) => m.id !== roomSelfId) : [];
   const mateSessions = useMemo(() => teamSessionsByMember(teamSessions, Date.now()), [teamSessions]);

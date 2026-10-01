@@ -16,13 +16,24 @@ export interface BridgeHandoff {
   from?: string;
   /** an answer to a teammate's question */
   questionId?: string;
+  /** when it was typed into the session (the reply report waits for the next idle after this) */
+  deliveredAt?: number;
+  /** the session's result report, written once it went idle after delivery */
+  result?: HandoffResult; resultTs?: number;
+  /** the user read the reply in Flow */
+  resultAck?: boolean;
 }
+export interface HandoffResult { done: boolean; summary: string }
+/** A drafted answer to a coder's question (Claude writes it, the user sends it). */
+export interface DraftSlot { draft?: string; draftTs?: number; draftStarted?: number; draftError?: string }
+/** This Mac's notes on a teammate's question/hand-off (bridge.json `teamLocal`). */
+export interface TeamLocal extends DraftSlot { dismissed?: boolean; replyAck?: boolean }
 export interface BridgePlanTask { title: string; desc?: string; files?: string[] }
 export interface BridgePlan {
   id: string; ts: number; status: "pending" | "applied" | "dismissed";
   title: string; decision?: string; tasks: BridgePlanTask[];
 }
-export interface BridgeQuestion {
+export interface BridgeQuestion extends DraftSlot {
   id: string; ts: number; answered: boolean; dismissed?: boolean;
   from: string; fromTitle?: string; question: string; context?: string; answer?: string;
 }
@@ -31,6 +42,8 @@ export interface BridgeState {
   handoffs: BridgeHandoff[]; plans: BridgePlan[]; questions: BridgeQuestion[]; notes: BridgeNote[];
   /** the project's one-line goal in the shared brain */
   goal?: string;
+  /** keyed by team-bridge id */
+  teamLocal?: Record<string, TeamLocal>;
 }
 
 export const EMPTY_BRIDGE: BridgeState = { handoffs: [], plans: [], questions: [], notes: [] };
@@ -42,6 +55,7 @@ export function parseBridge(raw: string): BridgeState {
     return {
       handoffs: arr(v.handoffs), plans: arr(v.plans), questions: arr(v.questions), notes: arr(v.notes),
       ...(typeof v.goal === "string" ? { goal: v.goal } : {}),
+      ...(v.teamLocal && typeof v.teamLocal === "object" && !Array.isArray(v.teamLocal) ? { teamLocal: v.teamLocal } : {}),
     };
   } catch {
     return EMPTY_BRIDGE;

@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { BridgeState } from "./bridge";
+import { draftStatus, teamReplies, unreadReplies, type DraftStatus } from "./bridgeLoop";
 import type { Teammate, TeamBridgeItem, TeamSession } from "../types";
 
 export type FlowEnd =
@@ -17,15 +18,27 @@ export type FlowEnd =
 export interface Wire {
   id: string;
   /** what is moving along it */
-  kind: "task" | "answer" | "plan" | "question";
+  kind: "task" | "answer" | "plan" | "question" | "reply";
   from: FlowEnd;
   to: FlowEnd;
   label: string;
   ts: number;
-  /** the click that lets it through */
-  action: "send" | "apply" | "answer";
-  /** "team" = a teammate's question (lives in team-bridge.json, not ours to dismiss) */
-  list: "handoffs" | "plans" | "questions" | "team";
+  /** the click that lets it through ("ack" = a reply: just read it) */
+  action: "send" | "apply" | "answer" | "ack";
+  /** "team" = a teammate's question (lives in team-bridge.json; dismissing hides it on this Mac);
+   *  "replies" / "team-replies" = a session's result report on a hand-off */
+  list: "handoffs" | "plans" | "questions" | "team" | "replies" | "team-replies";
+  /** questions: Claude's drafted answer */
+  draft?: { status: DraftStatus; text: string };
+  /** replies: did the session finish the task? */
+  done?: boolean;
+}
+
+export interface WireOpts {
+  now?: number;
+  /** my room id — teammates' replies to hand-offs I routed */
+  me?: string;
+  teamBridge?: TeamBridgeItem[];
 }
 
 const clip = (s: string, n: number) => {
@@ -35,7 +48,8 @@ const clip = (s: string, n: number) => {
 
 /** Pending bridge items as wires, oldest first (waited longest = top).
  *  `teamQuestions` = teammates' open questions (they end at Claude too). */
-export function buildWires(b: BridgeState, titleOf: (id: string) => string, teamQuestions: TeamBridgeItem[] = []): Wire[] {
+export function buildWires(b: BridgeState, titleOf: (id: string) => string, teamQuestions: TeamBridgeItem[] = [], opts: WireOpts = {}): Wire[] {
+  const now = opts.now ?? Date.now();
   const wires: Wire[] = [];
   for (const h of b.handoffs) {
     if (h.status !== "pending") continue;
@@ -53,6 +67,8 @@ export function buildWires(b: BridgeState, titleOf: (id: string) => string, team
     });
   }
   for (const q of teamQuestions) {
+    const local = b.teamLocal?.[q.id];
+    if (local?.dismissed) continue;
     wires.push({
       id: q.id,
       kind: "question",
@@ -62,6 +78,7 @@ export function buildWires(b: BridgeState, titleOf: (id: string) => string, team
       ts: q.ts,
       action: "answer",
       list: "team",
+      draft: { status: draftStatus(local, now), text: local?.draft ?? "" },
     });
   }
   for (const p of b.plans) {
@@ -88,6 +105,34 @@ export function buildWires(b: BridgeState, titleOf: (id: string) => string, team
       ts: q.ts,
       action: "answer",
       list: "questions",
+      draft: { status: draftStatus(q, now), text: q.draft ?? "" },
+    });
+  }
+  // replies: a session reports back on a hand-off it was given
+  for (const h of unreadReplies(b)) {
+    wires.push({
+      id: h.id,
+      kind: "reply",
+      from: { kind: "session", id: h.session, title: h.sessionTitle || titleOf(h.session) },
+      to: h.from ? { kind: "teammate", member: "", name: h.from } : { kind: "brainstorm" },
+      label: clip(h.result?.summary ?? "", 220),
+      ts: h.resultTs ?? h.ts,
+      action: "ack",
+      list: "replies",
+      done: !!h.result?.done,
+    });
+  }
+  for (const e of teamReplies(opts.teamBridge ?? [], opts.me ?? "", b)) {
+    wires.push({
+      id: e.id,
+      kind: "reply",
+      from: { kind: "teammate", member: e.to ?? "", name: e.toName || e.to || "teammate", session: e.session, sessionTitle: e.sessionTitle },
+      to: { kind: "brainstorm" },
+      label: clip(e.result?.summary ?? "", 220),
+      ts: e.resultTs ?? e.ts,
+      action: "ack",
+      list: "team-replies",
+      done: !!e.result?.done,
     });
   }
   return wires.sort((a, b2) => a.ts - b2.ts);
@@ -99,7 +144,7 @@ export function sessionMarks(wires: Wire[], sessionId: string): { waiting: numbe
   let asked = 0;
   for (const w of wires) {
     if (w.to.kind === "session" && w.to.id === sessionId) waiting++;
-    if (w.from.kind === "session" && w.from.id === sessionId) asked++;
+    if (w.kind === "question" && w.from.kind === "session" && w.from.id === sessionId) asked++;
   }
   return { waiting, asked };
 }
