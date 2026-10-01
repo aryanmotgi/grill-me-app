@@ -27,6 +27,14 @@ export const FAKE_BRIDGE: BridgeState = {
       quote: "ok, no auto-archive — keep them until cleared" },
     { id: "dp-demo-2", ts: now - 2 * 60_000, status: "pending", source: "Chat: ship queue", text: "Merge order follows test status, not arrival", quote: "yes, tests first" },
   ],
+  actions: [
+    { id: "a-demo-1", ts: now - 2 * 60_000, status: "pending", kind: "run_tests", session: "devon", sessionTitle: "Task board", args: {},
+      reason: "Devon says the column counts are done — check nothing broke before the merge." },
+    { id: "a-demo-2", ts: now - 70_000, status: "pending", kind: "restart_session", session: "mei", sessionTitle: "Diff review", args: {},
+      reason: "It has printed the same error for 20 minutes and stopped responding." },
+    { id: "a-demo-3", ts: now - 15 * 60_000, status: "done", kind: "open_preview", args: {}, reason: "",
+      outcome: { ok: true, url: "http://localhost:5173", summary: "Dev server running at http://localhost:5173 — opened in Preview." }, outcomeTs: now - 14 * 60_000 },
+  ],
 };
 
 /** Browser-dev drift warning (Flow shows it as a warning wire). */

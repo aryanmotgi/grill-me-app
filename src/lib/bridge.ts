@@ -38,6 +38,20 @@ export interface BridgeQuestion extends DraftSlot {
   from: string; fromTitle?: string; question: string; context?: string; answer?: string;
 }
 export interface BridgeNote { id: string; ts: number; text: string; by?: string }
+/** Something Claude asked Grill Me to run (MCP run_tests / restart_session /
+ *  open_preview / create_session). Runs only after the user clicks Run. */
+export type BridgeActionKind = "run_tests" | "restart_session" | "open_preview" | "create_session";
+export interface BridgeActionOutcome { ok: boolean; summary: string; url?: string; started?: string }
+export interface BridgeAction {
+  id: string; ts: number; kind: BridgeActionKind;
+  status: "pending" | "running" | "done" | "failed" | "dismissed";
+  session?: string; sessionTitle?: string;
+  args: { branch?: string; task?: string };
+  reason: string;
+  outcome?: BridgeActionOutcome; outcomeTs?: number;
+  /** the user read the outcome in Flow */
+  outcomeAck?: boolean;
+}
 export interface BridgeState {
   handoffs: BridgeHandoff[]; plans: BridgePlan[]; questions: BridgeQuestion[]; notes: BridgeNote[];
   /** the project's one-line goal in the shared brain */
@@ -46,6 +60,8 @@ export interface BridgeState {
   teamLocal?: Record<string, TeamLocal>;
   /** agreed decisions Claude spotted in a session turn or chat — logged only on Save */
   decisionProposals?: DecisionProposal[];
+  /** actions Claude requested (absent in older bridge files) */
+  actions?: BridgeAction[];
 }
 
 export interface DecisionProposal {
@@ -64,6 +80,7 @@ export function parseBridge(raw: string): BridgeState {
       ...(typeof v.goal === "string" ? { goal: v.goal } : {}),
       ...(v.teamLocal && typeof v.teamLocal === "object" && !Array.isArray(v.teamLocal) ? { teamLocal: v.teamLocal } : {}),
       ...(Array.isArray(v.decisionProposals) ? { decisionProposals: v.decisionProposals } : {}),
+      ...(Array.isArray(v.actions) ? { actions: v.actions as BridgeAction[] } : {}),
     };
   } catch {
     return EMPTY_BRIDGE;
@@ -75,17 +92,30 @@ export function pending(b: BridgeState) {
     handoffs: b.handoffs.filter((h) => h.status === "pending"),
     plans: b.plans.filter((p) => p.status === "pending"),
     questions: b.questions.filter((q) => !q.answered),
+    actions: (b.actions ?? []).filter((a) => a.status === "pending"),
   };
 }
 
 export function pendingCount(b: BridgeState): number {
   const p = pending(b);
-  return p.handoffs.length + p.plans.length + p.questions.length;
+  return p.handoffs.length + p.plans.length + p.questions.length + p.actions.length;
+}
+
+/** "run tests in Auth", "start a session on feat/x" (mirrors the MCP side). */
+export function describeAction(a: BridgeAction, titleOf: (id: string) => string = (x) => x): string {
+  const who = a.sessionTitle || (a.session ? titleOf(a.session) : "");
+  switch (a.kind) {
+    case "run_tests": return `run tests in ${who}`;
+    case "restart_session": return `restart ${who}`;
+    case "open_preview": return who ? `open the preview of ${who}` : "open the preview";
+    case "create_session": return `start a new session on ${a.args?.branch ?? "?"}`;
+    default: return String((a as { kind: unknown }).kind);
+  }
 }
 
 /** Items that became pending since `prev` — drives the "new request" toast. */
 export function newlyPending(prev: BridgeState, next: BridgeState): string[] {
-  const seen = new Set([...prev.handoffs, ...prev.plans, ...prev.questions].map((x) => x.id));
+  const seen = new Set([...prev.handoffs, ...prev.plans, ...prev.questions, ...(prev.actions ?? [])].map((x) => x.id));
   const p = pending(next);
   return [
     ...p.handoffs.filter((h) => !seen.has(h.id)).map((h) => {
@@ -95,6 +125,7 @@ export function newlyPending(prev: BridgeState, next: BridgeState): string[] {
     }),
     ...p.plans.filter((x) => !seen.has(x.id)).map((x) => `Claude app proposed a plan: ${x.title}`),
     ...p.questions.filter((q) => !seen.has(q.id)).map((q) => `${q.fromTitle || q.from} asked the brainstorm side a question`),
+    ...p.actions.filter((a) => !seen.has(a.id)).map((a) => `Claude asks to ${describeAction(a)}`),
   ];
 }
 

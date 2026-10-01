@@ -25,7 +25,7 @@ use tauri::Emitter;
 const TOKEN_TTL_MS: u64 = 24 * 3_600_000;
 
 /// Bridge item ids are generated (`q-…`, `h-…`, `tb-…`); keep them boring.
-fn valid_id(id: &str) -> bool {
+pub(super) fn valid_id(id: &str) -> bool {
     (1..=80).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
@@ -177,6 +177,10 @@ pub(crate) fn bridge_flag(id: String, flag: String) -> Result<(), String> {
     match flag.as_str() {
         "delivered" => handoff_mut(&mut v, &id).ok_or("not found")?["deliveredAt"] = json!(now_ms()),
         "resultAck" => handoff_mut(&mut v, &id).ok_or("not found")?["resultAck"] = json!(true),
+        // the user read a requested action's outcome in Flow
+        "actionAck" => {
+            v["actions"].as_array_mut().and_then(|a| a.iter_mut().find(|x| x["id"] == id.as_str())).ok_or("not found")?["outcomeAck"] = json!(true)
+        }
         "teamDismiss" | "teamReplyAck" => {
             let slot = slot_mut(&mut v, &id, true).ok_or("not found")?;
             slot[if flag == "teamDismiss" { "dismissed" } else { "replyAck" }] = json!(true);

@@ -24,17 +24,24 @@ pub const SKILLS: [(&str, &str, &str); 6] = [
     ("pitch", "Pitch", "Demo script and slides"),
 ];
 
-pub const WRITE_TOOLS: [&str; 6] = ["save_plan", "send_to_coder", "ask_brainstorm", "answer_question", "set_goal", "post_team_chat"];
+pub const WRITE_TOOLS: [&str; 10] = [
+    "save_plan", "send_to_coder", "ask_brainstorm", "answer_question", "set_goal", "post_team_chat",
+    "run_tests", "restart_session", "open_preview", "create_session",
+];
 // Writes that land as PENDING items the user approves in Grill Me. The rest
 // (goal, notes, questions, team chat posts) flow straight into sessions'
 // context or teammates' screens, so they're never allowed from the internet —
 // even with proposals on.
 pub const REMOTE_PROPOSALS: [&str; 3] = ["save_plan", "send_to_coder", "answer_question"];
+// Never offered over the internet, whatever allowWrites says: team chat posts
+// reach teammates' screens, and actions run things on this Mac.
+pub const REMOTE_DENY: [&str; 5] = ["post_team_chat", "run_tests", "restart_session", "open_preview", "create_session"];
+const DESTRUCTIVE: [&str; 1] = ["restart_session"];
 
 // MCP tool annotations: clients (claude.ai, Claude Code) use readOnlyHint to
 // skip the permission prompt on reads and to flag the tools that change things.
 // Nothing here reaches outside the Mac, so openWorldHint is false everywhere.
-const TITLES: [(&str, &str); 19] = [
+const TITLES: [(&str, &str); 23] = [
     ("search_brain", "Search the brain"),
     ("whats_new", "What's new in my sessions"),
     ("read_session", "Read a session"),
@@ -54,6 +61,10 @@ const TITLES: [(&str, &str); 19] = [
     ("list_projects", "List projects"),
     ("team_chat", "Read the team chat"),
     ("post_team_chat", "Post to the team chat"),
+    ("run_tests", "Ask to run a session's tests"),
+    ("restart_session", "Ask to restart a session"),
+    ("open_preview", "Ask to open the app preview"),
+    ("create_session", "Ask to start a new session"),
 ];
 const IDEMPOTENT: [&str; 1] = ["set_goal"];
 
@@ -79,7 +90,7 @@ pub fn annotate(ctx: &Ctx, tool: &Value) -> Value {
         json!({
             "title": title,
             "readOnlyHint": !write,
-            "destructiveHint": false,
+            "destructiveHint": DESTRUCTIVE.contains(&name),
             "idempotentHint": !write || IDEMPOTENT.contains(&name),
             "openWorldHint": false,
         }),
@@ -106,7 +117,8 @@ pub fn tools_for(ctx: &Ctx) -> Vec<Value> {
         .iter()
         .filter(|t| {
             let n = name_of(t);
-            !ctx.remote.on || !WRITE_TOOLS.contains(&n) || (ctx.remote.allow_writes && REMOTE_PROPOSALS.contains(&n))
+            !ctx.remote.on
+                || (!REMOTE_DENY.contains(&n) && (!WRITE_TOOLS.contains(&n) || (ctx.remote.allow_writes && REMOTE_PROPOSALS.contains(&n))))
         })
         .map(|t| with_project_arg(annotate(ctx, t)))
         .collect()
@@ -129,66 +141,13 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
     let me = ctx.self_member();
     let arg = |k: &str| get(args, k);
     match name {
-        "whats_new" => {
-            let all = ctx.members();
-            if all.is_empty() {
-                return Ok("No sessions — open a project in Grill Me first.".into());
-            }
-            let b = ctx.bridge_state();
-            let list = |k: &str| get(&b, k).and_then(Value::as_array).cloned().unwrap_or_default();
-            let mut waiting: Vec<String> = Vec::new();
-            for q in list("questions").iter().filter(|q| !truthy(get(q, "answered"))) {
-                waiting.push(format!("- QUESTION from {} (id {}): {}", s(nn(get(q, "fromTitle")).or(get(q, "from"))), s(get(q, "id")), s(get(q, "question"))));
-            }
-            for h in list("handoffs").iter().filter(|h| eq_str(get(h, "status"), Some("pending"))) {
-                waiting.push(format!("- handoff to {} waiting for the user's OK", s(get(h, "session"))));
-            }
-            for p in list("plans").iter().filter(|p| eq_str(get(p, "status"), Some("pending"))) {
-                waiting.push(format!("- plan \"{}\" waiting for the user's OK", s(get(p, "title"))));
-            }
-            let you = me.as_ref().map(|m| format!(" You are the coder session \"{}\".", ctx.label(m))).unwrap_or_default();
-            let mut parts = vec![format!("Project: {}. {ROLE_NOTE}{you}", ctx.project_dir().id)];
-            for m in &all {
-                parts.push(session_card(ctx, m)?);
-            }
-            // results of hand-offs this reader hasn't seen yet (its own cursor,
-            // so catch_up and whats_new each report a reply once)
-            let key = if ctx.remote.on { "replies:remote" } else { "replies:app" };
-            let replies = ctx.reply_lines(ctx.cursor(key), false);
-            if !replies.is_empty() {
-                ctx.set_cursor(key, js::now_ms());
-                parts.push(format!("## Replies to your hand-offs\n{}", replies.join("\n")));
-            }
-            parts.push(if waiting.is_empty() { "Nothing waiting.".into() } else { format!("## Waiting\n{}", waiting.join("\n")) });
-            Ok(parts.join("\n\n"))
-        }
+        "whats_new" => whats_new(ctx, true),
         "read_session" => {
             let Some(m) = ctx.find_session(arg("session"))? else {
                 return Ok(format!("No session \"{}\". Call whats_new for the list.", s(arg("session"))));
             };
             let t = js::to_num(arg("turns"));
-            let n = 10f64.min(1f64.max(if t == 0.0 || t.is_nan() { 3.0 } else { t }));
-            let ts = ctx.turns(&m)?.0;
-            if ts.is_empty() {
-                return Ok(format!("{} has no conversation yet.", ctx.label(&m)));
-            }
-            // ts.slice(-n) with a fractional n truncates, the numbering doesn't
-            let take = n.trunc() as usize;
-            let first = ts.len() as f64 - n.min(ts.len() as f64);
-            Ok(js::tail(&ts, take)
-                .iter()
-                .enumerate()
-                .map(|(i, t)| {
-                    let at = if truthy(t.at.as_ref()) { format!(" ({})", s(t.at.as_ref())) } else { String::new() };
-                    let mut lines = vec![format!("## Turn {}{at}", js::num_str(first + i as f64 + 1.0)), format!("USER: {}", clip(&t.ask, 1500))];
-                    if !t.tools.is_empty() {
-                        lines.push(format!("TOOLS: {}", clip(&t.tools.join(", "), 800)));
-                    }
-                    lines.push(if t.reply.is_empty() { "CLAUDE: (no reply yet)".into() } else { format!("CLAUDE: {}", clip(&t.reply, 3000)) });
-                    lines.join("\n")
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n"))
+            turns_text(ctx, &m, if t == 0.0 || t.is_nan() { 3.0 } else { t })
         }
         "get_diff" => {
             let Some(m) = ctx.find_session(arg("session"))? else {
@@ -537,8 +496,82 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
             push(ctx, "team_chat", item)?;
             Ok("Posted to the team chat.".into())
         }
+        n if super::actions::TOOLS.contains(&n) => super::actions::request(ctx, n, args),
         _ => Err(format!("Unknown tool {name}")),
     }
+}
+
+/// The whats_new picture. `advance` = move this reader's reply/outcome
+/// cursors (the tool does; the grillme://sessions resource never does).
+pub fn whats_new(ctx: &Ctx, advance: bool) -> Result<String, String> {
+    let me = ctx.self_member();
+    let all = ctx.members();
+    if all.is_empty() {
+        return Ok("No sessions — open a project in Grill Me first.".into());
+    }
+    let b = ctx.bridge_state();
+    let list = |k: &str| get(&b, k).and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut waiting: Vec<String> = Vec::new();
+    for q in list("questions").iter().filter(|q| !truthy(get(q, "answered"))) {
+        waiting.push(format!("- QUESTION from {} (id {}): {}", s(nn(get(q, "fromTitle")).or(get(q, "from"))), s(get(q, "id")), s(get(q, "question"))));
+    }
+    for h in list("handoffs").iter().filter(|h| eq_str(get(h, "status"), Some("pending"))) {
+        waiting.push(format!("- handoff to {} waiting for the user's OK", s(get(h, "session"))));
+    }
+    for p in list("plans").iter().filter(|p| eq_str(get(p, "status"), Some("pending"))) {
+        waiting.push(format!("- plan \"{}\" waiting for the user's OK", s(get(p, "title"))));
+    }
+    waiting.extend(super::actions::waiting_lines(&b));
+    let you = me.as_ref().map(|m| format!(" You are the coder session \"{}\".", ctx.label(m))).unwrap_or_default();
+    let mut parts = vec![format!("Project: {}. {ROLE_NOTE}{you}", ctx.project_dir().id)];
+    for m in &all {
+        parts.push(session_card(ctx, m)?);
+    }
+    // results of hand-offs (and requested actions) this reader hasn't seen
+    // yet — its own cursor, so catch_up and whats_new each report one once
+    let (key, akey) = if ctx.remote.on { ("replies:remote", "actions:remote") } else { ("replies:app", "actions:app") };
+    let replies = if advance { ctx.reply_lines(ctx.cursor(key), false) } else { ctx.reply_lines(0.0, true) };
+    if !replies.is_empty() {
+        if advance {
+            ctx.set_cursor(key, js::now_ms());
+        }
+        parts.push(format!("## Replies to your hand-offs\n{}", replies.join("\n")));
+    }
+    let outcomes = if advance { super::actions::outcome_lines(&b, ctx.cursor(akey), false) } else { super::actions::outcome_lines(&b, 0.0, true) };
+    if !outcomes.is_empty() {
+        if advance {
+            ctx.set_cursor(akey, js::now_ms());
+        }
+        parts.push(format!("## Actions you requested\n{}", outcomes.join("\n")));
+    }
+    parts.push(if waiting.is_empty() { "Nothing waiting.".into() } else { format!("## Waiting\n{}", waiting.join("\n")) });
+    Ok(parts.join("\n\n"))
+}
+
+/// A session's last `n` turns (1–10), numbered, as read_session prints them.
+pub fn turns_text(ctx: &Ctx, m: &Value, n: f64) -> Result<String, String> {
+    let n = 10f64.min(1f64.max(n));
+    let ts = ctx.turns(m)?.0;
+    if ts.is_empty() {
+        return Ok(format!("{} has no conversation yet.", ctx.label(m)));
+    }
+    // ts.slice(-n) with a fractional n truncates, the numbering doesn't
+    let take = n.trunc() as usize;
+    let first = ts.len() as f64 - n.min(ts.len() as f64);
+    Ok(js::tail(&ts, take)
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let at = if truthy(t.at.as_ref()) { format!(" ({})", s(t.at.as_ref())) } else { String::new() };
+            let mut lines = vec![format!("## Turn {}{at}", js::num_str(first + i as f64 + 1.0)), format!("USER: {}", clip(&t.ask, 1500))];
+            if !t.tools.is_empty() {
+                lines.push(format!("TOOLS: {}", clip(&t.tools.join(", "), 800)));
+            }
+            lines.push(if t.reply.is_empty() { "CLAUDE: (no reply yet)".into() } else { format!("CLAUDE: {}", clip(&t.reply, 3000)) });
+            lines.join("\n")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n"))
 }
 
 /// The app mirrors who this Mac is in the room (`teamChatMe.id`) and when the
@@ -569,7 +602,7 @@ fn strict_eq(a: Option<&Value>, b: Option<&Value>) -> bool {
     }
 }
 
-fn session_card(ctx: &Ctx, m: &Value) -> Result<String, String> {
+pub fn session_card(ctx: &Ctx, m: &Value) -> Result<String, String> {
     let (ts, updated) = ctx.turns(m)?;
     let repo = to_str(get(m, "repoPath"));
     let last = ts.last();
@@ -640,9 +673,18 @@ pub fn handle(ctx: &Ctx, req: &Value) -> Result<Option<Value>, String> {
             if ctx.remote.on && !ctx.remote.allow_writes {
                 instructions.push_str(" This connection is read-only: you can see everything but not change anything.");
             }
+            // stdio pushes resource updates; remote (stateless HTTP, no SSE)
+            // can read and (no-op) subscribe, but never pushes — so it doesn't
+            // claim to
+            let push = !ctx.remote.on;
             Ok(reply(json!({
                 "protocolVersion": asked.unwrap_or(PROTOCOLS[0]),
-                "capabilities": { "tools": {}, "prompts": {} },
+                "capabilities": {
+                    "tools": {},
+                    "prompts": {},
+                    "resources": { "subscribe": push, "listChanged": push },
+                    "logging": {},
+                },
                 "serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION },
                 "instructions": instructions,
             })))
@@ -689,6 +731,31 @@ pub fn handle(ctx: &Ctx, req: &Value) -> Result<Option<Value>, String> {
                 .unwrap_or_else(|| format!("# {title}\n\n{desc}. (Playbook not written yet — edit ~/.grillme/skills/{id}.md)"));
             Ok(reply(json!({ "description": desc, "messages": [{ "role": "user", "content": { "type": "text", "text": body } }] })))
         }
+        Some("resources/list") => Ok(reply(json!({ "resources": super::resources::list(ctx) }))),
+        Some("resources/templates/list") => Ok(reply(json!({ "resourceTemplates": super::resources::templates() }))),
+        Some("resources/read") => {
+            let uri = get(params, "uri").and_then(Value::as_str).unwrap_or("");
+            Ok(match super::resources::read(ctx, uri) {
+                Ok(contents) => reply(json!({ "contents": contents })),
+                Err((code, message)) => fail(code, message),
+            })
+        }
+        // Stateless here: the stdio loop (push.rs) records subscriptions and
+        // the log level when these succeed; over HTTP they're accepted no-ops.
+        Some("resources/subscribe" | "resources/unsubscribe") => {
+            let uri = get(params, "uri").and_then(Value::as_str).unwrap_or("");
+            if super::resources::parse_uri(uri).is_none() {
+                return Ok(fail(super::resources::NOT_FOUND, format!("Resource not found: {uri}")));
+            }
+            Ok(reply(json!({})))
+        }
+        Some("logging/setLevel") => {
+            let level = get(params, "level").and_then(Value::as_str).unwrap_or("");
+            if super::push::level_rank(level).is_none() {
+                return Ok(fail(-32602, format!("Unknown log level {level}")));
+            }
+            Ok(reply(json!({})))
+        }
         Some(m) if m.starts_with("notifications/") => Ok(None),
         _ => Ok(fail(-32601, format!("Method not found: {}", to_str(method)))),
     }
@@ -708,6 +775,15 @@ pub fn scrub_outgoing(mut msg: Value) -> Value {
         if let Some(Value::Array(content)) = r.get_mut("content") {
             for c in content {
                 if eq_str(get(c, "type"), Some("text")) {
+                    let t = redact(&to_str(get(c, "text")));
+                    c["text"] = json!(t);
+                }
+            }
+        }
+        // resources/read
+        if let Some(Value::Array(contents)) = r.get_mut("contents") {
+            for c in contents {
+                if get(c, "text").is_some() {
                     let t = redact(&to_str(get(c, "text")));
                     c["text"] = json!(t);
                 }
@@ -756,6 +832,72 @@ mod tests {
             assert!(n.contains(&"team_chat".to_string()), "reading the chat stays available remotely");
             assert!(!n.contains(&"post_team_chat".to_string()), "allow_writes={allow_writes}");
         }
+    }
+
+    #[test]
+    fn action_tools_are_local_writes_and_never_remote() {
+        let local = ctx(Remote::default());
+        let all = tools_for(&local);
+        let ann = |n: &str| all.iter().find(|t| name_of(t) == n).map(|t| t["annotations"].clone()).unwrap_or_else(|| panic!("{n} missing"));
+        for n in super::super::actions::TOOLS {
+            assert_eq!(ann(n)["readOnlyHint"], false, "{n}");
+            assert_eq!(ann(n)["idempotentHint"], false, "{n}");
+            assert!(REMOTE_DENY.contains(&n), "{n}");
+        }
+        assert_eq!(ann("restart_session")["destructiveHint"], true);
+        assert_eq!(ann("run_tests")["destructiveHint"], false);
+        for allow_writes in [false, true] {
+            let remote = ctx(Remote { on: true, allow_writes, no_transcripts: false });
+            let n = names(&remote);
+            for t in super::super::actions::TOOLS {
+                assert!(!n.contains(&t.to_string()), "{t} offered remotely (allow_writes={allow_writes})");
+                let req = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": t, "arguments": { "session": "s1", "reason": "because it is stuck", "branch": "feat/x", "task": "x" } } });
+                let res = handle(&remote, &req).unwrap().unwrap();
+                assert_eq!(res["result"]["isError"], true, "{t}");
+            }
+            // proposals still work as before
+            assert_eq!(n.contains(&"save_plan".to_string()), allow_writes);
+        }
+    }
+
+    #[test]
+    fn grill_gate_refuses_thin_reasons_before_anything_is_sent() {
+        let local = ctx(Remote::default());
+        for (tool, args) in [
+            ("restart_session", json!({ "session": "s1", "reason": "stuck" })),
+            ("create_session", json!({ "branch": "feat/x", "task": "build it", "reason": "" })),
+            ("create_session", json!({ "branch": "bad branch", "task": "build it", "reason": "parallel work on search" })),
+            ("create_session", json!({ "branch": "feat/x", "task": "  ", "reason": "parallel work on search" })),
+        ] {
+            let err = call_tool(&local, tool, &args).unwrap_err();
+            assert!(err.contains("Grill gate") || err.contains("branch") || err.contains("task"), "{tool}: {err}");
+        }
+    }
+
+    #[test]
+    fn capabilities_and_resource_methods() {
+        let init = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } });
+        let local = handle(&ctx(Remote::default()), &init).unwrap().unwrap();
+        assert_eq!(local["result"]["capabilities"]["resources"], json!({ "subscribe": true, "listChanged": true }));
+        assert_eq!(local["result"]["capabilities"]["logging"], json!({}));
+        let remote_ctx = ctx(Remote { on: true, allow_writes: false, no_transcripts: true });
+        let remote = handle(&remote_ctx, &init).unwrap().unwrap();
+        assert_eq!(remote["result"]["capabilities"]["resources"]["subscribe"], false, "remote never pushes");
+        let call = |c: &Ctx, method: &str, params: Value| handle(c, &json!({ "jsonrpc": "2.0", "id": 2, "method": method, "params": params })).unwrap().unwrap();
+        let l = ctx(Remote::default());
+        assert_eq!(call(&l, "resources/subscribe", json!({ "uri": "grillme://flow" }))["result"], json!({}));
+        assert_eq!(call(&l, "resources/subscribe", json!({ "uri": "grillme://nope" }))["error"]["code"], -32002);
+        assert_eq!(call(&remote_ctx, "resources/subscribe", json!({ "uri": "grillme://flow" }))["result"], json!({}), "remote: accepted no-op");
+        assert_eq!(call(&l, "logging/setLevel", json!({ "level": "notice" }))["result"], json!({}));
+        assert_eq!(call(&l, "logging/setLevel", json!({ "level": "loud" }))["error"]["code"], -32602);
+        let t = call(&l, "resources/templates/list", json!({}));
+        assert_eq!(t["result"]["resourceTemplates"][0]["uriTemplate"], "grillme://session/{id}");
+        let r = call(&l, "resources/read", json!({ "uri": "grillme://flow" }));
+        assert!(r["result"]["contents"][0]["text"].as_str().unwrap().contains("Nothing waiting."));
+        // remote reads are scrubbed like tool results
+        let key = format!("ghp_{}", "A".repeat(36));
+        let scrubbed = scrub_outgoing(json!({ "jsonrpc": "2.0", "id": 3, "result": { "contents": [{ "uri": "grillme://flow", "text": format!("token {key}") }] } }));
+        assert!(!scrubbed.to_string().contains(&key), "{scrubbed}");
     }
 
     #[test]

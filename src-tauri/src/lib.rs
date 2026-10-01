@@ -4637,6 +4637,8 @@ pub fn run() {
             bridge::live::bridge_draft_answer,
             bridge::live::bridge_answer,
             bridge::live::bridge_flag,
+            bridge::actions::bridge_run_action,
+            bridge::actions::bridge_action_finish,
             bridge::live::brain_review,
             bridge::live::reviews_read,
             bridge::live::bridge_handoff_result,

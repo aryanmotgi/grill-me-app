@@ -146,7 +146,9 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun, readOnly
       unlisten = () => { prevUnlisten?.(); unlistenExit(); };
       const unlistenOut = await listen<string>(`pty-output/${id}`, (e) => {
         if (disposed) return;
-        setPhase((p) => (p === "starting" ? "live" : p));
+        // output after "dead" = the pty was respawned under this id (a restart
+        // approved in Flow, or self-healing) — the pane is live again
+        setPhase((p) => (p === "starting" || p === "dead" ? "live" : p));
         if (lat.sentAt) {
           const dt = performance.now() - lat.sentAt;
           lat.sentAt = 0;
