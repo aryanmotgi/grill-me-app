@@ -31,7 +31,7 @@ export function SessionTabs({ padLeft = false }: { padLeft?: boolean }) {
   const active = teammates.find((t) => t.id === activeId);
 
   return (
-    <div data-tauri-drag-region className={`flex items-center gap-1 h-12 pr-2 flex-none border-b border-line demo-hide ${padLeft ? "pl-[84px]" : "pl-2"}`}>
+    <div data-tauri-drag-region className={`tabbar flex items-center gap-1 h-12 pr-2 flex-none border-b border-line demo-hide ${padLeft ? "pl-[84px]" : "pl-2"}`}>
       <DockToggles side="left" />
       <div data-tauri-drag-region className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 min-w-0 h-full">
         {shown.map((t) => {
@@ -40,7 +40,7 @@ export function SessionTabs({ padLeft = false }: { padLeft?: boolean }) {
           return (
             <button
               key={t.id}
-              className={`group/tab flex items-center gap-2.5 h-9 px-3.5 min-w-[200px] max-w-[360px] rounded-lg cursor-pointer transition-colors ${
+              className={`group/tab flex items-center gap-2 h-9 px-3 min-w-[96px] max-w-[300px] shrink rounded-lg cursor-pointer transition-colors ${
                 on ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/50"
               }`}
               title={`${t.name} · ${t.branch}${t.taskLabel ? ` · ${t.taskLabel}` : ""}`}
@@ -54,8 +54,8 @@ export function SessionTabs({ padLeft = false }: { padLeft?: boolean }) {
           );
         })}
         {view === "new" || shown.length === 0 ? (
-          <div className="flex items-center gap-2.5 h-9 px-3.5 min-w-[180px] rounded-lg bg-raised text-ink text-[13.5px] flex-none">
-            <Icon name="spark" size={13} /> New session
+          <div className="flex items-center gap-2 h-9 px-3 rounded-lg bg-raised text-ink text-[13.5px] flex-none whitespace-nowrap">
+            <Icon name="spark" size={13} /> <span className="tb-label">New session</span>
           </div>
         ) : null}
         <button
@@ -69,20 +69,20 @@ export function SessionTabs({ padLeft = false }: { padLeft?: boolean }) {
       </div>
       {active && view === "session" && (members.find((m) => m.id === active.id)?.agent ?? "claude") === "claude" ? (
         <button
-          className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-dim hover:text-ink hover:bg-raised text-[12.5px] cursor-pointer flex-none"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-dim hover:text-ink hover:bg-raised text-[12.5px] cursor-pointer flex-none whitespace-nowrap"
           title="Type /grillme --orient into this session: where am I, what's next, grill my understanding (press Enter to send)"
           onClick={() => void insertSnippet("/grillme --orient")}
         >
-          <GrillFlame px={1.5} /> Grill me
+          <GrillFlame px={1.5} /> <span className="tb-label">Grill me</span>
         </button>
       ) : null}
       {active && view === "session" ? (
         <button
-          className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-accent text-accent-ink text-[12.5px] font-medium cursor-pointer hover:brightness-110 flex-none"
+          className="flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-accent text-accent-ink text-[12.5px] font-medium cursor-pointer hover:brightness-110 flex-none whitespace-nowrap"
           title={`Review & ship ${active.name}'s branch (⌘S)`}
           onClick={() => shipSession(active.id)}
         >
-          <Icon name="push" size={12} /> Review & ship
+          <Icon name="push" size={12} /> <span className="tb-label">Review & ship</span>
         </button>
       ) : null}
       <DockToggles side="right" />

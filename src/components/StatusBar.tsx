@@ -168,20 +168,20 @@ export function StatusBar() {
 
       <span className="w-px h-3.5 bg-line" />
       <span className="flex items-center gap-1.5" title="Sessions producing output right now">
-        <span className="status-dot working" style={{ width: 6, height: 6 }} /> <span className="num">{working}</span> working
+        <span className="status-dot working" style={{ width: 6, height: 6 }} /> <span className="num">{working}</span><span className="sb-word">working</span>
       </span>
       {waiting.length ? (
         <button data-tour="needs-you" className="flex items-center gap-1.5 text-warn hover:underline cursor-pointer"
           title={`Jump to ${waiting[0].name}`}
           onClick={() => setActive(waiting[0].id)}>
-          <span className="status-dot needs-input" style={{ width: 6, height: 6 }} /> <span className="num">{waiting.length}</span> need you
+          <span className="status-dot needs-input" style={{ width: 6, height: 6 }} /> <span className="num">{waiting.length}</span><span className="sb-word">need you</span>
         </button>
       ) : null}
 
       {active ? (
         <>
-          <span className="w-px h-3.5 bg-line" />
-          <span className="flex items-center gap-1.5 font-mono text-[10.5px] truncate min-w-0" title={`${active.name} · ${active.branch}`}>
+          <span className="w-px h-3.5 bg-line sb-mid" />
+          <span className="sb-mid sb-shrink flex items-center gap-1.5 font-mono text-[10.5px] truncate min-w-0" title={`${active.name} · ${active.branch}`}>
             <Icon name="branch" size={11} /> <span className="truncate">{active.branch}</span>
             {active.changes.length ? <span className="text-faint num">±{active.changes.length}</span> : null}
           </span>

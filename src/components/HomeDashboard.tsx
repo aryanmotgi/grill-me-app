@@ -773,7 +773,7 @@ function QuickActions() {
   return (
     <section>
       <div className="panel-label mb-2">do something</div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 @xl:grid-cols-4 gap-2">
         <button
           className={`${tile} bg-accent! text-accent-ink`}
           onClick={() => shipSession(useApp.getState().activeId)}
@@ -809,13 +809,13 @@ export function HomeDashboard() {
   const showPulse = useApp((s) => surfaceVisible(s.appMode, "team-pulse"));
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="@container flex-1 overflow-y-auto p-6">
       <div className="max-w-[1080px] mx-auto flex flex-col gap-5">
         <NeedsYouHero />
         <RateLimitStrip />
 
         {showPulse ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          <div className="grid grid-cols-1 @4xl:grid-cols-2 gap-5 items-start">
             <div className="flex flex-col gap-5">
               <TeamPulse />
               <ConflictChips />
