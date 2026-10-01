@@ -193,6 +193,9 @@ export interface TeamBridgeItem {
   userExplanation?: string;
   ts: number;
   status: "pending" | "sent" | "dismissed" | "answered";
+  /** hand-off: the receiving session's result report, sent back once it finished */
+  result?: { done: boolean; summary: string };
+  resultTs?: number;
 }
 
 /** Live presence a member pushes on each heartbeat (post-onboarding). */

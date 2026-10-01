@@ -159,4 +159,80 @@ describe("grill-me MCP server", () => {
     expect(text).not.toContain("answered already");
     expect(text.match(/Dark mode first/g)?.length).toBe(1);
   });
+
+  // ---- the bridge loop: reviews, hand-off replies, answer drafts -----------
+
+  /** A one-commit feature branch worktree registered as session s1. */
+  function seedSession(home: string) {
+    const repo = join(home, "app");
+    mkdirSync(repo);
+    const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...a]);
+    g("init", "-q", "-b", "main");
+    writeFileSync(join(repo, "a.txt"), "1");
+    g("add", "-A"); g("commit", "-qm", "init");
+    g("checkout", "-qb", "feature");
+    writeFileSync(join(repo, "a.txt"), "2");
+    g("commit", "-qam", "add login");
+    const gm = join(home, ".grillme");
+    mkdirSync(gm, { recursive: true });
+    writeFileSync(join(gm, "config.json"), JSON.stringify({ teammates: [{ id: "s1", name: "Auth", repoPath: repo }] }));
+    return { repo, gm };
+  }
+
+  it("whats_new and ship_status carry each session's latest review", async () => {
+    const init = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } };
+    const [, news, ship] = await rpc([
+      init,
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "whats_new", arguments: {} } },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "ship_status", arguments: {} } },
+    ], (home) => {
+      const { gm } = seedSession(home);
+      writeFileSync(join(gm, "reviews.json"), JSON.stringify({ s1: { verdict: "fix", summary: "Adds login but skips the password check.", risks: ["anyone can log in"], reason: "bug", ts: Date.now() } }));
+    });
+    for (const r of [news, ship]) {
+      const text = (r.result as { content: { text: string }[] }).content[0].text;
+      expect(text).toContain("FIX — Adds login but skips the password check. Risks: anyone can log in.");
+    }
+  });
+
+  it("catch_up and whats_new report replies to hand-offs once, as news", async () => {
+    const init = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } };
+    const [, caught, news, again] = await rpc([
+      init,
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "catch_up", arguments: { hours: 1 } } },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "whats_new", arguments: {} } },
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "whats_new", arguments: {} } },
+    ], (home) => {
+      const { gm } = seedSession(home);
+      writeFileSync(join(gm, "bridge.json"), JSON.stringify({ handoffs: [
+        { id: "h1", ts: 1, status: "sent", kind: "handoff", session: "s1", sessionTitle: "Auth", message: "Add login", deliveredAt: 2,
+          result: { done: true, summary: "Login page works; tests pass." }, resultTs: Date.now() },
+      ], plans: [], questions: [], notes: [] }));
+    });
+    const text = (r: Record<string, unknown>) => (r.result as { content: { text: string }[] }).content[0].text;
+    expect(text(caught)).toContain("**Replies to your hand-offs:**\n- **Auth** (done) on \"Add login\": Login page works; tests pass.");
+    expect(text(news)).toContain("## Replies to your hand-offs");
+    expect(text(again)).not.toContain("Replies to your hand-offs"); // its cursor moved
+  });
+
+  it("--answer-input / --review-input / --reply-input gather what Grill Me's checks need", () => {
+    const home = mkdtempSync(join(tmpdir(), "grillme-cli-"));
+    const { gm } = seedSession(home);
+    writeFileSync(join(gm, "bridge.json"), JSON.stringify({
+      goal: "Ship the demo", plans: [], notes: [],
+      questions: [{ id: "q-1", ts: 1, answered: false, from: "s1", fromTitle: "Auth", question: "Email or Google login?" }],
+      handoffs: [{ id: "h-1", ts: 1, status: "sent", kind: "handoff", session: "s1", message: "Add login", deliveredAt: 2 }],
+    }));
+    writeFileSync(join(gm, "tests.json"), JSON.stringify({ [join(home, "app")]: { ok: false, cmd: "npm test", tail: "1 failing", at: 1 } }));
+    const run = (...a: string[]) => execFileSync(MCP_CMD[0], [...MCP_CMD.slice(1), ...a], { env: { ...process.env, HOME: home } }).toString();
+    const ans = JSON.parse(run("--answer-input", "q-1"));
+    expect(ans).toMatchObject({ session: "Auth", question: "Email or Google login?", goal: "Ship the demo" });
+    expect(run("--answer-input", "nope")).toBe("");
+    const rev = JSON.parse(run("--review-input", "s1"));
+    expect(rev.commits).toContain("add login");
+    expect(rev.diff).toContain("+2");
+    expect(rev.tests).toMatchObject({ ok: false, cmd: "npm test" });
+    // no transcript yet: the session hasn't taken a turn on the hand-off
+    expect(run("--reply-input", "h-1")).toBe("");
+  });
 });

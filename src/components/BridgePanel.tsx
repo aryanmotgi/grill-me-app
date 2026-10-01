@@ -42,6 +42,8 @@ async function refresh(announce: boolean) {
   const prev = useBridge.getState().state;
   useBridge.setState({ state: next });
   if (announce) for (const msg of newlyPending(prev, next)) useApp.getState().toast(`${msg} — open Flow`);
+  // drafted answers + approve-from-phone pings (BridgeLoop)
+  void import("./BridgeLoop").then((l) => l.onBridgeState(prev, next, announce));
   void mirrorToTeam(next);
   void syncTeamBridge(next);
 }
@@ -105,6 +107,9 @@ async function mirrorToTeam(b: BridgeState) {
   await upsertShared("decisions.json", entries);
 }
 
+/** Re-read bridge.json now (BridgeLoop, after it changed something). */
+export const refreshBridge = (announce = false) => (native() ? refresh(announce) : Promise.resolve());
+
 async function refreshConn() {
   const { invoke } = await import("@tauri-apps/api/core");
   const conn = await invoke<BridgeConn>("bridge_status").catch(() => null);
@@ -161,6 +166,9 @@ export function useBridgeFeed() {
       listen("bridge-changed", () => void refresh(true)).then((u) => { if (alive) unlisten = u; else u(); }),
     );
     const poll = setInterval(() => void refresh(true), 5000);
+    // reviews on disk, then the phone's approve buttons (no-op unless phone pings are on)
+    void import("./BridgeLoop").then((l) => l.loadReviews());
+    const phone = setInterval(() => void import("./BridgeLoop").then((l) => l.pollPhone()), 10_000);
 
     // ping: a session that was working goes idle → nudge a review in the Claude app
     let prev = new Map(useApp.getState().teammates.map((t) => [t.id, t.status]));
@@ -168,7 +176,11 @@ export function useBridgeFeed() {
       const conn = useBridge.getState().conn;
       for (const t of s.teammates) {
         const was = prev.get(t.id);
-        if (was === "working" && t.status === "idle") void runBrainCheck(t.id);
+        if (was === "working" && t.status === "idle") {
+          void runBrainCheck(t.id);
+          // auto review + hand-off replies
+          void import("./BridgeLoop").then((l) => l.onSessionIdle(t.id));
+        }
         if (was === "working" && t.status === "idle" && (conn?.desktop || conn?.code)) {
           const now = Date.now();
           if (now - (lastPing.current[t.id] ?? 0) > 120_000) {
@@ -180,7 +192,7 @@ export function useBridgeFeed() {
       }
       prev = new Map(s.teammates.map((t) => [t.id, t.status]));
     });
-    return () => { alive = false; unlisten?.(); clearInterval(poll); unsub(); };
+    return () => { alive = false; unlisten?.(); clearInterval(poll); clearInterval(phone); unsub(); };
   }, []);
 }
 
@@ -220,6 +232,8 @@ export async function bridgeSend(h: BridgeHandoff): Promise<boolean> {
   await bridgeResolve("handoffs", h.id, "sent");
   toast(`Sending to ${h.sessionTitle || m.name} once it's ready…`);
   const ok = await deliverBriefWhenReady(ptyIdFor(m.id), h.message.endsWith("\n") ? h.message : `${h.message}\n`);
+  // the session's next idle after this produces its reply to the hand-off
+  if (ok) await invoke("bridge_flag", { id: h.id, flag: "delivered" }).catch(() => {});
   toast(ok ? `Delivered to ${h.sessionTitle || m.name}` : `Couldn't deliver to ${h.sessionTitle || m.name} — it never reached a prompt`, ok ? "info" : "warn");
   return ok;
 }

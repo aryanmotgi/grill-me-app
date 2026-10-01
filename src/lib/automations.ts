@@ -11,7 +11,9 @@ export type AutomationId =
   | "morning-standup"
   | "catchup-ping"
   | "commit-nudge"
-  | "phone-pings";
+  | "phone-pings"
+  | "draft-answers"
+  | "auto-review";
 
 export type AutoCategory = "Code review" | "Testing" | "Alerts" | "Team";
 
@@ -28,9 +30,11 @@ export interface AutomationDef {
 
 export const AUTOMATIONS: AutomationDef[] = [
   { id: "review-replies", title: "Check every reply against the plan", desc: "Flags work that contradicts your decisions and ticks tasks on the board.", trigger: "After each session reply", icon: "eye", category: "Code review", defaultOn: true },
+  { id: "auto-review", title: "Review each session when it finishes", desc: "Reads the diff, tests and last turn, then says ship, fix or wait — in Flow, and to Claude via whats_new.", trigger: "When a session goes idle with new changes (at most every 3 min)", icon: "doc", category: "Code review", defaultOn: true },
+  { id: "draft-answers", title: "Draft answers to coders' questions", desc: "Claude drafts an answer from your goal, decisions and tasks. You edit it and send it with one click in Flow.", trigger: "When a session asks the brainstorm side", icon: "bulb", category: "Code review", defaultOn: true },
   { id: "auto-test", title: "Run tests after every reply", desc: "Runs the project's tests in that session's worktree and shows ✓/✗ on its tab.", trigger: "After each session reply (skips if nothing changed)", icon: "check", category: "Testing", defaultOn: false },
   { id: "waiting-reminder", title: "Remind me when a session waits", desc: "A session asked you something and it's been sitting there.", trigger: "Waiting 5+ minutes", icon: "bell", category: "Alerts", defaultOn: true },
-  { id: "phone-pings", title: "Ping my phone", desc: "Needs-you, failing tests, off-plan work, and deadline alerts on your phone (ntfy app).", trigger: "Whenever Grill Me alerts you", icon: "broadcast", category: "Alerts", defaultOn: false },
+  { id: "phone-pings", title: "Ping my phone", desc: "Needs-you, failing tests, off-plan work, and deadline alerts on your phone (ntfy app). Hand-offs, plans and drafted answers come with Approve / Dismiss buttons.", trigger: "Whenever Grill Me alerts you", icon: "broadcast", category: "Alerts", defaultOn: false },
   { id: "morning-standup", title: "Morning standup", desc: "Writes Done / Doing / Blocked from git and tasks, and posts it to the standup log.", trigger: "Weekdays at 09:00", icon: "team", category: "Team", defaultOn: false },
   { id: "catchup-ping", title: "Catch-up every 2 hours", desc: "A short “here's what changed” summary so nothing slips by.", trigger: "Every 2 hours while Grill Me is open", icon: "clock", category: "Team", defaultOn: false },
   { id: "commit-nudge", title: "Nudge sessions to commit", desc: "When a session has lots of uncommitted work for a while, ask it to commit.", trigger: "10+ changed files for 30 minutes", icon: "commit", category: "Code review", defaultOn: false },

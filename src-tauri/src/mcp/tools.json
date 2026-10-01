@@ -1,7 +1,7 @@
 [
   {
     "name": "whats_new",
-    "description": "Catch up on every coding session in the open Grill Me project: what each is working on, what it just did, its last reply, and anything waiting (questions from coders, pending handoffs/plans). Call this first whenever the user asks what's going on.",
+    "description": "Catch up on every coding session in the open Grill Me project: what each is working on, what it just did, its last reply, and anything waiting (questions from coders, pending handoffs/plans), each session's latest auto-review (ship / fix / wait), and new replies to hand-offs. Call this first whenever the user asks what's going on.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -189,7 +189,7 @@
   },
   {
     "name": "catch_up",
-    "description": "Everything new in this project since you last asked (or in the last `hours`): goal, decisions, notes, plans, what each session did, commits. Call at the start of a conversation and whenever the user returns.",
+    "description": "Everything new in this project since you last asked (or in the last `hours`): goal, decisions, notes, plans, what each session did, commits, and replies sessions sent back on hand-offs. Call at the start of a conversation and whenever the user returns.",
     "inputSchema": {
       "type": "object",
       "properties": {

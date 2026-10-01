@@ -22,8 +22,13 @@ export { useTests, type TestResult };
 
 const on = (id: AutomationId) => automationOn(useApp.getState().appSettings, id);
 
-/** One alert, everywhere the user asked for it: OS banner + phone. */
-export async function alertEverywhere(title: string, body: string, opts: { os?: boolean } = {}) {
+/** An item the phone ping can approve with a button (see BridgeLoop). */
+export interface PhoneApprove { list: "handoffs" | "plans" | "questions" | "team"; id: string; label: string }
+
+/** One alert, everywhere the user asked for it: OS banner + phone. With
+ *  `approve`, the phone ping carries Approve / Dismiss buttons backed by a
+ *  one-time token (falls back to a plain ping if minting one fails). */
+export async function alertEverywhere(title: string, body: string, opts: { os?: boolean; approve?: PhoneApprove } = {}) {
   const st = useApp.getState();
   if (st.appSettings.muteAll) return;
   if (opts.os !== false && native() && !notificationsSilenced(st.appSettings)) {
@@ -33,6 +38,20 @@ export async function alertEverywhere(title: string, body: string, opts: { os?: 
   const topic = st.appSettings.ntfyTopic;
   if (on("phone-pings") && typeof topic === "string" && native()) {
     const { invoke } = await import("@tauri-apps/api/core");
+    let reply = st.appSettings.ntfyReplyTopic;
+    if (opts.approve && typeof reply !== "string") {
+      // pings were set up before approve buttons existed
+      reply = newTopic();
+      st.setAppSetting("ntfyReplyTopic", reply);
+    }
+    if (opts.approve && typeof reply === "string") {
+      const { list, id, label } = opts.approve;
+      const token = await invoke<string>("phone_token_issue", { list, id }).catch(() => null);
+      if (token) {
+        await invoke("phone_ping_approve", { topic, replyTopic: reply, title, body, itemId: id, token, label }).catch(() => {});
+        return;
+      }
+    }
     await invoke("phone_ping", { topic, title, body }).catch(() => {});
   }
 }
@@ -219,6 +238,10 @@ function PhoneConfig() {
   const setAppSetting = useApp((s) => s.setAppSetting);
   const toast = useApp((s) => s.toast);
   useEffect(() => { if (!topic) setAppSetting("ntfyTopic", newTopic()); }, [topic, setAppSetting]);
+  // a second private topic the phone's Approve / Dismiss buttons post to —
+  // Grill Me polls it; never shown, so nobody else can press them
+  const hasReply = useApp((s) => typeof s.appSettings.ntfyReplyTopic === "string");
+  useEffect(() => { if (!hasReply) setAppSetting("ntfyReplyTopic", newTopic()); }, [hasReply, setAppSetting]);
   const test = async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("phone_ping", { topic, title: "Grill Me", body: "Phone pings are working 🔥" })
@@ -232,9 +255,10 @@ function PhoneConfig() {
         <code className="md-code select-all">{topic}</code>
         <button className="composer-btn h-7 text-[11.5px]" onClick={() => void navigator.clipboard.writeText(topic).then(() => toast("Topic copied"))}>Copy</button>
         <button className="composer-btn h-7 text-[11.5px]" onClick={() => void test()}>Send test</button>
-        <button className="composer-btn h-7 text-[11.5px]" title="Make a new topic (the old one stops getting pings)" onClick={() => setAppSetting("ntfyTopic", newTopic())}>New topic</button>
+        <button className="composer-btn h-7 text-[11.5px]" title="Make a new topic (the old one stops getting pings)" onClick={() => { setAppSetting("ntfyTopic", newTopic()); setAppSetting("ntfyReplyTopic", newTopic()); }}>New topic</button>
       </div>
       <span className="text-faint">Pings go through ntfy.sh and only say things like “Rouge: session a needs you” — never code. Keep the topic private.</span>
+      <span className="text-faint">Hand-offs, plans and drafted answers come with Approve / Dismiss buttons. Each button works once, for 24 hours, and Grill Me must be open to act on it.</span>
     </div>
   );
 }

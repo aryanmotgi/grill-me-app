@@ -16,6 +16,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
+/// Drafted answers, auto reviews, hand-off replies, phone approvals.
+pub(crate) mod live;
+
 const SERVER_NAME: &str = "grill-me";
 const LIST_CAP: usize = 200;
 const TEXT_CAP: usize = 20_000;
@@ -627,7 +630,7 @@ pub(crate) fn bridge_add_note(text: String, by: String) -> Result<(), String> {
 #[tauri::command]
 pub(crate) fn bridge_read() -> String {
     let _g = crate::lock_or_recover(&BRIDGE_LOCK);
-    with_team(load(), &team_entries()).to_string()
+    live::scrub(with_team(load(), &team_entries())).to_string()
 }
 
 /// Mark a handoff/plan resolved (sent, applied, dismissed) or a question dismissed.
