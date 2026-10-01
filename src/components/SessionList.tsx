@@ -191,7 +191,8 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
             onClick={(e) => { e.stopPropagation(); setAppSetting("presence", nextPresence(presence)); }}
           >
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-current" aria-hidden />
-            {PRESENCE_LABEL[presence]}
+            {/* "available" is the default — a dot is enough; say it only when it's not */}
+            {presence === "available" ? <span className="sr-only">{PRESENCE_LABEL[presence]}</span> : PRESENCE_LABEL[presence]}
           </button>
         ) : null}
         {mate.dnd ? <span title="Do not disturb" className="text-faint"><Icon name="bellOff" size={11} /></span> : null}
@@ -233,13 +234,9 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
           </span>
         ) : null}
         {mate.setup !== "ready" ? <span className="tag">{SETUP_LABEL[mate.setup]}</span> : null}
-        {offline ? (
-          <span
-            className={`text-[10px] ${mate.health === "disconnected" ? "text-danger" : "text-warn"}`}
-            title={`No activity for ${mate.lastActiveMin}m`}
-          >
-            {mate.health === "disconnected" ? "offline" : `quiet ${mate.lastActiveMin}m`}
-          </span>
+        {/* idle time is already on line 1; only a lost worktree needs a word here */}
+        {offline && mate.health === "disconnected" ? (
+          <span className="text-[10px] text-danger" title={`No activity for ${mate.lastActiveMin}m`}>offline</span>
         ) : null}
       </div>
 

@@ -277,7 +277,7 @@ export function AutomationsPage() {
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("All");
   const list = AUTOMATIONS.filter((a) => cat === "All" || a.category === cat);
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto">
+    <div className="@container flex-1 min-h-0 overflow-y-auto">
       <div className="max-w-[980px] mx-auto px-8 py-8 flex flex-col gap-5">
         <div>
           <h1 className="text-[22px] font-semibold text-ink">Automations</h1>
@@ -289,7 +289,7 @@ export function AutomationsPage() {
               onClick={() => setCat(c)}>{c}</button>
           ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
           {list.map((d) => <AutoCard key={d.id} def={d} />)}
         </div>
       </div>

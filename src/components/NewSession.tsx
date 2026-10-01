@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useAutoGrow } from "../hooks/useAutoGrow";
 import { useApp } from "../store";
 import type { AgentId } from "../data/sources/git";
 import { SKILL_LOADERS, loadSkill, type SkillLoader } from "../data/skills";
@@ -60,7 +61,7 @@ function Sprite({ name, x, y, px = 4 }: { name: string; x: string; y: string; px
 
 function PixelBanner() {
   return (
-    <div className="pixel-banner relative h-[34vh] min-h-[200px] flex-none overflow-hidden" aria-hidden>
+    <div className="pixel-banner relative h-[22vh] min-h-[120px] max-h-[240px] flex-none overflow-hidden" aria-hidden>
       <Sprite name="kettle" x="56%" y="16%" />
       <Sprite name="burger" x="28%" y="40%" />
       <Sprite name="sausage" x="78%" y="48%" />
@@ -108,6 +109,7 @@ export function NewSession() {
   const [menu, setMenu] = useState<"" | "add" | "agent">("");
   const [busy, setBusy] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(ta, text);
 
   useEffect(() => { ta.current?.focus(); }, []);
   useEffect(() => {
@@ -180,8 +182,8 @@ export function NewSession() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); }
             }}
-            placeholder="Ask, build, or describe the task — it becomes the first message…"
-            className="block w-full resize-none bg-transparent outline-none px-4 pt-3 pb-2 text-[14px] text-ink placeholder:text-faint max-h-[240px] field-sizing-content"
+            placeholder="Describe the task — it becomes the first message"
+            className="block w-full resize-none bg-transparent outline-none px-4 pt-3 pb-2 text-[14px] text-ink placeholder:text-faint min-h-[64px] max-h-[240px] overflow-y-auto"
           />
 
           <div className="flex items-center gap-1.5 px-3 pb-3">

@@ -104,10 +104,10 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   const query = useContext(SearchContext);
   if (!rowMatches(query, label, hint)) return null;
   return (
-    <div className="flex items-center gap-3 py-2 border-b border-line/50 last:border-0">
-      <div className="w-44 flex-none">
-        <div className="text-[11px] text-ink">{label}</div>
-        {hint ? <div className="text-[10px] text-faint leading-snug mt-0.5">{hint}</div> : null}
+    <div className="flex items-center gap-4 py-2.5 border-b border-line/50 last:border-0">
+      <div className="w-[48%] min-w-[200px] flex-none">
+        <div className="text-[12.5px] text-ink">{label}</div>
+        {hint ? <div className="text-[11.5px] text-faint leading-snug mt-0.5">{hint}</div> : null}
       </div>
       <div className="flex-1 flex items-center gap-2 min-w-0">{children}</div>
     </div>
@@ -229,12 +229,12 @@ export function SettingsModal() {
       >
         {/* icon rail: brand, search, tabs */}
         <nav className="w-[200px] flex-none border-r border-line bg-panel/60 flex flex-col">
-          <div className="font-display font-bold text-[13px] tracking-wide px-3 pt-3 pb-2">SETTINGS</div>
+          <div className="text-[15px] font-semibold text-ink px-3 pt-3.5 pb-2.5">Settings</div>
           <div className="px-2 pb-2">
             <label className="flex items-center gap-1.5 bg-raised hairline rounded-sm px-2 py-1.5 focus-within:border-accent">
               <Icon name="search" size={11} className="text-faint" />
               <input
-                className="flex-1 min-w-0 bg-transparent text-[11px] outline-none placeholder:text-faint"
+                className="flex-1 min-w-0 bg-transparent text-[12px] outline-none placeholder:text-faint"
                 placeholder="find a setting…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -252,7 +252,7 @@ export function SettingsModal() {
               return (
                 <button
                   key={t.id}
-                  className={`relative flex items-center gap-2.5 text-left pl-3 pr-2 py-2 rounded-sm text-[11px] cursor-pointer transition-colors ${
+                  className={`relative flex items-center gap-2.5 text-left pl-3 pr-2 py-2 rounded-md text-[12.5px] cursor-pointer transition-colors ${
                     activeTab ? "bg-raised text-accent" : "text-dim hover:text-ink hover:bg-raised/50"
                   }`}
                   onClick={() => setTab(t.id)}
@@ -273,8 +273,8 @@ export function SettingsModal() {
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3 border-b border-line/60">
             <div>
-              <div className="font-display font-semibold text-[15px]">{active.label}</div>
-              <div className="text-faint text-[10px] mt-0.5">{active.blurb}</div>
+              <div className="text-[16px] font-semibold text-ink">{active.label}</div>
+              <div className="text-faint text-[12px] mt-0.5">{active.blurb}</div>
             </div>
             <button className="btn flex-none -mr-1" title="Close settings (Esc)" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
               <Icon name="cross" size={12} />

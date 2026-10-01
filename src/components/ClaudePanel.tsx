@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAutoGrow } from "../hooks/useAutoGrow";
 import { useApp } from "../store";
 import { parseTranscript, toRows } from "../lib/chat";
 import { SKILL_LOADERS, loadSkill } from "../data/skills";
@@ -61,6 +62,8 @@ function GrillChat({ compact = false }: { compact?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [sentAt, setSentAt] = useState<number | undefined>();
   const [draft, setDraft] = useState("");
+  const draftBox = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(draftBox, draft);
   const [menu, setMenu] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -206,12 +209,13 @@ function GrillChat({ compact = false }: { compact?: boolean }) {
         <div className={`max-w-[780px] w-full mx-auto pb-4 ${compact ? "px-3" : "px-6"}`}>
           <div className="composer-card relative rounded-xl">
             <textarea
+              ref={draftBox}
               rows={2}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(draft); } }}
               placeholder="Brainstorm, ask about your sessions, plan the next step…"
-              className="block w-full resize-none bg-transparent outline-none px-4 pt-3 pb-2 text-[13.5px] text-ink placeholder:text-faint max-h-[220px] field-sizing-content"
+              className="block w-full resize-none bg-transparent outline-none px-4 pt-3 pb-2 text-[13.5px] text-ink placeholder:text-faint min-h-[60px] max-h-[220px] overflow-y-auto"
             />
             <div className="flex items-center gap-1.5 px-3 pb-3">
               <button className={`composer-btn w-8 justify-center ${menu ? "on" : ""}`} title="Hackathon playbooks" onClick={() => setMenu(!menu)}>

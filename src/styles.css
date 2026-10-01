@@ -281,8 +281,15 @@ body,
 }
 /* small dialogs over busy content: an OPAQUE surface (the gradient/vibrant
    panel token is translucent and would let the page bleed through the text) */
-.glass.solid {
+.glass.solid,
+.scrim .glass {
+  /* any dialog over the app (inside a .scrim) is opaque — the translucent
+     panel token let the page's text bleed through Settings, review, etc. */
   background: var(--ground-color, var(--panel));
+}
+:root.vibrant .glass.solid,
+:root.vibrant .scrim .glass {
+  background: #1b1c20;
 }
 
 /* Tabular figures so digit clusters (stats, cpu/mem, tokens) don't jitter. */
@@ -863,6 +870,19 @@ select.btn, .btn[type] {
 /* status bar: never wrap; drop secondary labels when the center column is narrow */
 .statusbar { container-type: inline-size; }
 .statusbar > * { flex-shrink: 0; }
+/* the branch label is the one thing allowed to shrink (then truncate) */
+.statusbar > .sb-shrink { flex-shrink: 1; min-width: 0; }
 @container (max-width: 820px) {
   .sb-wide { display: none; }
+}
+@container (max-width: 600px) {
+  .sb-mid { display: none; }
+}
+@container (max-width: 470px) {
+  .sb-word { display: none; }
+}
+/* session tab bar: buttons go icon-only when the center column is narrow */
+.tabbar { container-type: inline-size; }
+@container (max-width: 680px) {
+  .tb-label { display: none; }
 }

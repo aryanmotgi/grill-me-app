@@ -203,8 +203,8 @@ export function FlowPage() {
   const anyClaude = !!(conn?.desktop || conn?.code || remote?.url);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto">
-      <div className="max-w-[1080px] mx-auto px-6 py-8 flex flex-col gap-6 select-text">
+    <div className="@container flex-1 min-h-0 overflow-y-auto">
+      <div className="max-w-[1080px] mx-auto px-4 @2xl:px-6 py-6 @2xl:py-8 flex flex-col gap-6 select-text">
         <div>
           <div className="text-[11px] tracking-[0.12em] uppercase text-faint">Flow · {projectName}</div>
           <p className="text-[12.5px] text-faint mt-1">
@@ -212,7 +212,7 @@ export function FlowPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_300px] gap-5 items-start">
+        <div className="grid grid-cols-1 @4xl:grid-cols-[250px_minmax(0,1fr)_300px] gap-5 items-start">
           {/* brainstorm side + brain */}
           <div className="flex flex-col gap-3">
             <div className="panel-label">brainstorm</div>
@@ -237,8 +237,8 @@ export function FlowPage() {
             </button>
           </div>
 
-          {/* in flight */}
-          <div className="flex flex-col gap-3 min-w-0">
+          {/* in flight — first when the columns stack: it's what needs you */}
+          <div className="flex flex-col gap-3 min-w-0 order-first @4xl:order-none">
             <div className="panel-label">in flight · {wires.length}</div>
             {wires.length === 0 ? (
               <div className="composer-card rounded-xl px-4 py-6 text-center flex flex-col gap-2">
@@ -275,7 +275,7 @@ export function FlowPage() {
           ) : mates.length === 0 ? (
             <div className="composer-card rounded-xl px-4 py-4 text-[12.5px] text-dim">Room <span className="font-mono text-ink">{room.code}</span> is open — waiting for teammates to join.</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-3 gap-3">
               {mates.map((m) => {
                 const p = roomPresence[m.id];
                 const online = Date.now() - m.lastSeen < 20_000;
