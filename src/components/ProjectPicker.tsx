@@ -130,7 +130,7 @@ export function ProjectPicker() {
   const first = projects.length === 0;
 
   return (
-    <div className="fixed inset-0 z-50 ground flex flex-col overflow-y-auto">
+    <div data-overlay className="fixed inset-0 z-50 ground flex flex-col overflow-y-auto">
       {/* drag strip under the traffic lights — a full-screen cover must not trap the window */}
       <div data-tauri-drag-region className="h-12 flex-none" />
       <div className="flex-1 flex items-start justify-center px-6 pb-12">

@@ -255,13 +255,35 @@ function GrillChat({ compact = false }: { compact?: boolean }) {
   );
 }
 
+const OVERLAY_SEL = '.scrim, [aria-modal="true"], [data-overlay], aside.composer-menu';
+
+/** True while any modal/overlay is in the DOM (rAF-throttled observer). */
+function useOverlayOpen(): boolean {
+  const [open, setOpen] = useState(() => typeof document !== "undefined" && !!document.querySelector(OVERLAY_SEL));
+  useEffect(() => {
+    let frame = 0;
+    const check = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setOpen(!!document.querySelector(OVERLAY_SEL)));
+    };
+    const mo = new MutationObserver(check);
+    mo.observe(document.body, { childList: true, subtree: true });
+    check();
+    return () => { mo.disconnect(); cancelAnimationFrame(frame); };
+  }, []);
+  return open;
+}
+
 /** The real claude.ai, as a native child webview laid over this box. */
 function ClaudeAi() {
   const box = useRef<HTMLDivElement>(null);
-  // native views sit above the page, so step aside while a Grill Me overlay is open
-  const covered = useApp((s) => s.settingsOpen || s.switcherOpen || s.pickerOpen || s.featureIndexOpen || s.cheatsheetOpen);
+  // A native webview always draws ABOVE the page, so it must step aside
+  // whenever ANY Grill Me overlay is up — not a hand-kept list (that missed
+  // the hackathon kickoff, ship queue, review, consent…). Any element that is
+  // a scrimmed dialog, an aria-modal, or a floating panel counts.
+  const overlayUp = useOverlayOpen();
   const bridgeOpen = useBridge((b) => b.open);
-  const hidden = covered || bridgeOpen;
+  const hidden = overlayUp || bridgeOpen;
 
   useEffect(() => {
     if (!native() || !box.current) return;
@@ -289,7 +311,7 @@ function ClaudeAi() {
 
   return (
     <div ref={box} className="flex-1 min-h-0 flex items-center justify-center text-faint text-[12px]">
-      {native() ? (hidden ? "claude.ai is tucked away while this menu is open" : "Loading claude.ai…") : "claude.ai needs the native app"}
+      {native() ? (hidden ? "claude.ai steps aside while a window is open" : "Loading claude.ai…") : "claude.ai needs the native app"}
     </div>
   );
 }

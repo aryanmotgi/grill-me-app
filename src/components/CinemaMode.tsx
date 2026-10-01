@@ -34,7 +34,7 @@ export function CinemaMode({ mate, themeName }: { mate: Teammate; themeName: str
   }, [setCinemaOpen]);
 
   return (
-    <div className="fixed inset-0 z-30 bg-term-bg">
+    <div data-overlay className="fixed inset-0 z-30 bg-term-bg">
       <div className="absolute inset-0">
         {member ? (
           <XtermPane
