@@ -258,6 +258,15 @@ pub fn catalog_fetch_remote() -> Result<String, String> {
     Ok(version)
 }
 
+/// The relay catalog cached by `catalog_fetch_remote`, if any. The app merges
+/// it over the built-in one only when it's newer.
+#[tauri::command]
+pub fn catalog_cached() -> Option<Value> {
+    let text = std::fs::read_to_string(crate::grillme_root().join("catalog.json")).ok()?;
+    let doc: Value = serde_json::from_str(&text).ok()?;
+    validate_remote(&doc).ok().map(|_| doc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

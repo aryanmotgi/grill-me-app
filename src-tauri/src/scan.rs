@@ -593,6 +593,13 @@ pub fn workflow_scan(project: Option<String>, sources: Vec<String>) -> Result<Va
     Ok(v)
 }
 
+/// The last saved scan, if any (the workflow step reads it after a reload).
+#[tauri::command]
+pub fn workflow_scan_read() -> Option<Value> {
+    let text = std::fs::read_to_string(home().join(".grillme/scan.json")).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
 /// Forget the scan (the "Delete" button next to "What we looked at").
 #[tauri::command]
 pub fn workflow_scan_delete() -> Result<(), String> {

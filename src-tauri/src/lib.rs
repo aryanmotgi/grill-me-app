@@ -4622,6 +4622,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             catalog::catalog_lookup,
             catalog::catalog_fetch_remote,
+            catalog::catalog_cached,
             doctor::system_doctor,
             doctor::doctor_install,
             ai_connect::ai_status,
@@ -4754,6 +4755,7 @@ pub fn run() {
             relay::room_relay_join,
             scan::workflow_scan,
             scan::workflow_scan_delete,
+            scan::workflow_scan_read,
             room::room_brainstorm_reply,
             room::room_make_plan,
             room::room_make_tasks
