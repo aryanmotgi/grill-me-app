@@ -17,7 +17,7 @@ export function EditableTitle({ mate, className = "" }: {
   const [draft, setDraft] = useState("");
 
   const title = sessionTitle(mate, titles);
-  const fallback = mate.taskLabel || mate.name;
+  const fallback = sessionTitle(mate, {});
 
   const start = () => { setDraft(title); setEditing(true); };
   const save = () => {

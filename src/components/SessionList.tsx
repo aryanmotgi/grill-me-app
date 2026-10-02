@@ -342,7 +342,7 @@ export function SessionList({ bare = false }: { bare?: boolean } = {}) {
   const GROUPS = [
     { key: "needs-input", label: "Needs you" },
     { key: "working", label: "Working" },
-    { key: "idle", label: "Idle" },
+    { key: "idle", label: "Finished" },
   ] as const;
   const grouped = GROUPS.map((g) => ({
     ...g,

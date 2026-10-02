@@ -22,3 +22,10 @@ describe("withTitle", () => {
     expect(withTitle({ a: "X" }, "a", "App shell", "App shell")).toEqual({});
   });
 });
+
+describe("sessionTitle placeholders", () => {
+  it("never titles a session with the no-task dash", () => {
+    expect(sessionTitle({ id: "me", name: "Me", taskLabel: "—" }, {})).toBe("Me");
+    expect(sessionTitle({ id: "me", name: "Me", taskLabel: " - " }, {})).toBe("Me");
+  });
+});
