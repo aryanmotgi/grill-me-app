@@ -64,7 +64,7 @@ export class ForgeWorld {
   private fading = false;
   workMs = 0;
   private workN = 0;
-  spark = { x: 0, y: 0, tx: 0, ty: 0, r: 0, tr: 22, glow: 1, born: false, speaking: false, alpha: 1, energy: 0 };
+  spark = { x: 0, y: 0, tx: 0, ty: 0, r: 0, tr: 22, glow: 1, flash: 0, born: false, speaking: false, alpha: 1, energy: 0 };
   onFrame?: (spark: { x: number; y: number; r: number }) => void;
   onLite?: () => void;
 
@@ -130,6 +130,37 @@ export class ForgeWorld {
     this.motes.push(m);
     return m;
   }
+  /** Embers rise from `points` (the logo burning away), swirl a little, and
+   *  stream into (x, y), where the Spark is about to ignite. */
+  gatherInto(points: { x: number; y: number }[], x: number, y: number) {
+    if (this.reduce) return;
+    const max = this.lite ? 350 : 800;
+    const pick = points.length > max ? points.filter((_, i) => i % Math.ceil(points.length / max) === 0) : points;
+    // a short hop up and out first, then the pull (reads as burning, not
+    // sliding); four waves, not one timer per ember
+    const waves: Mote[][] = [[], [], [], []];
+    for (const p of pick) {
+      const a = Math.atan2(p.y - y, p.x - x) + rand(-.6, .6), sp = rand(30, 110);
+      waves[Math.floor(Math.random() * 4)].push(this.mote(p.x, p.y, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - rand(20, 60), temp: rand(.9, 1), cool: .05, size: rand(1.6, 3) }));
+    }
+    waves.forEach((wave, i) => window.setTimeout(() => {
+      for (const m of wave) Object.assign(m, { mode: "seek", tx: x + rand(-5, 5), ty: y + rand(-5, 5), speed: rand(3.6, 5.4), cool: 0, done: () => { m.temp = 0; } });
+    }, 120 + i * 80));
+  }
+
+  /** The Spark ignites: born small and white-hot, a ring of sparks, then it settles. */
+  ignite(x: number, y: number) {
+    this.sparkBorn(x, y);
+    if (this.reduce) return;
+    this.spark.flash = 1.8;
+    this.spark.energy = 1;
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * 6.283 + rand(-.05, .05), sp = rand(260, 340);
+      this.mote(x, y, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, temp: 1, cool: rand(1.1, 1.5), size: rand(1.6, 2.4) });
+    }
+    this.burstAt(x, y, 30, 1);
+  }
+
   burstAt(x: number, y: number, n = 30, temp = 1) {
     if (this.reduce) return;
     for (let i = 0; i < n; i++) {
@@ -564,11 +595,12 @@ export class ForgeWorld {
       sp.x = lerp(sp.x, sp.tx, k); sp.y = lerp(sp.y, sp.ty, k);
       sp.r = lerp(sp.r, sp.tr, reduce ? 1 : clamp(dt * 2.5));
       sp.energy = lerp(sp.energy, sp.speaking && !reduce ? 1 + .5 * Math.sin(t * 11) : 0, clamp(dt * 8));
+      sp.flash = lerp(sp.flash, 0, clamp(dt * 1.6));
       if (sp.alpha > 0) halo(sp.x, sp.y, sp.r * 5, sp.alpha);
     }
     this.gl.draw({
       time: t, w: W, h: H, dim: 0, calm: 0, points: pts, lines: [], beams, nodes,
-      spark: sp.born ? { x: sp.x, y: sp.y, r: sp.r, energy: sp.energy, glow: sp.glow, alpha: sp.alpha } : null,
+      spark: sp.born ? { x: sp.x, y: sp.y, r: sp.r, energy: sp.energy, glow: sp.glow + sp.flash, alpha: sp.alpha } : null,
     });
     if (sp.born) this.onFrame?.({ x: sp.x, y: sp.y, r: sp.r });
   }

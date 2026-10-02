@@ -218,6 +218,18 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 .forge-gentle { align-self: flex-start; font-size: 12px; }
 .forge-gentle.on { color: #ffcf9f; }
 .forge-quotes.tips li { border-left-color: rgba(242, 193, 78, .7); }
+/* waiting on the AI: your answer, then a live "thinking" line (no buttons) */
+.forge-waiting { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.forge-thinking { display: flex; align-items: center; gap: 10px; padding: 2px 4px; animation: forge-rise .45s cubic-bezier(.2, .8, .2, 1) both; }
+.forge-thinking .orb { width: 12px; height: 12px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 40% 35%, #fff4dc, #ffb347 40%, #ff6a2a 75%); box-shadow: 0 0 14px rgba(255, 130, 50, .8);
+  animation: forge-orb-breathe 1.4s ease-in-out infinite; }
+@keyframes forge-orb-breathe { 50% { transform: scale(1.35); box-shadow: 0 0 22px rgba(255, 150, 60, 1); } }
+.forge-thinking .shimmer { font-size: 14px; font-weight: 550; text-shadow: none;
+  background: linear-gradient(90deg, rgba(255,255,255,.45) 0%, #fff 45%, #ffd2a8 55%, rgba(255,255,255,.45) 100%) 0 0 / 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: forge-shimmer 1.6s linear infinite; }
+@keyframes forge-shimmer { from { background-position: 110% 0; } to { background-position: -110% 0; } }
+.forge-thinking .secs { font-size: 12px; color: var(--f-faint); font-variant-numeric: tabular-nums; }
 /* the read-back */
 .forge-heard { display: flex; flex-direction: column; gap: 14px; width: 100%; }
 .forge-heard > div { display: flex; flex-direction: column; gap: 8px; }
@@ -292,6 +304,12 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 .forge-flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 8; transform-origin: var(--x, 50%) var(--y, 50%);
   background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(255, 245, 225, .95), rgba(255, 170, 90, .55) 6%, rgba(255, 110, 40, .15) 22%, transparent 45%); }
 .forge-flash.on { animation: forge-flash .7s cubic-bezier(.2, .8, .2, 1) both; }
+/* the Spark igniting: a smaller, quicker flash and a ring of light */
+.forge-flash.small { background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(255, 248, 230, .9), rgba(255, 170, 90, .45) 2.5%, rgba(255, 110, 40, .1) 8%, transparent 16%); }
+.forge-flash.small.on { animation: forge-flash .6s cubic-bezier(.2, .8, .2, 1) both; }
+.forge-flash.small::after { content: ""; position: absolute; left: var(--x); top: var(--y); width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
+  border: 2px solid rgba(255, 200, 140, .9); box-shadow: 0 0 18px rgba(255, 140, 60, .8); animation: forge-ring .7s cubic-bezier(.15, .7, .3, 1) both; }
+@keyframes forge-ring { from { transform: scale(.2); opacity: 1; } to { transform: scale(9); opacity: 0; } }
 @keyframes forge-flash { 0% { opacity: 0; transform: scale(.4); } 18% { opacity: 1; } 100% { opacity: 0; transform: scale(1.6); } }
 
 .forge-toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); font-size: 13px; color: #fff; padding: 9px 16px; border-radius: 10px;
@@ -304,6 +322,8 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 }
 @media (prefers-reduced-motion: reduce) {
   .forge-panel, .forge-placed, .forge-panel > * { animation: none !important; }
+  .forge-thinking .orb, .forge-thinking .shimmer { animation: none; }
+  .forge-thinking .shimmer { color: #fff; background: none; }
   .forge-stagebody, .forge-footer { transition: none; }
   .forge-body .caret { animation: none; }
 }

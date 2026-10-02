@@ -89,8 +89,11 @@ function Stage({ f, step, title, body, children, primary, secondary, skip, back 
     return () => { clearInterval(t); removeEventListener("resize", place); };
   });
 
-  // a new stage: the card's rim flares
-  useEffect(() => { dispatchEvent(new Event("forge-stage")); }, [title]);
+  // a new stage: the card's rim flares (and, with GRILLME_PERF=1, a 5 s fps probe)
+  useEffect(() => {
+    dispatchEvent(new Event("forge-stage"));
+    void probeFps(`stage-${step}-${title.toLowerCase().replace(/[^a-z]+/g, "-").slice(0, 24)}`, 5000, () => ({ cpuMsPerFrame: f.world.workAvg() }));
+  }, [title]);
 
   // the main button throws a few embers as it's pressed
   const press = (btn: HTMLElement | null) => {
@@ -217,7 +220,15 @@ export function ForgeOnboarding() {
       front: (on) => { if (native()) void invoke("forge_front", { on }).catch(() => {}); },
     };
     world.onLite = () => toast("Using fewer effects: this computer is busy right now");
-    world.start();
+    // the embers start with the logo (after its heavy setup), or at once
+    let started = false;
+    const startWorld = () => {
+      if (started) return;
+      started = true;
+      world.start();
+      // measures what's on screen, from the first moving frame
+      void probeFps("forge-intro", 9000, () => ({ cpuMsPerFrame: world.workAvg(), ...((window as unknown as { __logoMarks?: Record<string, number> }).__logoMarks ?? {}) }));
+    };
     // only what's drawn is clickable: tell the app where that is, so clicks
     // on empty space fall through to the apps behind
     let lastHit = "";
@@ -233,7 +244,7 @@ export function ForgeOnboarding() {
       if (key !== lastHit) { lastHit = key; void invoke("forge_hit_rects", { rects }).catch(() => {}); }
     }, 120);
     const stopBlur = native() ? startBlurMask(rootRef.current!) : () => {};
-    void probeFps("forge-intro", 9000, () => ({ cpuMsPerFrame: world.workAvg() }));
+
     setF(forge);
     // first time in: the 3D wordmark arrives, shrinks to a point, and the
     // Spark is born there. Resuming mid-setup (a project reload) skips it.
@@ -241,12 +252,20 @@ export function ForgeOnboarding() {
       const first = firstRunStepOf(useApp.getState().appSettings.firstRunStep) === "welcome";
       if (first && logoRef.current) {
         rootRef.current?.classList.add("arriving");
-        const at = await playLogo3D(logoRef.current, LOGO_TEXT, reduce).catch(() => ({ x: innerWidth / 2, y: innerHeight * .3 }));
+        // the letters burn into embers that stream to one point; the Spark ignites there
+        const at = await playLogo3D(logoRef.current, LOGO_TEXT, reduce, (pts, to) => world.gatherInto(pts, to.x, to.y), startWorld)
+          .catch(() => ({ x: innerWidth / 2, y: innerHeight * .3 }));
+        startWorld();
         rootRef.current?.classList.remove("arriving");
-        world.sparkBorn(at.x, at.y);
-        world.burstAt(at.x, at.y, 40, 1);
-        await wait(500);
-      } else world.sparkBorn(innerWidth / 2, innerHeight * .2);
+        world.ignite(at.x, at.y);
+        const fl = flashRef.current;
+        if (fl && !reduce) {
+          fl.style.setProperty("--x", `${at.x}px`); fl.style.setProperty("--y", `${at.y}px`);
+          fl.classList.remove("on"); void fl.offsetWidth; fl.classList.add("on", "small");
+          window.setTimeout(() => fl.classList.remove("on", "small"), 800);
+        }
+        await wait(700);
+      } else { startWorld(); world.sparkBorn(innerWidth / 2, innerHeight * .2); }
       setReady(true);
     })();
     return () => { clearInterval(hitTimer); stopBlur(); world.stop(); document.documentElement.classList.remove("forge-on"); };
@@ -258,15 +277,23 @@ export function ForgeOnboarding() {
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches || location.search.includes("reduce-motion");
     const card = new GlassCard(backdropRef.current!, reduce);
     cardRef.current = card;
-    let raf = 0;
+    // follow the stage when it changes size or a new one arrives (not every
+    // frame: reading layout 60x a second forced extra layout work)
+    let observed: Element | null = null;
+    const ro = new ResizeObserver(() => follow());
     const follow = () => {
-      card.setRect(rootRef.current?.querySelector<HTMLElement>(".forge-panel")?.getBoundingClientRect() ?? null);
-      raf = requestAnimationFrame(follow);
+      const panel = rootRef.current?.querySelector<HTMLElement>(".forge-panel") ?? null;
+      if (panel !== observed) { if (observed) ro.unobserve(observed); if (panel) ro.observe(panel); observed = panel; }
+      card.setRect(panel?.getBoundingClientRect() ?? null);
     };
-    raf = requestAnimationFrame(follow);
-    const flare = () => card.pulse();
+    const mo = new MutationObserver(follow);
+    if (rootRef.current) mo.observe(rootRef.current.querySelector(".forge-ui") ?? rootRef.current, { childList: true, subtree: true });
+    const t = window.setInterval(follow, 400); // the panel's entry animation, window moves
+    follow();
+    addEventListener("resize", follow);
+    const flare = () => { follow(); card.pulse(); };
     addEventListener("forge-stage", flare);
-    return () => { cancelAnimationFrame(raf); removeEventListener("forge-stage", flare); card.stop(); cardRef.current = null; };
+    return () => { ro.disconnect(); mo.disconnect(); clearInterval(t); removeEventListener("resize", follow); removeEventListener("forge-stage", flare); card.stop(); cardRef.current = null; };
   }, []);
 
   // Esc / "Leave": always works, from anywhere
@@ -772,7 +799,7 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
     }
     lastAnswer.current = text;
     s.turns = [...s.turns, { who: "you", text: text.slice(0, MAX_ANSWER_CHARS) }];
-    setBusy(true); setError(null); setTip(undefined); setPushing(false);
+    setTyped(""); setBusy(true); setError(null); setTip(undefined); setPushing(false);
     try {
       const r = await aiTurn(brain, s.turns, s.profile, scan, { challenged: s.challenged, gentle });
       s.profile = r.profile;
@@ -792,15 +819,18 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
   const quick = () => { state.current.ai = false; state.current.i = 0; setError(null); setCount(0); ask(QUICK[0]); };
   const multi = !!q.multi && !state.current.ai;
   return (
-    <Stage f={f} step={step} instant={state.current.ai && count > 1}
+    <Stage f={f} step={step} instant={(state.current.ai && count > 1) || busy} back={!busy}
       title={`A few quick questions · ${Math.min(count, total)} of ${state.current.ai ? `up to ${total}` : total}`}
-      body={busy ? `${name} is thinking…` : error?.text || q.text}
-      primary={error ? (error.old ? { label: "Use quick questions", onClick: quick } : { label: "Try again", onClick: () => { setError(null); void answer(lastAnswer.current); } })
+      body={error?.text || q.text}
+      primary={busy ? undefined : error ? (error.old ? { label: "Use quick questions", onClick: quick } : { label: "Try again", onClick: () => { setError(null); void answer(lastAnswer.current); } })
         : multi ? { label: "Done", onClick: () => void answer([...picks, typed.trim()].filter(Boolean).join(", "), picks), disabled: picks.length === 0 && !typed.trim() }
         : typed.trim() ? { label: "Send", onClick: () => void answer(typed.trim()) } : undefined}
-      skip={error && !error.old ? { label: "Use quick questions", onClick: quick } : !error ? { label: "Skip the questions", onClick: () => onDone(state.current.profile, true) } : undefined}>
+      skip={busy ? undefined : error && !error.old ? { label: "Use quick questions", onClick: quick } : !error ? { label: "Skip the questions", onClick: () => onDone(state.current.profile, true) } : undefined}>
       {busy ? (
-        <div className="forge-said"><span className="who">You</span><p>{lastAnswer.current}</p><span className="dots" aria-label="Thinking"><i /><i /><i /></span></div>
+        <div className="forge-waiting">
+          <div className="forge-said"><span className="who">You</span><p>{lastAnswer.current}</p></div>
+          <Thinking name={name} />
+        </div>
       ) : !error ? (
         <>
           {pushing ? <div className="forge-push">Pushing back a little</div> : null}
@@ -837,6 +867,20 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
         </>
       ) : null}
     </Stage>
+  );
+}
+
+/** "Claude is thinking": a breathing orb, a shimmer, and (after a few
+ *  seconds) how long it's been, so a slow reply never looks stuck. */
+function Thinking({ name }: { name: string }) {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => { const t0 = Date.now(); const id = window.setInterval(() => setSecs(Math.floor((Date.now() - t0) / 1000)), 500); return () => clearInterval(id); }, []);
+  return (
+    <div className="forge-thinking" role="status" aria-live="polite">
+      <span className="orb" aria-hidden />
+      <span className="shimmer">{secs < 6 ? `${name} is thinking` : secs < 15 ? `${name} is still thinking` : `${name} is taking a while`}</span>
+      {secs >= 4 ? <span className="secs">{secs}s</span> : null}
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-// The stage's card: a 65% see-through glass panel with a living ember rim.
+// The stage's card: an 80% glass panel (20% see-through) with a living ember rim.
 // WebGL, on one small canvas around the stage, drawn under the diagrams so
 // they stay bright.
 //
@@ -67,9 +67,11 @@ void main() {
   vec3 glass = mix(vec3(.17, .1, .08), vec3(.045, .036, .055), clamp(g.y * .75 + g.x * .35, 0., 1.));
   glass += vec3(1., .8, .62) * .07 * (1. - smoothstep(0., uHalf.y * 1.1, p.y + uHalf.y));
   glass += heat(.45) * exp(min(d, 0.) / 9.) * (.05 + .3 * band);
-  float ga = .65 * cover;
+  float ga = .8 * cover;
   vec3 rgb = glass * ga; float a = ga;
 
+  // deep inside the card there's no rim to draw: skip the noise (most pixels)
+  if (d < -8.) { gl_FragColor = vec4(rgb, a) * uA; return; }
   // the rim: hairline, glow, and flame tongues outside
   float o = max(d, 0.);
   float core = exp(-d * d / 1.1);
@@ -183,7 +185,8 @@ export class GlassCard {
     this.canvas.style.opacity = "1";
 
     // size the canvas to the card plus its margin
-    const dpr = Math.min(devicePixelRatio || 1, 2);
+    // soft light doesn't need full Retina resolution: 1.5x draws ~45% fewer pixels
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
     let W = this.box.w + PAD_X * 2, H = this.box.h + PAD_Y * 2;
     if (this.squeeze > 0) {
       // first flatten to a bright line, then pull the line into a point
