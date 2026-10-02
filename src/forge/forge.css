@@ -370,3 +370,11 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 .gm-finish-setup:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(0,0,0,.32), 0 0 36px rgba(255, 120, 50, .55); }
 .gm-finish-setup .dot { width: 8px; height: 8px; border-radius: 50%; background: #fff4dc; box-shadow: 0 0 8px #fff; }
 .gm-finish-setup em { font-style: normal; font-weight: 500; opacity: .7; }
+
+/* a project is opening and the app is about to reload: fade the stage out */
+.forge.reloading .forge-panel, .forge.reloading canvas.forge-backdrop { opacity: 0 !important; transition: opacity .25s ease; }
+
+/* every tool found, by kind */
+.forge-alltools { display: flex; flex-direction: column; gap: 12px; width: 100%; max-height: 240px; overflow-y: auto; }
+.forge-alltools > div { display: flex; flex-direction: column; gap: 6px; }
+.forge-alltools .forge-tag { color: rgba(255,255,255,.88); background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.12); }

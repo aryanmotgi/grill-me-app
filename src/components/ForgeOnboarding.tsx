@@ -34,6 +34,8 @@ import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, buildingFromScan, emptyProfile, 
 // ---------------------------------------------------------------------------
 
 const native = () => "__TAURI_INTERNALS__" in window;
+/** Set while a project opens: the app reloads, and setup stays on this step until it does. */
+let holdStep: FirstRunStep | null = null;
 const REQUIRED = ["claude", "git", "python3"];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const STEP_NAMES: Record<string, string> = { welcome: "Welcome", setup: "Get set up", project: "Your project", tools: "Your tools", workflow: "Your workflow", finish: "Finish" };
@@ -170,7 +172,9 @@ function useTyped(f: Forge, text: string, instant = false): { text: string; done
 // =================================================================== the shell
 
 export function ForgeOnboarding() {
-  const step = useApp((s) => firstRunStepOf(s.appSettings.firstRunStep));
+  const savedStep = useApp((s) => firstRunStepOf(s.appSettings.firstRunStep));
+  // while a project opens (the app reloads), keep showing the step you're on
+  const step = holdStep ?? savedStep;
   const setAppSetting = useApp((s) => s.setAppSetting);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shadeRef = useRef<HTMLCanvasElement>(null);
@@ -629,9 +633,15 @@ function Project({ f, step }: SceneProps) {
   useEffect(() => {
     if (native()) void invoke<string[]>("discover_repos", { known: [] }).then((r) => setFound(r.slice(0, 5))).catch(() => {});
   }, []);
-  // opening a project reloads the app: save the next step first so setup resumes there
-  const openPath = async (p: string) => { setBusy(p); try { useApp.getState().setAppSetting("firstRunStep", nextStep(step)); await openProjectAt(p, warn); } catch (e) { warn(`${e}`); setBusy(""); } };
-  const openFolder = async () => { setBusy("folder"); useApp.getState().setAppSetting("firstRunStep", nextStep(step)); if (!(await addProjectFromFinder(warn))) { useApp.getState().setAppSetting("firstRunStep", step); setBusy(""); } };
+  // opening a project reloads the app: save the next step first so setup
+  // resumes there, but keep this step on screen (fading) until the reload,
+  // so the next one appears once, not twice
+  const hold = (on: boolean) => {
+    holdStep = on ? step : null;
+    document.querySelector(".forge")?.classList.toggle("reloading", on);
+  };
+  const openPath = async (p: string) => { setBusy(p); hold(true); try { useApp.getState().setAppSetting("firstRunStep", nextStep(step)); await openProjectAt(p, warn); } catch (e) { warn(`${e}`); hold(false); useApp.getState().setAppSetting("firstRunStep", step); setBusy(""); } };
+  const openFolder = async () => { setBusy("folder"); hold(true); useApp.getState().setAppSetting("firstRunStep", nextStep(step)); if (!(await addProjectFromFinder(warn))) { hold(false); useApp.getState().setAppSetting("firstRunStep", step); setBusy(""); } };
   const clone = async () => {
     const u = url.trim(); if (!u) return;
     setBusy("clone");
@@ -695,6 +705,7 @@ function Tools({ f, step }: SceneProps) {
   const [phase, setPhase] = useState<"ask" | "looking" | "done">("ask");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [showList, setShowList] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => () => { f.world.clearStars(); }, []);
   const look = async () => {
     setPhase("looking");
@@ -734,12 +745,25 @@ function Tools({ f, step }: SceneProps) {
   }
   const agents = constellationFromScan(result).stars.filter((s) => s.kind === "agent").length;
   const tools = toolCount(result);
+  // every tool found, by kind (the picture shows the busiest few per AI)
+  const ext = result?.extensions;
+  const uniq = (xs: { name: string }[] = []) => [...new Set(xs.map((x) => x.name))].sort((a, b) => a.localeCompare(b));
+  const kinds: [string, string[]][] = [["MCP servers", uniq(ext?.mcp)], ["Plugins", uniq(ext?.plugins)], ["Skills", uniq(ext?.skills)]];
+  const split = kinds.filter(([, xs]) => xs.length).map(([k, xs]) => `${xs.length} ${k.toLowerCase()}`).join(", ");
   return (
     <Stage f={f} step={step} viewHeight={320}
       title="Your tools"
-      body={`Found ${agents === 1 ? "1 AI agent" : `${agents} AI agents`} and ${tools} tools on this Mac.`}
+      body={`Found ${agents === 1 ? "1 AI agent" : `${agents} AI agents`} and ${tools} tools on this Mac${split ? `: ${split}` : ""}. The picture shows the main ones for each AI.`}
       primary={{ label: "Continue", onClick: () => f.go(nextStep(step)) }}
+      secondary={tools ? { label: showAll ? "Hide the list" : `See all ${tools}`, onClick: () => setShowAll(!showAll) } : undefined}
       note={<button type="button" className="forge-link" onClick={() => setShowList(!showList)}>{showList ? "Hide what I read" : "What did you read?"}</button>}>
+      {showAll ? (
+        <div className="forge-alltools">
+          {kinds.filter(([, xs]) => xs.length).map(([k, xs]) => (
+            <div key={k}><div className="forge-label">{k} · {xs.length}</div><div className="forge-tags">{xs.map((x) => <span key={x} className="forge-tag">{x}</span>)}</div></div>
+          ))}
+        </div>
+      ) : null}
       {showList && result ? <ul className="forge-read">{result.checked.map((c, i) => <li key={i}>{c.item}</li>)}</ul> : null}
     </Stage>
   );
@@ -863,19 +887,35 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
       setError({ text: `${name} couldn't answer: ${errorText(e)}`, old: isTooOld(e) });
     }
   };
+  // "Say it another way": the same question in simpler words (no new turn)
+  const rephrase = async () => {
+    const s2 = state.current;
+    if (busy || !s2.ai) return;
+    lastAnswer.current = "";
+    setBusy(true); setError(null);
+    try {
+      const r = await aiTurn(brain, s2.turns, s2.profile, scan, { rephrase: true, challenged: s2.challenged, gentle });
+      s2.turns = [...s2.turns.slice(0, -1), { who: "ai", text: r.say }];
+      setBusy(false);
+      setQ({ ...q, text: r.say, options: r.options });
+    } catch (e) {
+      setBusy(false);
+      setError({ text: `${name} couldn't answer: ${errorText(e)}`, old: isTooOld(e) });
+    }
+  };
   const quick = () => { state.current.ai = false; state.current.i = 0; setError(null); setCount(0); ask(QUICK[0]); };
   const multi = !!q.multi && !state.current.ai;
   return (
     <Stage f={f} step={step} instant={(state.current.ai && count > 1) || busy} back={!busy}
       title={`A few quick questions · ${Math.min(count, total)} of ${state.current.ai ? `up to ${total}` : total}`}
       body={error?.text || q.text}
-      primary={busy ? undefined : error ? (error.old ? { label: "Use quick questions", onClick: quick } : { label: "Try again", onClick: () => { setError(null); void answer(lastAnswer.current); } })
+      primary={busy ? undefined : error ? (error.old ? { label: "Use quick questions", onClick: quick } : { label: "Try again", onClick: () => { setError(null); void (lastAnswer.current ? answer(lastAnswer.current) : rephrase()); } })
         : multi ? { label: "Done", onClick: () => void answer([...picks, typed.trim()].filter(Boolean).join(", "), picks), disabled: picks.length === 0 && !typed.trim() }
         : typed.trim() ? { label: "Send", onClick: () => void answer(typed.trim()) } : undefined}
       skip={busy ? undefined : error && !error.old ? { label: "Use quick questions", onClick: quick } : !error ? { label: "Skip the questions", onClick: () => onDone(state.current.profile, true) } : undefined}>
       {busy ? (
         <div className="forge-waiting">
-          <div className="forge-said"><span className="who">You</span><p>{lastAnswer.current}</p></div>
+          {lastAnswer.current ? <div className="forge-said"><span className="who">You</span><p>{lastAnswer.current}</p></div> : null}
           <Thinking name={name} />
         </div>
       ) : !error ? (
@@ -906,6 +946,9 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
                 void answer(multi ? [...picks, typed.trim()].join(", ") : typed.trim(), multi ? [...picks, typed.trim()] : []);
               }} />
           </div>
+          {state.current.ai && count > 1 ? (
+            <button type="button" className="forge-link forge-gentle" onClick={() => void rephrase()}>Say it another way</button>
+          ) : null}
           {state.current.ai ? (
             <button type="button" className={`forge-link forge-gentle ${gentle ? "on" : ""}`} aria-pressed={gentle} onClick={() => { setGentle(!gentle); setPushing(false); }}>
               {gentle ? "Going easy on you · grill me after all" : "Go easy on me"}

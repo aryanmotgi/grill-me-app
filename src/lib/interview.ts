@@ -85,6 +85,7 @@ const describe = (list: { id: string; label: string }[]) => list.map((c) => `${c
 export const SYSTEM_PROMPT = [
   "You are Grill Me, a senior engineer having a quick setup chat with a developer. Your goal: find out, concretely, where their time really goes.",
   "Ask ONE question at a time, under 25 words, plain and specific. Sound like a sharp colleague who gets it, not a survey.",
+  "Use everyday words. No jargon (\"scope creep\", \"bottleneck\", \"CI\", \"flaky\", \"tech debt\"…) unless they used that word first; say what you mean instead (\"the task keeps growing\" not \"scope creep\").",
   "Use what the scan shows instead of asking. Never ask what they're building or which AI tools they use.",
   "Flow: team size is already asked. Next ask what slows them down most. Then dig into the biggest pain once or twice: the concrete moment, the tool, what they've tried (e.g. \"Breaks only on Vercel, or locally too?\"). If there's room, touch a second pain. Then wrap up.",
   "Don't ask how they use AI as its own question; record style if they mention it.",
@@ -144,6 +145,8 @@ export interface PromptOpts {
   challenged?: boolean;
   /** "go easy on me": no challenges at all */
   gentle?: boolean;
+  /** they didn't get the last question: ask the same thing more simply */
+  rephrase?: boolean;
 }
 
 export function buildPrompt(turns: Turn[], profile: WorkflowProfile, scan?: ScanResult | null, opts: PromptOpts = {}): string {
@@ -160,7 +163,9 @@ export function buildPrompt(turns: Turn[], profile: WorkflowProfile, scan?: Scan
     opts.gentle ? "They asked you to go easy: no challenges." : opts.challenged ? "You already challenged them once: no more challenges." : "",
     tipsLeft ? (given.length ? `Tips already given (never repeat): ${given.join(", ")}.` : "") : "No more tips in this chat: set tip to null.",
   ].filter(Boolean).join("\n");
-  const next = correction !== undefined
+  const next = opts.rephrase
+    ? "The developer didn't understand your last question. Ask the SAME thing again in plain, simple words (no jargon), with simpler options. Don't move on to a new topic. Fields and notes stay as they are; done=false."
+    : correction !== undefined
     ? `You already summed up: "${profile.summary ?? ""}". The developer corrected it: "${correction.slice(0, MAX_ANSWER_CHARS)}". Update the fields and notes, write the corrected summary, and set done=true.`
     : answers >= MAX_ANSWERS - 1 ? "This is the last turn: fill what you can and set done=true."
     : answers >= 4 ? (opts.challenged || opts.gentle

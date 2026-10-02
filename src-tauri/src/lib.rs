@@ -1564,6 +1564,19 @@ fn git_revert_file(repo_path: String, file: String) -> Result<(), String> {
 }
 
 #[cfg(test)]
+mod parent_env_tests {
+    #[test]
+    fn drops_only_claude_code_session_markers() {
+        for k in ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT"] {
+            assert!(super::is_parent_agent_var(k), "{k}");
+        }
+        for k in ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR", "PATH", "HOME"] {
+            assert!(!super::is_parent_agent_var(k), "{k}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod checkpoint_tests {
     use super::{checkpoint_branch_guard, fmt_unix_utc};
 
@@ -4604,7 +4617,25 @@ pub(crate) fn apply_glass(window: &tauri::WebviewWindow) {
     let _ = window;
 }
 
+/// Started from inside a Claude Code session (a terminal tab, `npm run tauri
+/// dev`, a script), Grill Me inherits that session's CLAUDE_CODE_* markers,
+/// and every agent it starts then thinks it's a child session: it stops
+/// saving transcripts (so the chat view stays empty) and reports to the
+/// wrong parent. Drop them once, before anything is spawned.
+pub fn is_parent_agent_var(k: &str) -> bool {
+    k == "CLAUDECODE" || k == "CLAUDE_PID" || k == "CLAUDE_EFFORT" || k.starts_with("CLAUDE_CODE_")
+}
+fn scrub_parent_agent_env() {
+    for (k, _) in std::env::vars() {
+        if is_parent_agent_var(&k) {
+            // first thing in run(), before any thread is started
+            std::env::remove_var(&k);
+        }
+    }
+}
+
 pub fn run() {
+    scrub_parent_agent_env();
     tauri::Builder::default()
         .on_window_event(|window, event| {
             // Closing the window (red button / ⌘W on the last window) must reap
