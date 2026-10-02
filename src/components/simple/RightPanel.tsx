@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "../../store";
 import { useBridge } from "../BridgePanel";
 import { pendingCount } from "../../lib/bridge";
@@ -14,13 +14,15 @@ import { kTokens, money, sessionStats } from "../../lib/coach";
 import { submitToAgent } from "../../lib/ptyReady";
 import { ptyIdFor } from "../../store";
 import { useTests } from "../../lib/testsStore";
+import { ago, goBack, lastTurn, listSavePoints, savePoint, useSavePoints, type SavePoint } from "../../lib/savepoints";
 import { automationOn, withAutomation } from "../../lib/automations";
 import { rightTabOf, type RightTab } from "../../lib/uiLayout";
 import type { Teammate } from "../../types";
 
 // ---------------------------------------------------------------------------
 // Simple layout, right column. On top, "This session": what it cost, how
-// heavy it's getting, a save point, and what Grill Me is guarding. Below,
+// heavy it's getting, undo (a save point is taken before every message),
+// whether the tests still pass, and what Grill Me is guarding. Below,
 // four tabs that replace ~a dozen classic surfaces. Changes = the code
 // (diffs + every file). Preview = the app it's building. Plan = what the
 // team agreed (tasks, decisions). Team = people (approvals, chat).
@@ -64,23 +66,69 @@ function TestsLine({ id }: { id: string }) {
   );
 }
 
-/** What a bare terminal never shows you: spend, weight, a save point, and the guard rails. */
-function SessionCard({ active }: { active: Teammate | undefined }) {
-  const checkpointNow = useApp((s) => s.checkpointNow);
+/** Every save point for this folder, newest first; any one is a click away. */
+function History({ repo, onClose }: { repo: string; onClose: () => void }) {
+  const rev = useSavePoints((s) => s.rev);
   const toast = useApp((s) => s.toast);
-  const [saving, setSaving] = useState(false);
+  const [points, setPoints] = useState<SavePoint[] | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  useEffect(() => { void listSavePoints(repo).then(setPoints); }, [repo, rev]);
+  const go = async (p: SavePoint) => {
+    try { toast(await goBack(repo, p.id)); onClose(); } catch (e) { toast(`Couldn't go back: ${e}`, "warn"); }
+  };
+  return (
+    <>
+      <div className="fixed inset-0 z-30" onClick={onClose} />
+      <div className="composer-menu absolute right-3 top-full mt-1 z-40 w-[300px] max-h-[360px] overflow-y-auto rounded-xl p-1.5 rise">
+        <div className="px-2.5 pt-1.5 pb-1 text-[10.5px] tracking-[0.12em] text-faint uppercase">Save points</div>
+        {points === null ? <div className="px-2.5 py-2 text-[12px] text-faint">Loading…</div> : null}
+        {points?.length === 0 ? <div className="px-2.5 py-2 text-[12px] text-faint">None yet. One is saved before every message you send.</div> : null}
+        {points?.map((p) => (
+          <div key={p.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-raised">
+            <span className="flex-1 min-w-0">
+              <span className="block text-[12px] text-ink truncate" title={p.label}>{p.label}</span>
+              <span className="block text-[10.5px] text-faint">{ago(p.at)}</span>
+            </span>
+            {confirm === p.id ? (
+              <button className="btn text-warn flex-none" title="Your current files are saved first, so this can be undone too" onClick={() => void go(p)}>Sure?</button>
+            ) : (
+              <button className="btn flex-none" onClick={() => setConfirm(p.id)}>Go back</button>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** What a bare terminal never shows you: spend, weight, undo, and the guard rails. */
+function SessionCard({ active }: { active: Teammate | undefined }) {
+  const toast = useApp((s) => s.toast);
+  const repo = useApp((s) => s.members.find((m) => m.id === active?.id)?.repoPath ?? "");
+  const rev = useSavePoints((s) => s.rev);
+  const [busy, setBusy] = useState("");
+  const [history, setHistory] = useState(false);
+  const [undo, setUndo] = useState<SavePoint | undefined>();
+  useEffect(() => { void listSavePoints(repo).then((p) => setUndo(lastTurn(p))); }, [repo, rev]);
   if (!active) return null;
   const st = sessionStats(active);
   const changed = active.changes.length;
   const save = async () => {
-    setSaving(true);
-    try { await checkpointNow(); } finally { setSaving(false); }
+    setBusy("save");
+    try { await savePoint(repo, "Saved by you"); toast("Saved. Go back to it any time from Save points."); }
+    catch (e) { toast(`Couldn't save: ${e}`, "warn"); }
+    finally { setBusy(""); }
+  };
+  const undoTurn = async () => {
+    if (!undo) return;
+    setBusy("undo");
+    try { toast(await goBack(repo, undo.id)); } catch (e) { toast(`Couldn't undo: ${e}`, "warn"); } finally { setBusy(""); }
   };
   const compact = () => void submitToAgent(ptyIdFor(active.id), "/compact")
     .then(() => toast("Compacting: the session keeps the gist and each message gets cheaper"))
     .catch((e) => toast(`Couldn't compact: ${e}`, "warn"));
   return (
-    <div className="flex-none border-b border-line px-3 py-3 flex flex-col gap-2.5">
+    <div className="flex-none border-b border-line px-3 py-3 flex flex-col gap-2.5 relative">
       <div className="flex items-center gap-2">
         <span className="text-[11px] tracking-[0.12em] uppercase text-faint font-semibold flex-1 truncate">This session</span>
         {st ? <span className="text-[10.5px] text-faint capitalize" title={active.usage.model}>{st.family === "other" ? active.usage.model : st.family}</span> : null}
@@ -91,17 +139,27 @@ function SessionCard({ active }: { active: Teammate | undefined }) {
           title={st ? `Each message re-reads about ${kTokens(st.perTurn)} tokens (${money(st.nextMsg)}).` : "Shows after the first reply"} />
         <Stat label={changed === 1 ? "file changed" : "files changed"} value={String(changed)} />
       </div>
-      <div className="flex gap-1.5">
-        <button className="btn flex-1 justify-center" disabled={saving} onClick={() => void save()}
-          title="Commit everything now on this branch (never main, never pushed), so you can always get back here">
-          <Icon name="commit" size={11} /> {saving ? "Saving…" : "Save point"}
-        </button>
-        {st?.heavy ? (
-          <button className="btn flex-1 justify-center text-warn" onClick={compact} title="Summarize the conversation so each message costs less">
-            Compact
+      {repo ? (
+        <div className="flex gap-1.5">
+          <button className="composer-btn h-8 flex-1 justify-center text-[12px] px-2" disabled={!undo || !!busy} onClick={() => void undoTurn()}
+            title={undo ? `Put every file back the way it was ${undo.label.toLowerCase()} (your current files are saved first)` : "Nothing to undo yet. A save point is made before every message you send."}>
+            {busy === "undo" ? "Undoing…" : "Undo last turn"}
           </button>
-        ) : null}
-      </div>
+          <button className="composer-btn h-8 flex-1 justify-center text-[12px] px-2" disabled={!!busy} onClick={() => void save()}
+            title="Snapshot every file now. Never touches your branch or commits, works on main too.">
+            <Icon name="commit" size={11} /> {busy === "save" ? "Saving…" : "Save point"}
+          </button>
+          <button className={`composer-btn h-8 w-8 justify-center px-0 ${history ? "on" : ""}`} title="All save points" aria-label="All save points" onClick={() => setHistory(!history)}>
+            <Icon name="clock" size={12} />
+          </button>
+        </div>
+      ) : null}
+      {history && repo ? <History repo={repo} onClose={() => setHistory(false)} /> : null}
+      {st?.heavy ? (
+        <button className="composer-btn h-8 justify-center text-[12px] text-warn" onClick={compact} title="Summarize the conversation so each message costs less">
+          Heavy context: compact it to cut cost
+        </button>
+      ) : null}
       <TestsLine id={active.id} />
       <div className="flex items-center gap-1.5 text-[10.5px] text-faint"
         title="Risky commands (force-push to main, rm -rf, DROP TABLE…) are blocked even with permissions skipped. You get a ping when the agent needs you.">

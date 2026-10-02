@@ -4,6 +4,7 @@ import { useAutoGrow } from "../hooks/useAutoGrow";
 import { uiLayoutOf } from "../lib/uiLayout";
 import { promptHints } from "../lib/coach";
 import { useFanOutDraft } from "./FanOut";
+import { saveBeforeSend } from "../lib/savepoints";
 import { ptyIdFor, useApp } from "../store";
 import { deliverBriefWhenReady } from "../lib/ptyReady";
 import type { AgentId } from "../data/sources/git";
@@ -156,6 +157,7 @@ export function NewSession() {
       const brief0 = agent === "claude" && grill ? grillPrefix(grill, hoursLeft) + (plan ? PLAN_PREFIX : "") + playbook0 + body : (plan ? PLAN_PREFIX : "") + playbook0 + body;
       useApp.getState().setActive(folderSession.id);
       usePendingChat.getState().add(folderSession.id, body);
+      saveBeforeSend(folderSession.repoPath, body);
       setText(""); setSkill(null); setBusy(false);
       void deliverBriefWhenReady(ptyIdFor(folderSession.id), brief0).then((ok) => { if (!ok) toast("The session didn't get ready in time. Try sending again from its chat.", "warn"); });
       return;
@@ -342,7 +344,7 @@ export function NewSession() {
 /** What you get here that a bare terminal never gives you. Shown until dismissed. */
 const PERKS: { icon: string; title: string; body: string }[] = [
   { icon: "eye", title: "See every change", body: "Each file it touches, as a diff, while it works. Explain turns it into plain English." },
-  { icon: "commit", title: "Save points", body: "One click commits your work on its branch, so a bad turn never costs you good code." },
+  { icon: "commit", title: "Undo any turn", body: "Every message you send is a save point. Agent broke something? One click puts your files back." },
   { icon: "bulb", title: "Know what it costs", body: "Live spend per session, and tips before you send that cut wasted turns." },
   { icon: "swap", title: "Work in parallel", body: "Paste a checklist: one agent per task, side by side, each on its own branch." },
   { icon: "bell", title: "Pinged when it needs you", body: "Walk away. You get a ping the moment an agent asks a question or gets stuck." },

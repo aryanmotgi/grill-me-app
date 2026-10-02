@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 import { activeToken } from "../lib/composer";
 import { QUICK_ASKS, promptHints, sessionStats, type Hint } from "../lib/coach";
 import { useFanOutDraft } from "./FanOut";
+import { saveBeforeSend } from "../lib/savepoints";
 
 // ---------------------------------------------------------------------------
 // Monocode-style composer under the terminal. Multiline prompt (Enter sends,
@@ -95,6 +96,8 @@ export function Composer({ mateId }: { mateId: string }) {
     try {
       // show it in the chat now; the transcript catches up a moment later
       usePendingChat.getState().add(mateId, text);
+      // a save point first, so this turn can be undone
+      saveBeforeSend(member?.repoPath, text);
       await submitToAgent(ptyIdFor(mateId), text);
       if (quick) return;
       setDraft("");
