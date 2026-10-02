@@ -12,10 +12,14 @@
 import type { InterviewBrain } from "./aiConnect";
 import type { ScanResult } from "./scan";
 import {
-  AGENTS, BUILDING, MAX_MENTIONS, MAX_NOTES, MAX_PAINS, PAINS, STYLE, TEAM, agentsFromScan, buildingFromScan, mentionsOf, notesOf, profileOf,
-  type AiStyle, type Note, type TeamSize, type WorkflowProfile,
+  AGENTS, BUILDING, LEVELS, MAX_MENTIONS, MAX_NOTES, MAX_PAINS, PAINS, STYLE, TEAM, agentsFromScan, buildingFromScan, levelFromScan, mentionsOf, notesOf, profileOf,
+  type AiStyle, type Level, type Note, type TeamSize, type WorkflowProfile,
 } from "./profile";
 import type { SolveTag } from "./catalog";
+import { TIPS, tipById, tipMenu, type Tip } from "./tips";
+
+/** At most this many tips per interview, and one challenge. */
+export const MAX_TIPS = 2;
 
 export interface Turn { who: "ai" | "you"; text: string }
 
@@ -67,10 +71,13 @@ export const REPLY_SCHEMA = {
       },
     },
     mentions: { type: "array", items: { type: "string" }, maxItems: 6, description: "Tools, services or vendors named in their LAST answer, lowercase one word each (vercel, linear, postgres)." },
-    summary: { type: "string", description: "Only when done: two sentences, to them, on how they work and where their time goes. Otherwise empty." },
+    summary: { type: "string", description: "Only when done: two sentences, to them, describing how they work and where their time goes. No advice, no predictions. Otherwise empty." },
+    level: { type: ["string", "null"], enum: [...LEVELS, null], description: "How experienced they seem: new, mid or senior." },
+    tip: { type: ["string", "null"], enum: [...TIPS.map((t) => t.id), null], description: "A tip id from the menu that fits the problem they just described, or null." },
+    challenge: { type: "boolean", description: "True only if `say` gently pushes back on a habit of theirs." },
     done: { type: "boolean" },
   },
-  required: ["say", "options", "building", "team", "style", "pains", "agents", "notes", "mentions", "summary", "done"],
+  required: ["say", "options", "building", "team", "style", "pains", "agents", "notes", "mentions", "summary", "level", "tip", "challenge", "done"],
 } as const;
 
 const describe = (list: { id: string; label: string }[]) => list.map((c) => `${c.id} (${c.label})`).join(", ");
@@ -82,7 +89,10 @@ export const SYSTEM_PROMPT = [
   "Flow: team size is already asked. Next ask what slows them down most. Then dig into the biggest pain once or twice: the concrete moment, the tool, what they've tried (e.g. \"Breaks only on Vercel, or locally too?\"). If there's room, touch a second pain. Then wrap up.",
   "Don't ask how they use AI as its own question; record style if they mention it.",
   "options: 2 to 5 likely answers to your exact question, in their situation (they can always type instead). Use [] for open questions.",
-  "No advice or tool recommendations: Grill Me does that after the chat. If they ask you something, answer in one short sentence, then continue.",
+  "`say` is only ever a question (or the final thanks): never a fix, a suggestion, \"have you tried…\" or \"set up X\". Tools come after the chat; advice goes in `tip`. If they ask you something, answer in one short sentence, then ask your question.",
+  "Tips: when their LAST answer describes a concrete problem, you may set `tip` to the ONE id from the tip menu that fits exactly what they just said (not their pain in general). Grill Me shows the tip; don't repeat it in `say`. Never a tip already given; skip it when nothing fits well.",
+  "Grill them, gently: once in the chat, when their own answers show a habit that causes their pain, you should challenge it (rerunning flaky tests until green, fixing every PR themselves, skipping the error log), ask one kind, curious question that challenges it, e.g. \"What would it take to send that back with a failing test instead?\" A question, never a lecture. Set challenge=true on that turn only.",
+  "Talk to their level. new: plain words, no jargon (explain any term in a few words), warm and encouraging. mid: normal. senior: short, direct and technical; skip the basics. Set `level` from how they write and what they describe.",
   "notes: only NEW facts from their last answer, as a short first-person quote in their words (\"I review most PRs myself\"), tagged `about` with the pain they relate to (or null). mentions: tools/vendors named in their last answer.",
   "Fill the fields from everything said so far. Use null or [] when unknown; never guess.",
   `building: ${describe(BUILDING)}.`,
@@ -90,7 +100,7 @@ export const SYSTEM_PROMPT = [
   `style (how they use AI to code): ${describe(STYLE)}.`,
   `pains (what slows them down, most important first, max ${MAX_PAINS}): ${describe(PAINS)}.`,
   `agents (AI coding tools they use): ${describe(AGENTS)}.`,
-  "Set done=true once you know their top pain and have dug into it at least once, or when they want to stop. When done: `say` is a one-line thanks and `summary` is two sentences to them (\"You…\") with their specifics. Otherwise `summary` is \"\".",
+  "Set done=true once you know their top pain and have dug into it at least once, or when they want to stop. When done: `say` is only a short thank-you (no tip, no fix, no \"one thing to try\") and `summary` is two sentences to them (\"You…\") describing how they work and where their time goes, with their specifics. Describe, never prescribe: no \"the fix is…\", no advice, no promises. Otherwise `summary` is \"\".",
 ].join("\n");
 
 const TEST_TOOLS = ["vitest", "jest", "playwright", "@playwright/test", "cypress", "pytest", "testcontainers", "testcontainers-go", "mocha", "rspec"];
@@ -127,26 +137,48 @@ export function knownFromScan(scan?: ScanResult | null): string[] {
 const fieldsOf = (p: WorkflowProfile) => ({ team: p.team ?? null, style: p.style ?? null, pains: p.pains, agents: p.agents, building: p.building ?? null });
 
 /** The per-turn prompt: known facts, fields and notes so far, the whole chat. */
-export function buildPrompt(turns: Turn[], profile: WorkflowProfile, scan?: ScanResult | null, correction?: string): string {
+export interface PromptOpts {
+  /** the developer's correction to the read-back */
+  correction?: string;
+  /** a challenge was already asked */
+  challenged?: boolean;
+  /** "go easy on me": no challenges at all */
+  gentle?: boolean;
+}
+
+export function buildPrompt(turns: Turn[], profile: WorkflowProfile, scan?: ScanResult | null, opts: PromptOpts = {}): string {
+  const { correction } = opts;
   const known = knownFromScan(scan);
   const chat = turns.map((t) => `${t.who === "ai" ? "Grill Me" : "Developer"}: ${t.text.slice(0, MAX_ANSWER_CHARS)}`).join("\n");
   const answers = turns.filter((t) => t.who === "you").length;
   const notes = (profile.notes ?? []).map((n) => `- ${n.text}`).join("\n");
+  const level = profile.level ?? levelFromScan(scan);
+  const given = profile.tips ?? [];
+  const tipsLeft = correction === undefined && given.length < MAX_TIPS;
+  const rules = [
+    level ? `Their level so far: ${level}${profile.level ? "" : " (a guess from the scan)"}.` : "",
+    opts.gentle ? "They asked you to go easy: no challenges." : opts.challenged ? "You already challenged them once: no more challenges." : "",
+    tipsLeft ? (given.length ? `Tips already given (never repeat): ${given.join(", ")}.` : "") : "No more tips in this chat: set tip to null.",
+  ].filter(Boolean).join("\n");
   const next = correction !== undefined
     ? `You already summed up: "${profile.summary ?? ""}". The developer corrected it: "${correction.slice(0, MAX_ANSWER_CHARS)}". Update the fields and notes, write the corrected summary, and set done=true.`
     : answers >= MAX_ANSWERS - 1 ? "This is the last turn: fill what you can and set done=true."
-    : answers >= 4 ? "You likely know enough. Unless their top pain is still vague, wrap up now (done=true)."
+    : answers >= 4 ? (opts.challenged || opts.gentle
+      ? "You likely know enough. Unless their top pain is still vague, wrap up now (done=true)."
+      : "You likely know enough. If their answers show a habit worth challenging, ask that one question first; otherwise wrap up now (done=true).")
     : "Write your next turn.";
   return [
     known.length ? `What the scan of their computer shows (don't ask about these):\n- ${known.join("\n- ")}` : "",
     `Fields so far: ${JSON.stringify(fieldsOf(profile))}`,
     notes ? `Notes so far (don't repeat):\n${notes}` : "",
+    rules,
+    tipsLeft ? `Tip menu:\n${tipMenu()}` : "",
     `Conversation:\n${chat}`,
     next,
   ].filter(Boolean).join("\n\n");
 }
 
-export interface Reply { say: string; options: string[]; done: boolean; summary: string; profile: WorkflowProfile }
+export interface Reply { say: string; options: string[]; done: boolean; summary: string; tip?: Tip; challenge: boolean; profile: WorkflowProfile }
 
 /** Validate the AI's reply and fold it into the profile. Fields the AI left
  *  empty keep what we had; anything outside the allowed values is dropped. */
@@ -163,14 +195,21 @@ export function mergeReply(profile: WorkflowProfile, raw: unknown): Reply {
     notes: addNotes(profile.notes ?? [], notesOf(r.notes)),
     mentions: [...new Set([...(profile.mentions ?? []), ...mentionsOf(r.mentions)])].slice(0, MAX_MENTIONS),
     summary: summary || profile.summary,
+    level: LEVELS.includes(r.level as Level) ? (r.level as Level) : profile.level,
+    tips: profile.tips ?? [],
     source: "interview",
     updated: profile.updated,
   };
+  // a tip only if it's new, fits a pain they've actually got, and there's room
+  const t = tipById(r.tip);
+  const fits = !!t && (next.pains.includes(t.pain) || (next.notes ?? []).some((n) => n.about === t.pain));
+  const tip = t && fits && !next.tips!.includes(t.id) && next.tips!.length < MAX_TIPS ? t : undefined;
+  if (tip) next.tips = [...next.tips!, tip.id];
   const say = typeof r.say === "string" && r.say.trim() ? r.say.trim().slice(0, 400) : "Got it. What else slows you down?";
   const options = Array.isArray(r.options)
-    ? r.options.filter((o): o is string => typeof o === "string" && o.trim().length > 0).map((o) => o.trim().slice(0, 60)).slice(0, 5)
+    ? r.options.filter((o): o is string => typeof o === "string" && /[a-z0-9]/i.test(o)).map((o) => o.trim().slice(0, 60)).slice(0, 5)
     : [];
-  return { say, options: r.done === true ? [] : options, done: r.done === true, summary, profile: next };
+  return { say, options: r.done === true ? [] : options, done: r.done === true, summary, tip, challenge: r.challenge === true && r.done !== true, profile: next };
 }
 
 /** New notes, minus ones that say mostly the same as one we have, capped. */
