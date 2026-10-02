@@ -6,11 +6,12 @@ import { Toasts } from "./Chrome";
 import { runDoctor, type DoctorCheck } from "./DoctorTab";
 import { CONSENT_ITEMS } from "./InstallConsent";
 import { SCAN_SOURCES, scanSummary, type ScanResult } from "../lib/scan";
+import { pickBrain, readyAis, statusLabel, type AiId, type AiStatus } from "../lib/aiConnect";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 
 // ---------------------------------------------------------------------------
-// First-run setup: five short steps from "just installed" to "typing my first
+// First-run setup: seven short steps from "just installed" to "typing my first
 // task". Every step says what it does and why, nothing installs or changes
 // without a click, Back always works, and the step is saved so quitting (or
 // the reload that opening a project does) picks up where you left off.
@@ -18,8 +19,9 @@ import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type F
 
 const native = () => "__TAURI_INTERNALS__" in window;
 
-/** The checks a session can't run without. Optional extras live in Settings. */
-const REQUIRED_IDS = ["claude", "claude-login", "git", "python3"];
+/** The checks a session can't run without. Optional extras live in Settings.
+ *  Signing in to an AI is its own step ("Connect your AI"). */
+const REQUIRED_IDS = ["claude", "git", "python3"];
 
 function useStep(): [FirstRunStep, (s: FirstRunStep) => void] {
   const step = useApp((s) => firstRunStepOf(s.appSettings.firstRunStep));
@@ -179,7 +181,142 @@ function Check({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 3. Pick your project -----------------------------------------------------
+// -- 3. Connect your AI ---------------------------------------------------------
+
+const LOGIN_POLL_MS = 3000;
+const LOGIN_GIVE_UP_MS = 10 * 60_000;
+
+async function aiStatus(ids?: AiId[]): Promise<AiStatus[]> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<AiStatus[]>("ai_status", { ids: ids ?? null });
+}
+
+function AiRow({ r, chosen, onChoose, onSignedIn }: { r: AiStatus; chosen: boolean; onChoose: () => void; onSignedIn: (r: AiStatus) => void }) {
+  const toast = useApp((s) => s.toast);
+  const [waiting, setWaiting] = useState(false);
+  const [note, setNote] = useState("");
+  const ready = r.installed && r.signedIn === true;
+
+  // while a sign-in is open, re-check this AI every few seconds so the row
+  // turns green on its own the moment the browser login lands
+  useEffect(() => {
+    if (!waiting) return;
+    const started = Date.now();
+    const t = window.setInterval(() => {
+      if (Date.now() - started > LOGIN_GIVE_UP_MS) {
+        setWaiting(false);
+        setNote("Didn't see a sign-in. Try again, or use the quick form.");
+        return;
+      }
+      void aiStatus([r.id]).then(([now]) => {
+        if (now?.signedIn === true) {
+          setWaiting(false);
+          setNote("");
+          onSignedIn(now);
+          toast(`${r.name} connected`);
+        }
+      }).catch(() => {});
+    }, LOGIN_POLL_MS);
+    return () => window.clearInterval(t);
+  }, [waiting]);
+
+  const signIn = async () => {
+    setWaiting(true);
+    setNote(r.id === "gemini" ? "Gemini opened in Terminal. Pick “Sign in with Google” there." : "Finish signing in in your browser. We'll notice when you're done.");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke<string>("ai_login", { id: r.id });
+    } catch (e) {
+      // the login exited early; the poll may still have caught a success
+      const [now] = await aiStatus([r.id]).catch(() => []);
+      if (now?.signedIn !== true) { setWaiting(false); setNote(`${e}`); }
+    }
+  };
+
+  return (
+    <div className={`hairline rounded-lg px-4 py-3 flex items-start gap-3 bg-panel/60 ${chosen ? "border-accent/60" : ""}`}>
+      <span className={`mt-0.5 flex-none w-5 h-5 rounded-full flex items-center justify-center ${ready ? "bg-ok/15 text-ok" : "bg-raised text-faint"}`}>
+        <Icon name={ready ? "check" : "cross"} size={11} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[13.5px] font-medium text-ink">{r.name}</span>
+          <span className={`text-[11.5px] ${ready ? "text-ok" : "text-faint"}`}>{statusLabel(r)}</span>
+          <span className="flex-1" />
+          {ready ? (
+            <label className="flex items-center gap-1.5 text-[12px] text-dim cursor-pointer">
+              <input type="radio" name="interview-ai" className="accent-(--accent)" checked={chosen} onChange={onChoose} />
+              Use for the interview
+            </label>
+          ) : r.installed ? (
+            <button className="btn primary" disabled={waiting} onClick={() => void signIn()}>
+              {waiting ? <span className="spinner" /> : null} {waiting ? "Waiting…" : "Sign in"}
+            </button>
+          ) : null}
+        </div>
+        {note ? <div className="text-[11.5px] text-dim mt-1.5 whitespace-pre-wrap">{note}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function Connect({ go }: { go: (s: FirstRunStep) => void }) {
+  const saved = useApp((s) => s.appSettings.interviewBrain);
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const [rows, setRows] = useState<AiStatus[] | null>(null);
+  const [chosen, setChosen] = useState<string>(typeof saved === "string" ? saved : "");
+  const refresh = () => {
+    setRows(null);
+    void aiStatus().then((r) => { setRows(r); setChosen((c) => pickBrain(r, c || saved)); }).catch(() => setRows([]));
+  };
+  useEffect(() => { if (native()) refresh(); else setRows([]); }, []);
+
+  const installed = (rows ?? []).filter((r) => r.installed);
+  const ready = readyAis(rows ?? []);
+  const update = (now: AiStatus) => setRows((rs) => {
+    const next = (rs ?? []).map((x) => (x.id === now.id ? now : x));
+    setChosen((c) => pickBrain(next, c));
+    return next;
+  });
+  const finish = (brain: string) => {
+    setAppSetting("interviewBrain", brain);
+    go(nextStep("connect"));
+  };
+
+  return (
+    <Frame step="connect" title="Connect your AI"
+      lead="Grill Me asks you a few questions about how you work, using your own AI. It uses a little of your plan, about as much as one short chat. Sign in once and we'll notice."
+      footer={<>
+        <BackButton step="connect" go={go} />
+        <span className="flex-1" />
+        <button className="btn" onClick={() => finish("form")}>Use the quick form instead</button>
+        {ready.length ? <button className="btn primary" onClick={() => finish(chosen || ready[0].id)}>Continue</button> : null}
+      </>}
+    >
+      {!native() ? (
+        <p className="text-[13px] text-faint">Signing in runs in the desktop app.</p>
+      ) : rows === null ? (
+        <p className="text-[13px] text-faint flex items-center gap-2"><span className="spinner" /> Looking for your AI tools…</p>
+      ) : installed.length === 0 ? (
+        <div className="hairline rounded-lg px-4 py-3 bg-panel/60 text-[13px] text-dim">
+          No AI coding tools found on this computer. That's fine: the quick form takes about a minute and needs no AI.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {installed.map((r) => (
+            <AiRow key={r.id} r={r} chosen={chosen === r.id} onChoose={() => setChosen(r.id)} onSignedIn={update} />
+          ))}
+          <div className="flex items-center gap-2 text-[12px] text-faint">
+            <span className="flex-1">No password ever reaches Grill Me. Each AI signs in through its own page.</span>
+            <button className="hover:text-ink cursor-pointer" onClick={refresh}>Check again</button>
+          </div>
+        </div>
+      )}
+    </Frame>
+  );
+}
+
+// -- 4. Pick your project -----------------------------------------------------
 
 function Project({ go }: { go: (s: FirstRunStep) => void }) {
   const toast = useApp((s) => s.toast);
@@ -275,7 +412,7 @@ function Project({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 4. Scan your setup ----------------------------------------------------------
+// -- 5. Scan your setup ----------------------------------------------------------
 
 function Scan({ go }: { go: (s: FirstRunStep) => void }) {
   const toast = useApp((s) => s.toast);
@@ -368,7 +505,7 @@ function Scan({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 5. What we'll add ---------------------------------------------------------
+// -- 6. What we'll add ---------------------------------------------------------
 
 function Consent({ go }: { go: (s: FirstRunStep) => void }) {
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "your project");
@@ -403,7 +540,7 @@ function Consent({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 6. Working with others? ---------------------------------------------------
+// -- 7. Working with others? ---------------------------------------------------
 
 function Team({ go }: { go: (s: FirstRunStep) => void }) {
   const joining = useApp((s) => s.appSettings.firstRunJoining === true);
@@ -446,6 +583,7 @@ export function FirstRun() {
     <>
       {step === "welcome" ? <Welcome go={go} /> : null}
       {step === "check" ? <Check go={go} /> : null}
+      {step === "connect" ? <Connect go={go} /> : null}
       {step === "project" ? <Project go={go} /> : null}
       {step === "scan" ? <Scan go={go} /> : null}
       {step === "consent" ? <Consent go={go} /> : null}

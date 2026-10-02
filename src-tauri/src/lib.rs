@@ -11,6 +11,7 @@ mod automations;
 mod tailscale;
 mod remote;
 mod doctor;
+mod ai_connect;
 mod catalog;
 pub mod mcp;
 
@@ -4623,6 +4624,8 @@ pub fn run() {
             catalog::catalog_fetch_remote,
             doctor::system_doctor,
             doctor::doctor_install,
+            ai_connect::ai_status,
+            ai_connect::ai_login,
             uninstall_all,
             doctor::diagnostics,
             team_config,
