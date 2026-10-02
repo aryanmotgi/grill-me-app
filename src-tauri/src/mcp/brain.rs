@@ -852,6 +852,71 @@ mod tests {
         assert!(crossed(end, 0.0, end - 100.0 * MIN));
     }
 
+    /// Two "Macs" (separate homes, repos, install ids) sharing a team through
+    /// the LIVE relay. Mac A publishes its session digest; Mac B pulls it the
+    /// way the room feed does, and B's agent context must name A's session and
+    /// warn about the shared file. Run:
+    /// cargo test --lib two_macs -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn live_two_macs_share_context_through_the_relay() {
+        let base = std::env::temp_dir().join(format!("grillme-2macs-{}-{}", std::process::id(), js::now_ms()));
+        // one Mac: ~/.grillme with an install id + a repo whose session edits `file`
+        let mac = |name: &str, file: &str| -> Ctx {
+            let home = base.join(name);
+            let g = home.join(".grillme");
+            let repo = home.join("repo");
+            std::fs::create_dir_all(repo.join("src")).unwrap();
+            std::fs::create_dir_all(&g).unwrap();
+            let git = |args: &[&str]| assert!(std::process::Command::new("git").arg("-C").arg(&repo)
+                .args(["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]).args(args).output().unwrap().status.success());
+            git(&["init", "-q", "-b", "main"]);
+            std::fs::write(repo.join(file), "v1").unwrap();
+            git(&["add", "-A"]);
+            git(&["commit", "-qm", "init"]);
+            std::fs::write(repo.join(file), "v2").unwrap();
+            std::fs::write(g.join("config.json"), json!({ "teammates": [{ "id": "me", "name": "Me", "repoPath": repo.to_string_lossy() }] }).to_string()).unwrap();
+            std::fs::write(g.join("settings.json"), json!({ "installId": format!("mac-{name}") }).to_string()).unwrap();
+            let h = home.to_string_lossy().into_owned();
+            Ctx { root: format!("{h}/.grillme"), home: h, remote: Default::default(), scope: None, forced: None }
+        };
+        let a = mac("a", "src/auth.ts");
+        let b = mac("b", "src/auth.ts");
+
+        // Mac A creates the team, Mac B joins with the invite
+        let made = crate::relay::room_relay_create("Ana".into()).expect("create");
+        let host = made["hostAddr"].as_str().unwrap().to_string();
+        let code = made["code"].as_str().unwrap().to_string();
+        let joined = crate::relay::room_relay_join(made["invite"].as_str().unwrap().into(), "Ben".into()).expect("join");
+        let ben = joined["memberId"].as_str().unwrap().to_string();
+
+        // A publishes its session digest (what the app's room feed does every change)
+        let digest = json!({ "id": "m1:me", "member": "m1", "memberName": "Ana", "session": "me", "title": "Login",
+            "status": "working", "sentence": "working in auth.ts", "branch": "feat/login", "tests": null,
+            "files": ["src/auth.ts"], "machine": "mac-a", "ts": js::now_ms() as i64 });
+        let r = crate::relay::request(&host, "/room/sync", &json!({ "code": code, "memberId": "m1", "file": "team-sessions.json", "items": [digest] }).to_string()).unwrap();
+        assert!(r.contains("\"ok\":true"), "{r}");
+
+        // B polls the room and stores the shared digests locally (the feed's job)
+        let state: crate::room::RoomState = serde_json::from_str(&crate::relay::request(&host, &format!("/room/state?code={code}"), "").unwrap()).unwrap();
+        let shared = state.shared.get("team-sessions.json").cloned().unwrap_or_default();
+        assert_eq!(shared.len(), 1, "B didn't get A's digest: {shared:?}");
+        std::fs::write(std::path::Path::new(&b.root).join("team-sessions.json"), Value::Array(shared.clone()).to_string()).unwrap();
+        std::fs::write(std::path::Path::new(&a.root).join("team-sessions.json"), Value::Array(shared).to_string()).unwrap();
+
+        // B's agent: hears about Ana's session and gets the shared-file warning
+        let ctx_b = b.catch_up(0.0, Some("me"), true).unwrap();
+        println!("--- Mac B agent context ---\n{ctx_b}");
+        assert!(ctx_b.contains("**Ana · Login** (working, feat/login): working in auth.ts"), "{ctx_b}");
+        assert!(ctx_b.contains("- `src/auth.ts` — Ana's Login is editing it too"), "{ctx_b}");
+
+        // A's agent: its own digest came back through the room — never listed
+        let ctx_a = a.catch_up(0.0, Some("me"), true).unwrap();
+        assert!(!ctx_a.contains("Teammates right now") && !ctx_a.contains("Same files"), "A saw itself: {ctx_a}");
+        let _ = ben;
+        let _ = std::fs::remove_dir_all(base);
+    }
+
     #[test]
     fn overlap_names_the_teammates_on_each_shared_file() {
         let mates = vec![
