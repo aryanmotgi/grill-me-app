@@ -990,3 +990,17 @@ select.btn, .btn[type] {
   background-color: #141015;
   background-image: radial-gradient(40% 40% at 50% 40%, rgba(60, 40, 44, 0.55) 0%, transparent 80%);
 }
+
+/* the coach: one quiet line above the composer, only when it saves something */
+.coach-hint {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: coach-in 180ms ease-out;
+}
+@keyframes coach-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-hint { animation: none; }
+}

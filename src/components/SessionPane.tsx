@@ -10,6 +10,7 @@ import type { Teammate } from "../types";
 import { isHelpPending } from "../lib/help";
 import { usePaneJump } from "../lib/paneJump";
 import { XtermPane } from "./XtermPane";
+import { uiLayoutOf } from "../lib/uiLayout";
 import { Composer } from "./Composer";
 import { ChatView } from "./ChatView";
 import { useApp as useVitals } from "../store";
@@ -342,6 +343,8 @@ function SessionMore({ recording, helpPending, onRecord, onHelp, onExport, onHan
 export function SessionPane({ mate }: { mate: Teammate }) {
   const { toggleRecording, revertChange, shipSession, members, themeName, setHandoffFor, requestHelp, resolveHelp, toast } = useApp();
   const helpPending = useApp((s) => isHelpPending(s.messages, mate.id));
+  // the simple layout shows changes in its right panel
+  const simple = useApp((s) => uiLayoutOf(s.appSettings) === "simple");
   const member = members.find((m) => m.id === mate.id);
   // Claude sessions open as chat (Monocode-style); other agents keep the TUI
   const [tab, setTab] = useState<PaneTab>((member?.agent ?? "claude") === "claude" ? "chat" : "terminal");
@@ -380,7 +383,7 @@ export function SessionPane({ mate }: { mate: Teammate }) {
               ["shell", "Shell"],
               ["changes", `Changes${mate.changes.length ? ` ${mate.changes.length}` : ""}`],
               ["audit", "Audit"],
-            ] as const).map(([id, label]) => (
+            ] as const).filter(([id]) => !simple || id !== "changes").map(([id, label]) => (
               <button key={id}
                 className={`px-2.5 h-6 rounded-md text-[11.5px] cursor-pointer transition-colors ${
                   tab === id ? "bg-raised text-ink" : "text-faint hover:text-dim"

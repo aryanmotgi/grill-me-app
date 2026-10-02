@@ -5,6 +5,8 @@ import { useApp, ptyIdFor } from "../store";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
 import { activeToken } from "../lib/composer";
+import { promptHints, sessionStats, type Hint } from "../lib/coach";
+import { useFanOutDraft } from "./FanOut";
 
 // ---------------------------------------------------------------------------
 // Monocode-style composer under the terminal. Multiline prompt (Enter sends,
@@ -40,6 +42,7 @@ export function Composer({ mateId }: { mateId: string }) {
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0); // highlighted suggestion index
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [hushed, setHushed] = useState<Set<string>>(new Set());
 
   const member = members.find((m) => m.id === mateId);
   const mate = teammates.find((t) => t.id === mateId);
@@ -62,6 +65,10 @@ export function Composer({ mateId }: { mateId: string }) {
     return fileRefs.filter((f) => f.toLowerCase().includes(q)).slice(0, 8)
       .map((f) => ({ insert: "@" + f + " ", label: "@" + (f.split("/").pop() ?? f), hint: f }));
   }, [token, fileRefs]);
+
+  // the coach: quiet unless the draft would waste a turn, time or money
+  const stats = useMemo(() => sessionStats(mate), [mate]);
+  const hints = useMemo(() => promptHints(draft, stats).filter((h) => !hushed.has(h.id)), [draft, stats, hushed]);
 
   if (!member || !isTauri()) return null;
   const viewOnly = mate?.permission === "view";
@@ -91,11 +98,30 @@ export function Composer({ mateId }: { mateId: string }) {
       await submitToAgent(ptyIdFor(mateId), text);
       setDraft("");
       setCaret(0);
+      setHushed(new Set());
     } catch (e) {
       toast(`Send failed: ${e}`, "warn");
     } finally {
       setSending(false);
       inputRef.current?.focus();
+    }
+  };
+
+  const applyHint = async (h: Hint) => {
+    const fix = h.fix;
+    if (!fix) return;
+    setHushed((x) => new Set(x).add(h.id));
+    if (fix.kind === "append") {
+      const next = draft.trimEnd() + fix.value;
+      setDraft(next);
+      requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(next.length, next.length); });
+    } else if (fix.kind === "split") {
+      useFanOutDraft.getState().set(fix.value);
+      useApp.getState().setView("tasks");
+      setDraft("");
+    } else {
+      await submitToAgent(ptyIdFor(mateId), fix.value).catch((e) => toast(`Couldn't send ${fix.value}: ${e}`, "warn"));
+      toast(`Sent ${fix.value}. Your message is still here, send it when you're ready.`);
     }
   };
 
@@ -131,6 +157,24 @@ export function Composer({ mateId }: { mateId: string }) {
           ))}
         </div>
       )}
+
+      {hints.length > 0 && suggestions.length === 0 ? (
+        <div className="flex flex-col gap-1" aria-live="polite">
+          {hints.map((h) => (
+            <div key={h.id} className="coach-hint flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[11.5px] text-dim">
+              <Icon name="bulb" size={12} className="text-accent flex-none" />
+              <span className="flex-1 min-w-0">{h.text}</span>
+              {h.fix ? (
+                <button className="composer-btn h-6 text-[11px] flex-none" onClick={() => void applyHint(h)}>{h.fix.label}</button>
+              ) : null}
+              <button className="text-faint hover:text-ink cursor-pointer flex-none" title="Hide this tip"
+                aria-label="Hide this tip" onClick={() => setHushed((x) => new Set(x).add(h.id))}>
+                <Icon name="cross" size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <textarea
         ref={inputRef}
