@@ -1,3 +1,4 @@
+import { useDNALearning } from "./lib/dnaStore";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "./store";
 import { BottomTerminal } from "./components/BottomTerminal";
@@ -278,6 +279,7 @@ export default function App() {
   const uiLayout = useApp((s) => uiLayoutOf(s.appSettings));
   const settingsLoaded = useApp((s) => s.settingsLoaded);
   const firstRun = useFirstRunActive();
+  useDNALearning(settingsLoaded && !firstRun);
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);

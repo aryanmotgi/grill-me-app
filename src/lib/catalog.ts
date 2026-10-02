@@ -11,7 +11,23 @@ export type CatalogKind = "agent" | "mcp" | "skill" | "plugin" | "cli" | "app";
 export type SolveTag =
   | "testing" | "browser" | "docs" | "planning" | "notes" | "project-management" | "design" | "deploy"
   | "review" | "debugging" | "database" | "auth" | "payments" | "search" | "memory" | "security" | "ci"
-  | "analytics" | "orchestration" | "code-quality" | "voice" | "ui" | "git" | "monitoring";
+  | "analytics" | "orchestration" | "code-quality" | "voice" | "ui" | "git" | "monitoring" | "models";
+
+/** Where a tool shows up in "Explore more". */
+export type Category =
+  | "notes-memory" | "planning" | "skill-pack" | "testing" | "review" | "docs" | "design" | "deploy" | "database"
+  | "security" | "voice" | "models" | "ci" | "monitoring" | "project-management" | "browser" | "quality"
+  | "editor" | "terminal" | "agent" | "other";
+export const CATEGORIES: readonly Category[] = [
+  "notes-memory", "planning", "skill-pack", "testing", "review", "docs", "design", "deploy", "database",
+  "security", "voice", "models", "ci", "monitoring", "project-management", "browser", "quality", "editor", "terminal", "agent", "other",
+];
+export type Cost = "free" | "freemium" | "paid";
+export type StageKey = "plan" | "build" | "test" | "review" | "ship";
+/** How one workflow stage changes with this tool (for the before/after). */
+export interface StageChange { stage: StageKey; before: string; after: string }
+/** Tools that work better together, offered as one setup. */
+export interface Bundle { id: string; name: string; members: string[]; why: string; solves: SolveTag[] }
 
 export interface CatalogEntry {
   id: string;                 // kebab-case, unique
@@ -37,15 +53,22 @@ export interface CatalogEntry {
   source: string;             // homepage/repo URL
   verified: boolean;
   updated: string;            // YYYY-MM-DD it was checked
+  category?: Category;
+  cost?: Cost;
+  setupMin?: number;          // minutes to set up, roughly
+  pairsWith?: string[];       // ids it works well with
+  changes?: StageChange;      // what it changes in the workflow
 }
-export interface Catalog { version: string; updated: string; entries: CatalogEntry[] }
+export interface Catalog { version: string; updated: string; entries: CatalogEntry[]; bundles?: Bundle[] }
 
 export const CATALOG_KINDS: readonly CatalogKind[] = ["agent", "mcp", "skill", "plugin", "cli", "app"];
 export const SOLVE_TAGS: readonly SolveTag[] = [
   "testing", "browser", "docs", "planning", "notes", "project-management", "design", "deploy",
   "review", "debugging", "database", "auth", "payments", "search", "memory", "security", "ci",
-  "analytics", "orchestration", "code-quality", "voice", "ui", "git", "monitoring",
+  "analytics", "orchestration", "code-quality", "voice", "ui", "git", "monitoring", "models",
 ];
+const STAGE_KEYS: readonly StageKey[] = ["plan", "build", "test", "review", "ship"];
+const COSTS: readonly Cost[] = ["free", "freemium", "paid"];
 export const DETECT_KEYS = ["bins", "apps", "mcp", "skills", "plugins", "npm", "brew", "pip", "deps"] as const;
 export type DetectKey = (typeof DETECT_KEYS)[number];
 export type Detections = Partial<Record<DetectKey, string[]>>;
@@ -119,7 +142,27 @@ export function parseEntry(raw: unknown): CatalogEntry | null {
     updated,
   };
   if (inst) entry.install = inst;
+  // optional extras: kept only when well-formed
+  const r = raw as Record<string, unknown>;
+  if ((CATEGORIES as readonly string[]).includes(r.category as string)) entry.category = r.category as Category;
+  if ((COSTS as readonly string[]).includes(r.cost as string)) entry.cost = r.cost as Cost;
+  if (typeof r.setupMin === "number" && r.setupMin > 0 && r.setupMin < 600) entry.setupMin = Math.round(r.setupMin);
+  const pairs = strList(r.pairsWith);
+  if (pairs) entry.pairsWith = pairs.filter((x) => ID_RE.test(x)).slice(0, 6);
+  const ch = r.changes;
+  if (isObj(ch) && (STAGE_KEYS as readonly string[]).includes(ch.stage as string) && isStr(ch.before) && isStr(ch.after)) {
+    entry.changes = { stage: ch.stage as StageKey, before: (ch.before as string).trim().slice(0, 140), after: (ch.after as string).trim().slice(0, 140) };
+  }
   return entry;
+}
+
+/** A bundle, read defensively; members must be real entries. */
+function parseBundle(raw: unknown, ids: Set<string>): Bundle | null {
+  if (!isObj(raw) || !isStr(raw.id) || !ID_RE.test(raw.id) || !isStr(raw.name) || !isStr(raw.why)) return null;
+  const members = (strList(raw.members) ?? []).filter((m) => ids.has(m));
+  if (members.length < 2) return null;
+  const solves = (strList(raw.solves) ?? []).filter((t): t is SolveTag => (SOLVE_TAGS as readonly string[]).includes(t));
+  return { id: raw.id, name: raw.name.trim(), members: members.slice(0, 5), why: raw.why.trim().slice(0, 240), solves };
 }
 
 /** Validates a catalog document; drops bad (and duplicate-id) entries. */
@@ -133,10 +176,13 @@ export function parseCatalog(raw: unknown): Catalog | null {
     seen.add(e.id);
     entries.push(e);
   }
+  const ids = new Set(entries.map((e) => e.id));
+  const bundles = Array.isArray(raw.bundles) ? raw.bundles.map((b) => parseBundle(b, ids)).filter((b): b is Bundle => !!b) : [];
   return {
     version: typeof raw.version === "string" ? raw.version : "0",
     updated: typeof raw.updated === "string" ? raw.updated : "",
     entries,
+    bundles,
   };
 }
 
@@ -166,7 +212,8 @@ export function mergeCatalogs(builtin: Catalog, remote?: Catalog | null, local?:
   for (const e of local?.entries ?? []) {
     if (!byId.has(e.id)) byId.set(e.id, { ...e, verified: false });
   }
-  return { version, updated, entries: [...byId.values()] };
+  const bundles = remote && compareVersions(remote.version, builtin.version) > 0 && remote.bundles?.length ? remote.bundles : builtin.bundles ?? [];
+  return { version, updated, entries: [...byId.values()], bundles };
 }
 
 const norm = (s: string) => s.trim().toLowerCase();
