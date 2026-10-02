@@ -1,5 +1,5 @@
 {
-  "version": "2026.10.2",
+  "version": "2026.10.3",
   "updated": "2026-10-02",
   "entries": [
     {
@@ -33,7 +33,16 @@
       },
       "source": "https://github.com/anthropics/claude-code",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "paid",
+      "setupMin": 5,
+      "pairsWith": [
+        "superpowers",
+        "context7-mcp",
+        "gh-cli",
+        "playwright-mcp"
+      ]
     },
     {
       "id": "codex-cli",
@@ -68,7 +77,15 @@
       },
       "source": "https://github.com/openai/codex",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "paid",
+      "setupMin": 5,
+      "pairsWith": [
+        "gh-cli",
+        "context7-mcp",
+        "playwright-mcp"
+      ]
     },
     {
       "id": "cursor",
@@ -102,7 +119,15 @@
       },
       "source": "https://cursor.com",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "editor",
+      "cost": "freemium",
+      "setupMin": 5,
+      "pairsWith": [
+        "context7-mcp",
+        "figma-mcp",
+        "github-mcp"
+      ]
     },
     {
       "id": "gemini-cli",
@@ -133,7 +158,14 @@
       },
       "source": "https://github.com/google-gemini/gemini-cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "freemium",
+      "setupMin": 5,
+      "pairsWith": [
+        "context7-mcp",
+        "gh-cli"
+      ]
     },
     {
       "id": "copilot-cli",
@@ -165,7 +197,14 @@
       },
       "source": "https://github.com/github/copilot-cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "freemium",
+      "setupMin": 5,
+      "pairsWith": [
+        "gh-cli",
+        "github-mcp"
+      ]
     },
     {
       "id": "windsurf",
@@ -199,7 +238,14 @@
       },
       "source": "https://devin.ai/download",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "editor",
+      "cost": "freemium",
+      "setupMin": 5,
+      "pairsWith": [
+        "context7-mcp",
+        "figma-mcp"
+      ]
     },
     {
       "id": "aider",
@@ -231,7 +277,15 @@
       },
       "source": "https://github.com/Aider-AI/aider",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "free",
+      "setupMin": 5,
+      "pairsWith": [
+        "ollama",
+        "ruff",
+        "pytest"
+      ]
     },
     {
       "id": "zed",
@@ -262,7 +316,14 @@
       },
       "source": "https://zed.dev",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "editor",
+      "cost": "freemium",
+      "setupMin": 3,
+      "pairsWith": [
+        "context7-mcp",
+        "ollama"
+      ]
     },
     {
       "id": "cline",
@@ -296,7 +357,15 @@
       },
       "source": "https://github.com/cline/cline",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "free",
+      "setupMin": 5,
+      "pairsWith": [
+        "context7-mcp",
+        "playwright-mcp",
+        "ollama"
+      ]
     },
     {
       "id": "opencode",
@@ -331,7 +400,14 @@
       },
       "source": "https://github.com/sst/opencode",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "free",
+      "setupMin": 5,
+      "pairsWith": [
+        "ollama",
+        "context7-mcp"
+      ]
     },
     {
       "id": "amp",
@@ -365,7 +441,14 @@
       },
       "source": "https://ampcode.com",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "freemium",
+      "setupMin": 5,
+      "pairsWith": [
+        "gh-cli",
+        "context7-mcp"
+      ]
     },
     {
       "id": "goose",
@@ -397,7 +480,14 @@
       },
       "source": "https://github.com/aaif-goose/goose",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "free",
+      "setupMin": 10,
+      "pairsWith": [
+        "ollama",
+        "memory-mcp"
+      ]
     },
     {
       "id": "kiro",
@@ -432,7 +522,13 @@
       },
       "source": "https://kiro.dev",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "editor",
+      "cost": "freemium",
+      "setupMin": 5,
+      "pairsWith": [
+        "context7-mcp"
+      ]
     },
     {
       "id": "continue",
@@ -461,7 +557,19 @@
       },
       "source": "https://github.com/continuedev/continue",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "review",
+        "before": "You catch style and rule slips by hand in every PR",
+        "after": "Checks run on each PR and flag what breaks your team's rules"
+      },
+      "pairsWith": [
+        "ollama",
+        "gh-cli"
+      ]
     },
     {
       "id": "obsidian",
@@ -493,7 +601,20 @@
       },
       "source": "https://obsidian.md",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "notes-memory",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "Your decisions live in chat history you can't find again",
+        "after": "Decisions and specs sit in linked notes your agent can read"
+      },
+      "pairsWith": [
+        "obsidian-mcp",
+        "memory-mcp",
+        "context7-mcp"
+      ]
     },
     {
       "id": "notion",
@@ -522,7 +643,19 @@
       },
       "source": "https://www.notion.com",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "notes-memory",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "Specs are scattered across docs your agent never sees",
+        "after": "Your agent reads the spec page before it writes code"
+      },
+      "pairsWith": [
+        "notion-mcp",
+        "linear-mcp"
+      ]
     },
     {
       "id": "linear",
@@ -550,7 +683,20 @@
       },
       "source": "https://linear.app",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "project-management",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You turn tickets into prompts by copy and paste",
+        "after": "Your agent picks up the issue and its context directly"
+      },
+      "pairsWith": [
+        "linear-mcp",
+        "gh-cli",
+        "github-mcp"
+      ]
     },
     {
       "id": "raycast",
@@ -578,7 +724,14 @@
       },
       "source": "https://www.raycast.com",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "other",
+      "cost": "freemium",
+      "setupMin": 3,
+      "pairsWith": [
+        "obsidian",
+        "linear"
+      ]
     },
     {
       "id": "warp",
@@ -606,7 +759,14 @@
       },
       "source": "https://www.warp.dev",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "terminal",
+      "cost": "freemium",
+      "setupMin": 3,
+      "pairsWith": [
+        "claude-code",
+        "codex-cli"
+      ]
     },
     {
       "id": "vscode",
@@ -637,7 +797,15 @@
       },
       "source": "https://code.visualstudio.com",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "editor",
+      "cost": "free",
+      "setupMin": 3,
+      "pairsWith": [
+        "cline",
+        "continue",
+        "github-mcp"
+      ]
     },
     {
       "id": "ghostty",
@@ -664,7 +832,14 @@
       },
       "source": "https://ghostty.org",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "terminal",
+      "cost": "free",
+      "setupMin": 2,
+      "pairsWith": [
+        "claude-code",
+        "lazygit"
+      ]
     },
     {
       "id": "figma",
@@ -692,7 +867,19 @@
       },
       "source": "https://www.figma.com",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "design",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You eyeball a mockup and describe it to the agent in words",
+        "after": "Your agent reads the real frames, spacing and tokens"
+      },
+      "pairsWith": [
+        "figma-mcp",
+        "frontend-design"
+      ]
     },
     {
       "id": "linear-mcp",
@@ -723,7 +910,20 @@
       },
       "source": "https://linear.app/docs/mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "project-management",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "plan",
+        "before": "You paste ticket text into the agent and update status by hand",
+        "after": "Your agent reads the issue, works it, and updates status itself"
+      },
+      "pairsWith": [
+        "linear",
+        "github-mcp",
+        "gh-cli"
+      ]
     },
     {
       "id": "notion-mcp",
@@ -755,7 +955,19 @@
       },
       "source": "https://developers.notion.com/docs/mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "notes-memory",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "plan",
+        "before": "You copy spec text from Notion into every prompt",
+        "after": "Your agent searches and reads the right Notion pages itself"
+      },
+      "pairsWith": [
+        "notion",
+        "linear-mcp"
+      ]
     },
     {
       "id": "github-mcp",
@@ -788,7 +1000,20 @@
       },
       "source": "https://github.com/github/github-mcp-server",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "review",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "You switch to the browser to read PR comments and CI runs",
+        "after": "Your agent reads PRs, comments and Actions runs in place"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "code-review",
+        "act"
+      ]
     },
     {
       "id": "figma-mcp",
@@ -818,7 +1043,20 @@
       },
       "source": "https://developers.figma.com/docs/figma-mcp-server/",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "design",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "The agent guesses at layout from your screenshot",
+        "after": "Your agent builds from the actual Figma frames and variables"
+      },
+      "pairsWith": [
+        "figma",
+        "frontend-design",
+        "playwright-mcp"
+      ]
     },
     {
       "id": "sentry-mcp",
@@ -849,7 +1087,19 @@
       },
       "source": "https://github.com/getsentry/sentry-mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "monitoring",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You paste stack traces from Sentry into chat to debug",
+        "after": "Your agent pulls the issue, trace and release itself"
+      },
+      "pairsWith": [
+        "sentry-cli",
+        "github-mcp"
+      ]
     },
     {
       "id": "supabase-mcp",
@@ -881,7 +1131,20 @@
       },
       "source": "https://github.com/supabase-community/supabase-mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You run SQL in the dashboard and paste schemas into chat",
+        "after": "Your agent inspects tables and applies migrations directly"
+      },
+      "pairsWith": [
+        "supabase-cli",
+        "postgres-mcp",
+        "squawk"
+      ]
     },
     {
       "id": "neon-mcp",
@@ -910,7 +1173,20 @@
       },
       "source": "https://github.com/neondatabase/mcp-server-neon",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You test schema changes against your only database",
+        "after": "Your agent tries migrations on a throwaway Neon branch first"
+      },
+      "pairsWith": [
+        "neonctl",
+        "squawk",
+        "postgres-mcp"
+      ]
     },
     {
       "id": "stripe-mcp",
@@ -941,7 +1217,19 @@
       },
       "source": "https://docs.stripe.com/mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "other",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You dig through Stripe docs to wire up each API call",
+        "after": "Your agent looks up and calls the Stripe API with test keys"
+      },
+      "pairsWith": [
+        "stripe-cli",
+        "stripe-plugin"
+      ]
     },
     {
       "id": "vercel-mcp",
@@ -972,7 +1260,19 @@
       },
       "source": "https://vercel.com/docs/agent-resources/vercel-mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You open the dashboard to find why a deploy failed",
+        "after": "Your agent reads deploy logs and fixes the build itself"
+      },
+      "pairsWith": [
+        "vercel-cli",
+        "vercel-plugin"
+      ]
     },
     {
       "id": "playwright-mcp",
@@ -1005,7 +1305,20 @@
       },
       "source": "https://github.com/microsoft/playwright-mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "browser",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "test",
+        "before": "You click through the app yourself after every change",
+        "after": "Your agent opens the app, clicks through it, and reports what broke"
+      },
+      "pairsWith": [
+        "chrome-devtools-mcp",
+        "playwright",
+        "anthropic-skill-webapp-testing"
+      ]
     },
     {
       "id": "chrome-devtools-mcp",
@@ -1040,7 +1353,19 @@
       },
       "source": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "browser",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "test",
+        "before": "You copy console errors and network failures into chat",
+        "after": "Your agent reads the console, network and performance traces itself"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "sentry-mcp"
+      ]
     },
     {
       "id": "context7-mcp",
@@ -1070,7 +1395,20 @@
       },
       "source": "https://github.com/upstash/context7",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "freemium",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent writes code against outdated library APIs",
+        "after": "Your agent pulls current, version-specific docs before coding"
+      },
+      "pairsWith": [
+        "claude-code",
+        "exa-mcp",
+        "superpowers"
+      ]
     },
     {
       "id": "exa-mcp",
@@ -1099,7 +1437,19 @@
       },
       "source": "https://github.com/exa-labs/exa-mcp-server",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You search the web and paste answers back to the agent",
+        "after": "Your agent searches the web and code examples on its own"
+      },
+      "pairsWith": [
+        "context7-mcp",
+        "firecrawl-mcp"
+      ]
     },
     {
       "id": "tavily-mcp",
@@ -1130,7 +1480,19 @@
       },
       "source": "https://github.com/tavily-ai/tavily-mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You search the web and paste answers back to the agent",
+        "after": "Your agent runs live web searches and reads pages itself"
+      },
+      "pairsWith": [
+        "context7-mcp",
+        "firecrawl-mcp"
+      ]
     },
     {
       "id": "slack-mcp",
@@ -1159,7 +1521,19 @@
       },
       "source": "https://docs.slack.dev/ai/slack-mcp-server/",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "project-management",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You hunt through Slack threads for what was decided",
+        "after": "Your agent searches threads and pulls the decision into the plan"
+      },
+      "pairsWith": [
+        "linear-mcp",
+        "notion-mcp"
+      ]
     },
     {
       "id": "atlassian-mcp",
@@ -1189,7 +1563,19 @@
       },
       "source": "https://support.atlassian.com/atlassian-rovo-mcp-server/",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "project-management",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You copy Jira tickets and Confluence pages into prompts",
+        "after": "Your agent reads the ticket and linked pages, then updates status"
+      },
+      "pairsWith": [
+        "github-mcp",
+        "gh-cli"
+      ]
     },
     {
       "id": "filesystem-mcp",
@@ -1222,7 +1608,19 @@
       },
       "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "notes-memory",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "Agents without file access need you to paste file contents",
+        "after": "Your agent reads and writes only the folders you allow"
+      },
+      "pairsWith": [
+        "memory-mcp",
+        "obsidian-mcp"
+      ]
     },
     {
       "id": "memory-mcp",
@@ -1254,7 +1652,20 @@
       },
       "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "notes-memory",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "plan",
+        "before": "Every new session starts from zero and you re-explain the project",
+        "after": "Your agent recalls stored facts about you and the project"
+      },
+      "pairsWith": [
+        "obsidian-mcp",
+        "sequential-thinking-mcp",
+        "filesystem-mcp"
+      ]
     },
     {
       "id": "sequential-thinking-mcp",
@@ -1287,7 +1698,19 @@
       },
       "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "planning",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "plan",
+        "before": "The agent jumps straight to code on a vague problem",
+        "after": "Your agent reasons step by step and revises before it builds"
+      },
+      "pairsWith": [
+        "memory-mcp",
+        "superpowers"
+      ]
     },
     {
       "id": "obsidian-mcp",
@@ -1319,7 +1742,19 @@
       },
       "source": "https://github.com/MarkusPfundstein/mcp-obsidian",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "notes-memory",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "plan",
+        "before": "You copy notes from your vault into each new chat",
+        "after": "Your agent searches and updates your Obsidian notes directly"
+      },
+      "pairsWith": [
+        "obsidian",
+        "memory-mcp"
+      ]
     },
     {
       "id": "posthog-mcp",
@@ -1350,7 +1785,19 @@
       },
       "source": "https://posthog.com/docs/model-context-protocol",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "monitoring",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You check dashboards by hand to see if a release worked",
+        "after": "Your agent queries usage, flags and errors to check the release"
+      },
+      "pairsWith": [
+        "sentry-mcp",
+        "vercel-mcp"
+      ]
     },
     {
       "id": "cloudflare-mcp",
@@ -1379,7 +1826,19 @@
       },
       "source": "https://github.com/cloudflare/mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You click through the Cloudflare dashboard for each change",
+        "after": "Your agent manages Workers, DNS and settings through the API"
+      },
+      "pairsWith": [
+        "wrangler",
+        "cloudflare-docs-mcp"
+      ]
     },
     {
       "id": "cloudflare-docs-mcp",
@@ -1407,7 +1866,19 @@
       },
       "source": "https://github.com/cloudflare/mcp-server-cloudflare",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent guesses at Cloudflare APIs from old training data",
+        "after": "Your agent reads current Cloudflare docs before writing code"
+      },
+      "pairsWith": [
+        "wrangler",
+        "cloudflare-mcp"
+      ]
     },
     {
       "id": "cloudflare-bindings-mcp",
@@ -1436,7 +1907,19 @@
       },
       "source": "https://github.com/cloudflare/mcp-server-cloudflare",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You wire up KV, R2 and D1 bindings by hand",
+        "after": "Your agent creates and uses Workers storage bindings directly"
+      },
+      "pairsWith": [
+        "wrangler",
+        "cloudflare-docs-mcp"
+      ]
     },
     {
       "id": "firecrawl-mcp",
@@ -1466,7 +1949,19 @@
       },
       "source": "https://github.com/firecrawl/firecrawl-mcp-server",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "browser",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You copy page content into chat for the agent to read",
+        "after": "Your agent scrapes and crawls pages into clean markdown"
+      },
+      "pairsWith": [
+        "exa-mcp",
+        "context7-mcp"
+      ]
     },
     {
       "id": "browserbase-mcp",
@@ -1496,7 +1991,19 @@
       },
       "source": "https://github.com/browserbase/mcp-server-browserbase",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "browser",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "test",
+        "before": "You run browser checks only on your own machine",
+        "after": "Your agent drives cloud browsers to test flows remotely"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "firecrawl-mcp"
+      ]
     },
     {
       "id": "asana-mcp",
@@ -1525,7 +2032,19 @@
       },
       "source": "https://developers.asana.com/docs/using-asanas-mcp-server",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "project-management",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You retype Asana tasks into prompts and update them later",
+        "after": "Your agent reads tasks and updates their status as it works"
+      },
+      "pairsWith": [
+        "slack-mcp",
+        "github-mcp"
+      ]
     },
     {
       "id": "huggingface-mcp",
@@ -1556,7 +2075,18 @@
       },
       "source": "https://github.com/huggingface/hf-mcp-server",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "models",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "plan",
+        "before": "You browse Hugging Face by hand to pick a model or dataset",
+        "after": "Your agent searches models, datasets and papers for you"
+      },
+      "pairsWith": [
+        "ollama"
+      ]
     },
     {
       "id": "netlify-mcp",
@@ -1588,7 +2118,19 @@
       },
       "source": "https://github.com/netlify/netlify-mcp",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You leave the editor to deploy and check the Netlify UI",
+        "after": "Your agent creates, deploys and checks Netlify sites itself"
+      },
+      "pairsWith": [
+        "netlify-cli",
+        "playwright-mcp"
+      ]
     },
     {
       "id": "superpowers",
@@ -1622,7 +2164,20 @@
       },
       "source": "https://github.com/obra/superpowers",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "plan",
+        "before": "The agent starts coding before the problem is clear",
+        "after": "Your agent brainstorms, writes a plan and tests first"
+      },
+      "pairsWith": [
+        "context7-mcp",
+        "code-review",
+        "sequential-thinking-mcp"
+      ]
     },
     {
       "id": "gstack",
@@ -1651,7 +2206,20 @@
       },
       "source": "https://github.com/garrytan/gstack",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "plan",
+        "before": "You plan, review and QA alone with one generic agent",
+        "after": "Role skills review the plan, QA the app and ship the PR"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "gh-cli",
+        "superpowers"
+      ]
     },
     {
       "id": "caveman",
@@ -1682,7 +2250,18 @@
       },
       "source": "https://github.com/JuliusBrussee/caveman",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "other",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Long, chatty agent replies burn tokens and your attention",
+        "after": "Your agent answers in terse lines that cost far fewer tokens"
+      },
+      "pairsWith": [
+        "claude-code"
+      ]
     },
     {
       "id": "vercel-plugin",
@@ -1712,7 +2291,19 @@
       },
       "source": "https://github.com/vercel/vercel-plugin",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You look up Vercel and Next.js patterns as you go",
+        "after": "Your agent follows current Vercel and Next.js practices"
+      },
+      "pairsWith": [
+        "vercel-cli",
+        "vercel-mcp"
+      ]
     },
     {
       "id": "stripe-plugin",
@@ -1737,7 +2328,19 @@
       },
       "source": "https://github.com/stripe/ai",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent wires payments from memory and misses edge cases",
+        "after": "Your agent follows Stripe's own best-practice skills"
+      },
+      "pairsWith": [
+        "stripe-mcp",
+        "stripe-cli"
+      ]
     },
     {
       "id": "context7-plugin",
@@ -1765,7 +2368,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/context7",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "freemium",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent writes code against outdated library APIs",
+        "after": "Your agent pulls current library docs before coding"
+      },
+      "pairsWith": [
+        "superpowers",
+        "claude-code"
+      ]
     },
     {
       "id": "frontend-design",
@@ -1790,7 +2405,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/frontend-design",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "design",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "AI-built screens all look generic and samey",
+        "after": "Your agent designs distinct, polished UIs with intent"
+      },
+      "pairsWith": [
+        "figma-mcp",
+        "playwright-mcp"
+      ]
     },
     {
       "id": "code-review",
@@ -1815,7 +2442,20 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-review",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "review",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "You read every AI diff line by line, alone",
+        "after": "Reviewer agents flag bugs and rule breaks before you look"
+      },
+      "pairsWith": [
+        "pr-review-toolkit",
+        "gh-cli",
+        "github-mcp"
+      ]
     },
     {
       "id": "pr-review-toolkit",
@@ -1841,7 +2481,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/pr-review-toolkit",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "review",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "You review tests, errors and types in one tired pass",
+        "after": "Separate agents check tests, error handling and types"
+      },
+      "pairsWith": [
+        "code-review",
+        "gh-cli"
+      ]
     },
     {
       "id": "commit-commands",
@@ -1865,7 +2517,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/commit-commands",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "other",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "ship",
+        "before": "You write commit messages and open PRs by hand",
+        "after": "One command commits, pushes and opens the PR"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "code-review"
+      ]
     },
     {
       "id": "feature-dev",
@@ -1890,7 +2554,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/feature-dev",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "planning",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "plan",
+        "before": "Your agent edits code before it understands the codebase",
+        "after": "Explorer and architect agents map the code, then you build"
+      },
+      "pairsWith": [
+        "code-review",
+        "superpowers"
+      ]
     },
     {
       "id": "code-simplifier",
@@ -1914,7 +2590,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-simplifier",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "AI code piles up extra layers and duplicate logic",
+        "after": "An agent tidies recent changes for clarity before you merge"
+      },
+      "pairsWith": [
+        "code-review",
+        "eslint"
+      ]
     },
     {
       "id": "security-guidance",
@@ -1939,7 +2627,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/security-guidance",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "security",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "Risky patterns in AI code slip past your review",
+        "after": "Your agent warns on unsafe patterns as it edits"
+      },
+      "pairsWith": [
+        "semgrep",
+        "gitleaks"
+      ]
     },
     {
       "id": "hookify",
@@ -1963,7 +2663,18 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/hookify",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You keep telling the agent not to do the same thing",
+        "after": "Rules become hooks that block the behavior every time"
+      },
+      "pairsWith": [
+        "claude-code"
+      ]
     },
     {
       "id": "ralph-loop",
@@ -1987,7 +2698,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/ralph-loop",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "agent",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You re-prompt the agent over and over until it finishes",
+        "after": "The agent loops on the task until the completion check passes"
+      },
+      "pairsWith": [
+        "superpowers",
+        "vitest"
+      ]
     },
     {
       "id": "plugin-dev",
@@ -2011,7 +2734,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/plugin-dev",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You learn plugin, hook and MCP formats from scattered docs",
+        "after": "Your agent scaffolds plugins with the right structure"
+      },
+      "pairsWith": [
+        "skill-creator",
+        "anthropic-skill-mcp-builder"
+      ]
     },
     {
       "id": "skill-creator",
@@ -2035,7 +2770,19 @@
       },
       "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/skill-creator",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "You write skills by trial and error",
+        "after": "Your agent drafts, tests and tunes skills for you"
+      },
+      "pairsWith": [
+        "plugin-dev",
+        "anthropic-skills"
+      ]
     },
     {
       "id": "anthropic-skills",
@@ -2062,7 +2809,19 @@
       },
       "source": "https://github.com/anthropics/skills",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent fumbles office files and one-off tasks",
+        "after": "Your agent uses tested skills for docs, slides and more"
+      },
+      "pairsWith": [
+        "skill-creator",
+        "anthropic-skill-webapp-testing"
+      ]
     },
     {
       "id": "anthropic-skill-pdf",
@@ -2089,7 +2848,18 @@
       },
       "source": "https://github.com/anthropics/skills/tree/main/skills/pdf",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "You extract and fill PDFs by hand",
+        "after": "Your agent reads, fills and merges PDFs for you"
+      },
+      "pairsWith": [
+        "anthropic-skill-docx"
+      ]
     },
     {
       "id": "anthropic-skill-docx",
@@ -2116,7 +2886,19 @@
       },
       "source": "https://github.com/anthropics/skills/tree/main/skills/docx",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "ship",
+        "before": "You turn notes into Word docs by hand",
+        "after": "Your agent writes and edits Word docs with tracked changes"
+      },
+      "pairsWith": [
+        "anthropic-skill-pdf",
+        "anthropic-skill-pptx"
+      ]
     },
     {
       "id": "anthropic-skill-xlsx",
@@ -2144,7 +2926,18 @@
       },
       "source": "https://github.com/anthropics/skills/tree/main/skills/xlsx",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "You build spreadsheets and formulas by hand",
+        "after": "Your agent creates spreadsheets with working formulas"
+      },
+      "pairsWith": [
+        "anthropic-skill-docx"
+      ]
     },
     {
       "id": "anthropic-skill-pptx",
@@ -2172,7 +2965,18 @@
       },
       "source": "https://github.com/anthropics/skills/tree/main/skills/pptx",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "ship",
+        "before": "You build demo slides by hand at the end",
+        "after": "Your agent drafts the deck from your notes"
+      },
+      "pairsWith": [
+        "anthropic-skill-docx"
+      ]
     },
     {
       "id": "anthropic-skill-skill-creator",
@@ -2199,7 +3003,18 @@
       },
       "source": "https://github.com/anthropics/skills/tree/main/skills/skill-creator",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "You write skills by trial and error",
+        "after": "Your agent guides you through writing a working skill"
+      },
+      "pairsWith": [
+        "skill-creator"
+      ]
     },
     {
       "id": "anthropic-skill-mcp-builder",
@@ -2226,7 +3041,18 @@
       },
       "source": "https://github.com/anthropics/skills/tree/main/skills/mcp-builder",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "You learn MCP server design from scratch",
+        "after": "Your agent builds MCP servers following proven patterns"
+      },
+      "pairsWith": [
+        "plugin-dev"
+      ]
     },
     {
       "id": "anthropic-skill-webapp-testing",
@@ -2254,7 +3080,19 @@
       },
       "source": "https://github.com/anthropics/skills/tree/main/skills/webapp-testing",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "test",
+        "before": "You check the local app by hand after each change",
+        "after": "Your agent tests the app with Playwright and screenshots it"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "playwright"
+      ]
     },
     {
       "id": "playwright-skill",
@@ -2281,7 +3119,19 @@
       },
       "source": "https://github.com/lackeyjb/playwright-skill",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "test",
+        "before": "You write browser scripts yourself to check a flow",
+        "after": "Your agent writes and runs Playwright scripts on demand"
+      },
+      "pairsWith": [
+        "playwright",
+        "playwright-mcp"
+      ]
     },
     {
       "id": "gh-cli",
@@ -2310,7 +3160,20 @@
       },
       "source": "https://github.com/cli/cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "review",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You open the browser to make PRs and check CI",
+        "after": "Your agent opens PRs, reads reviews and checks CI from the terminal"
+      },
+      "pairsWith": [
+        "github-mcp",
+        "act",
+        "code-review"
+      ]
     },
     {
       "id": "vercel-cli",
@@ -2342,7 +3205,19 @@
       },
       "source": "https://github.com/vercel/vercel",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You deploy by pushing and waiting to see what happens",
+        "after": "Your agent deploys previews and reads build logs"
+      },
+      "pairsWith": [
+        "vercel-mcp",
+        "vercel-plugin"
+      ]
     },
     {
       "id": "supabase-cli",
@@ -2377,7 +3252,19 @@
       },
       "source": "https://github.com/supabase/cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "build",
+        "before": "You change the production schema by hand in the dashboard",
+        "after": "Your agent writes migrations and tests them on local Supabase"
+      },
+      "pairsWith": [
+        "supabase-mcp",
+        "squawk"
+      ]
     },
     {
       "id": "wrangler",
@@ -2410,7 +3297,19 @@
       },
       "source": "https://github.com/cloudflare/workers-sdk",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You deploy Workers through the dashboard",
+        "after": "Your agent runs, tests and deploys Workers from the terminal"
+      },
+      "pairsWith": [
+        "cloudflare-mcp",
+        "cloudflare-docs-mcp"
+      ]
     },
     {
       "id": "flyctl",
@@ -2439,7 +3338,19 @@
       },
       "source": "https://github.com/superfly/flyctl",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You deploy and check logs through a web dashboard",
+        "after": "Your agent deploys to Fly and tails logs from the terminal"
+      },
+      "pairsWith": [
+        "docker",
+        "sentry-mcp"
+      ]
     },
     {
       "id": "railway-cli",
@@ -2469,7 +3380,18 @@
       },
       "source": "https://github.com/railwayapp/cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You configure services and env vars in the Railway UI",
+        "after": "Your agent deploys and sets env vars from the terminal"
+      },
+      "pairsWith": [
+        "docker"
+      ]
     },
     {
       "id": "netlify-cli",
@@ -2503,7 +3425,18 @@
       },
       "source": "https://github.com/netlify/cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "You wait on CI to see if a Netlify build passes",
+        "after": "Your agent builds and deploys locally to check first"
+      },
+      "pairsWith": [
+        "netlify-mcp"
+      ]
     },
     {
       "id": "playwright",
@@ -2529,7 +3462,20 @@
       },
       "source": "https://github.com/microsoft/playwright",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "test",
+        "before": "You click through the app by hand before every release",
+        "after": "Your agent writes end-to-end tests that run on every change"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "vitest",
+        "act"
+      ]
     },
     {
       "id": "vitest",
@@ -2553,7 +3499,19 @@
       },
       "source": "https://github.com/vitest-dev/vitest",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "test",
+        "before": "You trust the agent's word that its code works",
+        "after": "Your agent runs fast unit tests after every change"
+      },
+      "pairsWith": [
+        "playwright",
+        "biome"
+      ]
     },
     {
       "id": "jest",
@@ -2577,7 +3535,19 @@
       },
       "source": "https://github.com/jestjs/jest",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "test",
+        "before": "You trust the agent's word that its code works",
+        "after": "Your agent runs unit and snapshot tests after each change"
+      },
+      "pairsWith": [
+        "eslint",
+        "prettier"
+      ]
     },
     {
       "id": "docker",
@@ -2608,7 +3578,20 @@
       },
       "source": "https://www.docker.com/",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "ship",
+        "before": "It works on your machine but breaks in production",
+        "after": "Your agent builds and runs the same container you deploy"
+      },
+      "pairsWith": [
+        "flyctl",
+        "railway-cli",
+        "act"
+      ]
     },
     {
       "id": "uv",
@@ -2639,7 +3622,19 @@
       },
       "source": "https://github.com/astral-sh/uv",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Python envs break and installs crawl",
+        "after": "Your agent sets up Python projects in seconds, reproducibly"
+      },
+      "pairsWith": [
+        "ruff",
+        "pytest"
+      ]
     },
     {
       "id": "bun",
@@ -2670,7 +3665,18 @@
       },
       "source": "https://github.com/oven-sh/bun",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Your JS toolchain is five tools and slow",
+        "after": "One fast runtime installs, runs and tests your code"
+      },
+      "pairsWith": [
+        "biome"
+      ]
     },
     {
       "id": "pnpm",
@@ -2701,7 +3707,19 @@
       },
       "source": "https://github.com/pnpm/pnpm",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Installs are slow and node_modules eats your disk",
+        "after": "Your agent installs dependencies fast with a shared store"
+      },
+      "pairsWith": [
+        "vitest",
+        "biome"
+      ]
     },
     {
       "id": "ollama",
@@ -2732,7 +3750,20 @@
       },
       "source": "https://github.com/ollama/ollama",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "models",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "Every small task burns tokens on a frontier model",
+        "after": "Small tasks run on a free local model on your machine"
+      },
+      "pairsWith": [
+        "aider",
+        "continue",
+        "goose"
+      ]
     },
     {
       "id": "stripe-cli",
@@ -2763,7 +3794,19 @@
       },
       "source": "https://github.com/stripe/stripe-cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "other",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "test",
+        "before": "You can't test webhooks until you deploy",
+        "after": "Your agent forwards Stripe webhooks to localhost and triggers events"
+      },
+      "pairsWith": [
+        "stripe-mcp",
+        "stripe-plugin"
+      ]
     },
     {
       "id": "neonctl",
@@ -2795,7 +3838,19 @@
       },
       "source": "https://github.com/neondatabase/neonctl",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You test migrations on the shared database",
+        "after": "Your agent creates a Neon branch to try changes safely"
+      },
+      "pairsWith": [
+        "neon-mcp",
+        "squawk"
+      ]
     },
     {
       "id": "turso-cli",
@@ -2822,7 +3877,18 @@
       },
       "source": "https://github.com/tursodatabase/turso-cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You set up SQLite hosting and tokens by hand",
+        "after": "Your agent creates Turso databases and tokens from the terminal"
+      },
+      "pairsWith": [
+        "drizzle-kit"
+      ]
     },
     {
       "id": "eslint",
@@ -2852,7 +3918,19 @@
       },
       "source": "https://github.com/eslint/eslint",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "You catch bad patterns in AI code by eye",
+        "after": "Your agent runs the linter and fixes problems before you review"
+      },
+      "pairsWith": [
+        "prettier",
+        "vitest"
+      ]
     },
     {
       "id": "prettier",
@@ -2882,7 +3960,18 @@
       },
       "source": "https://github.com/prettier/prettier",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "Format noise clutters every AI diff",
+        "after": "Every file is formatted the same, so diffs show only real changes"
+      },
+      "pairsWith": [
+        "eslint"
+      ]
     },
     {
       "id": "biome",
@@ -2912,7 +4001,19 @@
       },
       "source": "https://github.com/biomejs/biome",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "You run separate slow tools to lint and format",
+        "after": "One fast tool lints and formats before you review"
+      },
+      "pairsWith": [
+        "vitest",
+        "bun"
+      ]
     },
     {
       "id": "ruff",
@@ -2945,7 +4046,19 @@
       },
       "source": "https://github.com/astral-sh/ruff",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "You catch Python style and bug patterns by eye",
+        "after": "Your agent lints and formats Python in milliseconds"
+      },
+      "pairsWith": [
+        "uv",
+        "pytest"
+      ]
     },
     {
       "id": "pytest",
@@ -2978,7 +4091,19 @@
       },
       "source": "https://github.com/pytest-dev/pytest",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "test",
+        "before": "You trust the agent's word that its Python works",
+        "after": "Your agent runs pytest after every change and fixes failures"
+      },
+      "pairsWith": [
+        "uv",
+        "ruff"
+      ]
     },
     {
       "id": "sentry-cli",
@@ -3012,7 +4137,18 @@
       },
       "source": "https://github.com/getsentry/sentry-cli",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "monitoring",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "Production errors show minified stack traces",
+        "after": "Releases ship with source maps so errors point at real lines"
+      },
+      "pairsWith": [
+        "sentry-mcp"
+      ]
     },
     {
       "id": "lazygit",
@@ -3039,7 +4175,19 @@
       },
       "source": "https://github.com/jesseduffield/lazygit",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "terminal",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "You review agent commits with long git commands",
+        "after": "You stage, review and split agent changes in a quick UI"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "ghostty"
+      ]
     },
     {
       "id": "ripgrep",
@@ -3066,7 +4214,18 @@
       },
       "source": "https://github.com/BurntSushi/ripgrep",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "other",
+      "cost": "free",
+      "setupMin": 1,
+      "changes": {
+        "stage": "build",
+        "before": "Searching a big codebase is slow for you and the agent",
+        "after": "Code search returns in milliseconds, ignoring junk files"
+      },
+      "pairsWith": [
+        "jq"
+      ]
     },
     {
       "id": "jq",
@@ -3093,7 +4252,18 @@
       },
       "source": "https://github.com/jqlang/jq",
       "verified": true,
-      "updated": "2026-10-01"
+      "updated": "2026-10-01",
+      "category": "other",
+      "cost": "free",
+      "setupMin": 1,
+      "changes": {
+        "stage": "build",
+        "before": "You squint at raw JSON from APIs and logs",
+        "after": "Your agent slices and filters JSON in one line"
+      },
+      "pairsWith": [
+        "ripgrep"
+      ]
     },
     {
       "id": "dbhub-mcp",
@@ -3119,7 +4289,19 @@
       },
       "source": "https://github.com/bytebase/dbhub",
       "verified": true,
-      "updated": "2026-10-02"
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You run queries yourself and paste results into chat",
+        "after": "Your agent inspects schemas and queries your database directly"
+      },
+      "pairsWith": [
+        "postgres-mcp",
+        "squawk"
+      ]
     },
     {
       "id": "postgres-mcp",
@@ -3148,7 +4330,20 @@
       },
       "source": "https://github.com/crystaldba/postgres-mcp",
       "verified": true,
-      "updated": "2026-10-02"
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You guess why a query is slow",
+        "after": "Your agent reads explain plans and suggests the right indexes"
+      },
+      "pairsWith": [
+        "squawk",
+        "dbhub-mcp",
+        "supabase-mcp"
+      ]
     },
     {
       "id": "squawk",
@@ -3182,7 +4377,20 @@
       },
       "source": "https://github.com/sbdchd/squawk",
       "verified": true,
-      "updated": "2026-10-02"
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "A migration that locks a big table slips into review",
+        "after": "Risky migrations are flagged before they reach production"
+      },
+      "pairsWith": [
+        "atlas",
+        "postgres-mcp",
+        "act"
+      ]
     },
     {
       "id": "atlas",
@@ -3212,7 +4420,19 @@
       },
       "source": "https://github.com/ariga/atlas",
       "verified": true,
-      "updated": "2026-10-02"
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "review",
+        "before": "You review migration SQL by eye for breaking changes",
+        "after": "Migrations are linted for data loss and locks in CI"
+      },
+      "pairsWith": [
+        "squawk",
+        "postgres-mcp"
+      ]
     },
     {
       "id": "act",
@@ -3240,7 +4460,20 @@
       },
       "source": "https://github.com/nektos/act",
       "verified": true,
-      "updated": "2026-10-02"
+      "updated": "2026-10-02",
+      "category": "ci",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You push and wait to see if CI passes, again and again",
+        "after": "You run GitHub Actions locally and fix failures before pushing"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "gitleaks",
+        "semgrep"
+      ]
     },
     {
       "id": "semgrep",
@@ -3272,7 +4505,20 @@
       },
       "source": "https://github.com/semgrep/semgrep",
       "verified": true,
-      "updated": "2026-10-02"
+      "updated": "2026-10-02",
+      "category": "security",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "Security bugs in AI code slip past your review",
+        "after": "A scan flags injection and unsafe patterns before you merge"
+      },
+      "pairsWith": [
+        "gitleaks",
+        "security-guidance",
+        "act"
+      ]
     },
     {
       "id": "gitleaks",
@@ -3300,7 +4546,3612 @@
       },
       "source": "https://github.com/gitleaks/gitleaks",
       "verified": true,
-      "updated": "2026-10-02"
+      "updated": "2026-10-02",
+      "category": "security",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "An API key the agent hardcoded ends up in git history",
+        "after": "Secrets are caught before the commit lands"
+      },
+      "pairsWith": [
+        "semgrep",
+        "act"
+      ]
+    },
+    {
+      "id": "basic-memory",
+      "name": "Basic Memory",
+      "kind": "mcp",
+      "what": "Local Markdown knowledge base your AI agents read and write over MCP, synced across sessions",
+      "solves": [
+        "memory",
+        "notes"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "basic-memory",
+          "bm"
+        ],
+        "mcp": [
+          "basic-memory"
+        ],
+        "pip": [
+          "basic-memory"
+        ],
+        "plugins": [
+          "basic-memory"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "basic-memory",
+          "command": "uvx",
+          "args": [
+            "--prerelease=allow",
+            "basic-memory",
+            "mcp"
+          ]
+        },
+        "command": "claude mcp add basic-memory -- uvx --prerelease=allow basic-memory mcp",
+        "docs": "https://docs.basicmemory.com/"
+      },
+      "source": "https://github.com/basicmachines-co/basic-memory",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "notes-memory",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You re-explain project context to the agent every new session",
+        "after": "The agent reads and updates your Markdown notes so context carries over"
+      },
+      "pairsWith": [
+        "obsidian",
+        "obsidian-mcp",
+        "memory-mcp"
+      ]
+    },
+    {
+      "id": "mem0-mcp",
+      "name": "Mem0 MCP (formerly OpenMemory)",
+      "kind": "mcp",
+      "what": "Hosted Mem0 memory server that lets coding agents store and search memories across tools",
+      "solves": [
+        "memory"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "mem0-mcp",
+          "mem0",
+          "openmemory",
+          "mcp.mem0.ai"
+        ],
+        "pip": [
+          "mem0ai"
+        ],
+        "npm": [
+          "mem0ai"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "mem0-mcp",
+          "url": "https://mcp.mem0.ai/mcp"
+        },
+        "command": "npx mcp-add --name mem0-mcp --type http --url \"https://mcp.mem0.ai/mcp\" --clients \"claude code\"",
+        "docs": "https://docs.mem0.ai/platform/mem0-mcp"
+      },
+      "source": "https://github.com/mem0ai/mem0",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "notes-memory",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "Preferences and decisions you told one agent are lost in the next tool",
+        "after": "Agents recall your saved preferences and facts from a shared memory store"
+      },
+      "pairsWith": [
+        "memory-mcp",
+        "basic-memory"
+      ]
+    },
+    {
+      "id": "claude-mem",
+      "name": "claude-mem",
+      "kind": "plugin",
+      "what": "Claude Code plugin that captures session activity and injects relevant memory into future sessions",
+      "solves": [
+        "memory"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "claude-mem"
+        ],
+        "npm": [
+          "claude-mem"
+        ]
+      },
+      "install": {
+        "command": "npx claude-mem install",
+        "docs": "https://docs.claude-mem.ai/installation"
+      },
+      "source": "https://github.com/thedotmack/claude-mem",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "notes-memory",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "Each Claude Code session starts blank and you repeat what was done",
+        "after": "Past session observations are auto-loaded so Claude picks up where it left off"
+      },
+      "pairsWith": [
+        "claude-code",
+        "basic-memory",
+        "obsidian"
+      ]
+    },
+    {
+      "id": "supermemory-mcp",
+      "name": "Supermemory MCP",
+      "kind": "mcp",
+      "what": "Remote MCP server giving any AI client access to your Supermemory memories, profile and spaces",
+      "solves": [
+        "memory",
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "supermemory",
+          "mcp.supermemory.ai"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "supermemory",
+          "url": "https://mcp.supermemory.ai/mcp"
+        },
+        "docs": "https://github.com/supermemoryai/supermemory/tree/main/apps/mcp"
+      },
+      "source": "https://supermemory.ai",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "notes-memory",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "plan",
+        "before": "Your notes and memories live in one chat app, invisible to your coding agent",
+        "after": "The agent searches the same memory store from any MCP client"
+      },
+      "pairsWith": [
+        "memory-mcp",
+        "claude-mem"
+      ]
+    },
+    {
+      "id": "logseq",
+      "name": "Logseq",
+      "kind": "app",
+      "what": "Open-source, local-first outliner and knowledge base for notes, journals and linked pages",
+      "solves": [
+        "notes"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Logseq.app"
+        ],
+        "brew": [
+          "logseq"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask logseq",
+        "docs": "https://logseq.com/downloads"
+      },
+      "source": "https://github.com/logseq/logseq",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "notes-memory",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "Design ideas and decisions are scattered across chats and scratch files",
+        "after": "You keep linked daily notes in local Markdown that agents can read"
+      },
+      "pairsWith": [
+        "basic-memory",
+        "filesystem-mcp"
+      ]
+    },
+    {
+      "id": "github-spec-kit",
+      "name": "GitHub Spec Kit",
+      "kind": "cli",
+      "what": "Spec-driven development toolkit: the specify CLI scaffolds specs, plans and tasks for AI agents",
+      "solves": [
+        "planning",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "specify"
+        ],
+        "pip": [
+          "specify-cli"
+        ],
+        "skills": [
+          "speckit"
+        ]
+      },
+      "install": {
+        "command": "uv tool install specify-cli",
+        "docs": "https://github.github.io/spec-kit/installation.html"
+      },
+      "source": "https://github.com/github/spec-kit",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "planning",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "plan",
+        "before": "You prompt the agent with a vague idea and fix the drift later",
+        "after": "You write a spec, plan and task list first, then the agent builds against it"
+      },
+      "pairsWith": [
+        "superpowers",
+        "gh-cli",
+        "context7-mcp"
+      ]
+    },
+    {
+      "id": "bmad-method",
+      "name": "BMAD Method",
+      "kind": "skill",
+      "what": "Agile AI-driven development framework of skills with planner, architect and dev agent roles",
+      "solves": [
+        "planning",
+        "orchestration"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "skills": [
+          "bmad",
+          "bmad-method",
+          "bmod-method"
+        ],
+        "plugins": [
+          "bmad-method"
+        ],
+        "npm": [
+          "bmad-method"
+        ]
+      },
+      "install": {
+        "command": "npx skills add bmad-code-org/BMAD-METHOD",
+        "docs": "https://docs.bmad-method.org/"
+      },
+      "source": "https://github.com/bmad-code-org/BMAD-METHOD",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "planning",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "plan",
+        "before": "One agent jumps from idea straight to code with no requirements",
+        "after": "Analyst, PM and architect roles produce a PRD and design before coding"
+      },
+      "pairsWith": [
+        "github-spec-kit",
+        "task-master-ai"
+      ]
+    },
+    {
+      "id": "task-master-ai",
+      "name": "Taskmaster AI",
+      "kind": "mcp",
+      "what": "Turns a PRD into a dependency-aware task list your AI agent works through via CLI or MCP",
+      "solves": [
+        "planning",
+        "project-management"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "task-master"
+        ],
+        "npm": [
+          "task-master-ai"
+        ],
+        "mcp": [
+          "task-master-ai",
+          "taskmaster-ai"
+        ],
+        "deps": [
+          "task-master-ai"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "task-master-ai",
+          "command": "npx",
+          "args": [
+            "-y",
+            "task-master-ai"
+          ]
+        },
+        "command": "claude mcp add taskmaster-ai -- npx -y task-master-ai",
+        "docs": "https://tryhamster.com/docs/taskmaster/getting-started/quick-start/installation"
+      },
+      "source": "https://github.com/eyaltoledano/claude-task-master",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "planning",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "plan",
+        "before": "You hand the agent a big feature and it loses track halfway",
+        "after": "The PRD is split into ordered tasks the agent picks up one at a time"
+      },
+      "pairsWith": [
+        "github-spec-kit",
+        "linear-mcp",
+        "superpowers"
+      ]
+    },
+    {
+      "id": "openspec",
+      "name": "OpenSpec",
+      "kind": "cli",
+      "what": "Lightweight spec-driven workflow CLI that keeps change proposals and specs in your repo for agents",
+      "solves": [
+        "planning",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "openspec"
+        ],
+        "npm": [
+          "@fission-ai/openspec"
+        ],
+        "brew": [
+          "openspec"
+        ]
+      },
+      "install": {
+        "command": "npm install -g @fission-ai/openspec@latest",
+        "docs": "https://github.com/Fission-AI/OpenSpec/blob/main/docs/supported-tools.md"
+      },
+      "source": "https://github.com/Fission-AI/OpenSpec",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "planning",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "Requirements live in your head and the agent guesses scope",
+        "after": "You agree on a change proposal and spec deltas before the agent writes code"
+      },
+      "pairsWith": [
+        "superpowers",
+        "task-master-ai"
+      ]
+    },
+    {
+      "id": "wshobson-agents",
+      "name": "wshobson/agents",
+      "kind": "plugin",
+      "what": "Claude Code plugin marketplace with 90+ plugins of specialist subagents, commands and skills",
+      "solves": [
+        "orchestration",
+        "review",
+        "code-quality"
+      ],
+      "agents": [
+        "claude",
+        "codex",
+        "cursor"
+      ],
+      "detect": {
+        "plugins": [
+          "claude-code-workflows"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add wshobson/agents",
+        "docs": "https://github.com/wshobson/agents/blob/main/docs/plugins.md"
+      },
+      "source": "https://github.com/wshobson/agents",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "One generalist agent handles every language, test and infra task",
+        "after": "You install specialist subagents per domain that the main agent delegates to"
+      },
+      "pairsWith": [
+        "superpowers",
+        "code-review"
+      ]
+    },
+    {
+      "id": "every-compound-engineering",
+      "name": "Compound Engineering",
+      "kind": "plugin",
+      "what": "Every's plugin of plan, work, review and compound skills that turn each task's lessons into reusable docs",
+      "solves": [
+        "planning",
+        "review",
+        "code-quality"
+      ],
+      "agents": [
+        "claude",
+        "codex",
+        "cursor"
+      ],
+      "detect": {
+        "plugins": [
+          "compound-engineering",
+          "compound-engineering-plugin"
+        ],
+        "skills": [
+          "ce-plan",
+          "ce-review",
+          "lfg"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add EveryInc/compound-engineering-plugin",
+        "docs": "https://github.com/EveryInc/compound-engineering-plugin"
+      },
+      "source": "https://github.com/EveryInc/compound-engineering-plugin",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "skill-pack",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "Lessons from each bug fix are forgotten by the next feature",
+        "after": "Multi-agent review runs, then learnings are written down for future tasks"
+      },
+      "pairsWith": [
+        "superpowers",
+        "code-review",
+        "gh-cli"
+      ]
+    },
+    {
+      "id": "claude-squad",
+      "name": "Claude Squad",
+      "kind": "cli",
+      "what": "Terminal app that runs multiple Claude Code, Codex or Aider sessions in tmux with separate git worktrees",
+      "solves": [
+        "orchestration",
+        "git"
+      ],
+      "agents": [
+        "claude",
+        "codex",
+        "gemini"
+      ],
+      "detect": {
+        "bins": [
+          "cs",
+          "claude-squad"
+        ],
+        "brew": [
+          "claude-squad"
+        ]
+      },
+      "install": {
+        "command": "brew install claude-squad",
+        "docs": "https://smtg-ai.github.io/claude-squad/"
+      },
+      "source": "https://github.com/smtg-ai/claude-squad",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "terminal",
+      "cost": "free",
+      "setupMin": 5,
+      "pairsWith": [
+        "tmux",
+        "claude-code",
+        "lazygit"
+      ]
+    },
+    {
+      "id": "ccusage",
+      "name": "ccusage",
+      "kind": "cli",
+      "what": "CLI that reports Claude Code token usage and cost from local logs by day, month or session",
+      "solves": [
+        "monitoring",
+        "analytics"
+      ],
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "detect": {
+        "bins": [
+          "ccusage"
+        ],
+        "npm": [
+          "ccusage"
+        ],
+        "brew": [
+          "ccusage"
+        ]
+      },
+      "install": {
+        "command": "npx ccusage@latest",
+        "docs": "https://ccusage.com/"
+      },
+      "source": "https://github.com/ccusage/ccusage",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "monitoring",
+      "cost": "free",
+      "setupMin": 1,
+      "changes": {
+        "stage": "ship",
+        "before": "You have no idea how many tokens or dollars each agent session burned",
+        "after": "You see daily and per-session token cost reports from one command"
+      },
+      "pairsWith": [
+        "claude-code",
+        "claude-code-router"
+      ]
+    },
+    {
+      "id": "conductor",
+      "name": "Conductor",
+      "kind": "app",
+      "what": "Mac app that runs Claude Code, Codex and other agents in parallel, each in its own git worktree",
+      "solves": [
+        "orchestration",
+        "git",
+        "review"
+      ],
+      "agents": [
+        "claude",
+        "codex",
+        "cursor"
+      ],
+      "detect": {
+        "apps": [
+          "Conductor.app"
+        ],
+        "brew": [
+          "conductor"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask conductor",
+        "docs": "https://www.conductor.build/docs/"
+      },
+      "source": "https://www.conductor.build/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "agent",
+      "cost": "freemium",
+      "setupMin": 5,
+      "pairsWith": [
+        "claude-code",
+        "codex-cli",
+        "gh-cli"
+      ]
+    },
+    {
+      "id": "cypress",
+      "name": "Cypress",
+      "kind": "cli",
+      "what": "End-to-end and component testing for web apps that runs in a real browser",
+      "solves": [
+        "testing",
+        "browser"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "cypress"
+        ],
+        "npm": [
+          "cypress"
+        ],
+        "deps": [
+          "cypress"
+        ]
+      },
+      "install": {
+        "command": "npm install cypress --save-dev",
+        "docs": "https://docs.cypress.io/app/get-started/install-cypress"
+      },
+      "source": "https://github.com/cypress-io/cypress",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "testing",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "test",
+        "before": "You click through the app by hand after every AI change",
+        "after": "Your agent writes Cypress specs and reruns them on each change"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "vitest",
+        "act"
+      ]
+    },
+    {
+      "id": "storybook",
+      "name": "Storybook",
+      "kind": "cli",
+      "what": "Workshop for building, documenting, and testing UI components in isolation",
+      "solves": [
+        "ui",
+        "design",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "npm": [
+          "storybook"
+        ],
+        "deps": [
+          "storybook"
+        ]
+      },
+      "install": {
+        "command": "npm create storybook@latest",
+        "docs": "https://storybook.js.org/docs/get-started/install"
+      },
+      "source": "https://github.com/storybookjs/storybook",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "design",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "build",
+        "before": "You check AI-built components only inside the full running app",
+        "after": "Each component gets stories you can view and test in isolation"
+      },
+      "pairsWith": [
+        "storybook-mcp",
+        "figma-mcp",
+        "vitest"
+      ]
+    },
+    {
+      "id": "k6",
+      "name": "Grafana k6",
+      "kind": "cli",
+      "what": "Load testing tool where you script traffic scenarios in JavaScript",
+      "solves": [
+        "testing",
+        "monitoring"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "k6"
+        ],
+        "brew": [
+          "k6"
+        ]
+      },
+      "install": {
+        "command": "brew install k6",
+        "docs": "https://grafana.com/docs/k6/latest/set-up/install-k6/"
+      },
+      "source": "https://github.com/grafana/k6",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "testing",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "test",
+        "before": "You find out the API falls over under load in production",
+        "after": "Your agent writes k6 scripts and you load test before shipping"
+      },
+      "pairsWith": [
+        "grafana-mcp",
+        "act"
+      ]
+    },
+    {
+      "id": "bruno",
+      "name": "Bruno",
+      "kind": "app",
+      "what": "Open-source offline API client that stores collections as plain files in your repo",
+      "solves": [
+        "testing",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "bru"
+        ],
+        "apps": [
+          "Bruno.app"
+        ],
+        "brew": [
+          "bruno",
+          "bruno-cli"
+        ],
+        "npm": [
+          "@usebruno/cli"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask bruno",
+        "docs": "https://docs.usebruno.com/get-started/bruno-basics/download"
+      },
+      "source": "https://github.com/usebruno/bruno",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "testing",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "test",
+        "before": "You hand-craft curl calls to check each endpoint the AI built",
+        "after": "Your agent edits Bruno request files and runs them with the bru CLI"
+      },
+      "pairsWith": [
+        "stripe-cli",
+        "jq"
+      ]
+    },
+    {
+      "id": "coderabbit-cli",
+      "name": "CodeRabbit CLI",
+      "kind": "cli",
+      "what": "AI code review in the terminal on your uncommitted changes, with agent-friendly output",
+      "solves": [
+        "review",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "coderabbit",
+          "cr"
+        ],
+        "brew": [
+          "coderabbit"
+        ],
+        "plugins": [
+          "coderabbit"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://cli.coderabbit.ai/install.sh | sh",
+        "docs": "https://docs.coderabbit.ai/cli"
+      },
+      "source": "https://www.coderabbit.ai/cli",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "review",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "You read every AI diff line by line, alone",
+        "after": "CodeRabbit reviews local changes and your agent fixes its findings"
+      },
+      "pairsWith": [
+        "code-review",
+        "gh-cli",
+        "pr-review-toolkit"
+      ]
+    },
+    {
+      "id": "greptile",
+      "name": "Greptile",
+      "kind": "app",
+      "what": "AI code reviewer for GitHub/GitLab PRs that understands your whole codebase, plus an MCP",
+      "solves": [
+        "review",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "greptile",
+          "api.greptile.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "greptile",
+          "url": "https://api.greptile.com/mcp"
+        },
+        "docs": "https://www.greptile.com/docs/mcp/setup"
+      },
+      "source": "https://www.greptile.com",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "review",
+      "cost": "paid",
+      "setupMin": 10,
+      "changes": {
+        "stage": "review",
+        "before": "PRs wait for a human to catch cross-file bugs",
+        "after": "Greptile comments on each PR with codebase-aware findings"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "code-review"
+      ]
+    },
+    {
+      "id": "graphite-cli",
+      "name": "Graphite CLI",
+      "kind": "cli",
+      "what": "gt CLI for creating and syncing stacked pull requests, paired with Graphite AI review",
+      "solves": [
+        "git",
+        "review"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "gt"
+        ],
+        "brew": [
+          "graphite",
+          "withgraphite/tap/graphite"
+        ],
+        "npm": [
+          "@withgraphite/graphite-cli"
+        ]
+      },
+      "install": {
+        "command": "brew install withgraphite/tap/graphite",
+        "docs": "https://graphite.com/docs/install-the-cli"
+      },
+      "source": "https://graphite.com",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "review",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "ship",
+        "before": "Your agent dumps a huge change into one hard-to-review PR",
+        "after": "Work lands as a stack of small PRs you review and merge in order"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "coderabbit-cli"
+      ]
+    },
+    {
+      "id": "qodo-pr-agent",
+      "name": "PR-Agent",
+      "kind": "cli",
+      "what": "Open-source AI PR reviewer that describes, reviews, and suggests fixes on pull requests",
+      "solves": [
+        "review",
+        "code-quality",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "pr-agent"
+        ],
+        "pip": [
+          "pr-agent"
+        ]
+      },
+      "install": {
+        "command": "pip install pr-agent",
+        "docs": "https://docs.pr-agent.ai/installation/"
+      },
+      "source": "https://github.com/the-pr-agent/pr-agent",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "review",
+      "cost": "free",
+      "setupMin": 15,
+      "changes": {
+        "stage": "review",
+        "before": "You write PR descriptions and review AI code by hand",
+        "after": "PR-Agent auto-describes each PR and posts review comments"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "github-mcp"
+      ]
+    },
+    {
+      "id": "deepwiki-mcp",
+      "name": "DeepWiki MCP",
+      "kind": "mcp",
+      "what": "Remote MCP that answers questions about public GitHub repos using DeepWiki's generated docs",
+      "solves": [
+        "docs",
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "deepwiki",
+          "mcp.deepwiki.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "deepwiki",
+          "url": "https://mcp.deepwiki.com/mcp"
+        },
+        "docs": "https://docs.devin.ai/work-with-devin/deepwiki-mcp"
+      },
+      "source": "https://deepwiki.com",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "plan",
+        "before": "You dig through unfamiliar library repos to see how they work",
+        "after": "Your agent asks DeepWiki about any public repo and gets cited answers"
+      },
+      "pairsWith": [
+        "context7-mcp",
+        "ref-tools-mcp"
+      ]
+    },
+    {
+      "id": "ref-tools-mcp",
+      "name": "Ref",
+      "kind": "mcp",
+      "what": "Docs search MCP that feeds your agent precise, token-efficient API and library documentation",
+      "solves": [
+        "docs",
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "ref",
+          "api.ref.tools",
+          "ref-tools-mcp"
+        ],
+        "npm": [
+          "ref-tools-mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "Ref",
+          "url": "https://api.ref.tools/mcp?apiKey=YOUR_API_KEY"
+        },
+        "docs": "https://docs.ref.tools/install"
+      },
+      "source": "https://github.com/ref-tools/ref-tools-mcp",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "docs",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent guesses at APIs from stale training data",
+        "after": "Your agent pulls just the relevant current docs before coding"
+      },
+      "pairsWith": [
+        "context7-mcp",
+        "exa-mcp"
+      ]
+    },
+    {
+      "id": "microsoft-learn-mcp",
+      "name": "Microsoft Learn MCP",
+      "kind": "mcp",
+      "what": "Remote MCP giving agents search and fetch over official Microsoft and Azure docs",
+      "solves": [
+        "docs",
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "microsoft-learn",
+          "mslearn",
+          "learn.microsoft.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "microsoft-learn",
+          "url": "https://learn.microsoft.com/api/mcp"
+        },
+        "docs": "https://github.com/MicrosoftDocs/mcp"
+      },
+      "source": "https://github.com/MicrosoftDocs/mcp",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent hallucinates Azure and .NET API details",
+        "after": "Your agent checks official Microsoft docs and code samples first"
+      },
+      "pairsWith": [
+        "context7-mcp"
+      ]
+    },
+    {
+      "id": "aws-docs-mcp",
+      "name": "AWS Documentation MCP Server",
+      "kind": "mcp",
+      "what": "Local MCP from AWS Labs to search, read, and get recommendations from AWS docs",
+      "solves": [
+        "docs",
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "awslabs.aws-documentation-mcp-server"
+        ],
+        "pip": [
+          "awslabs.aws-documentation-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "awslabs.aws-documentation-mcp-server",
+          "command": "uvx",
+          "args": [
+            "awslabs.aws-documentation-mcp-server@latest"
+          ]
+        },
+        "docs": "https://github.com/awslabs/mcp/tree/main/src/aws-documentation-mcp-server"
+      },
+      "source": "https://github.com/awslabs/mcp",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "docs",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You paste AWS doc pages into chat so the agent gets services right",
+        "after": "Your agent searches and reads current AWS docs itself"
+      },
+      "pairsWith": [
+        "aws-cli",
+        "context7-mcp"
+      ]
+    },
+    {
+      "id": "brave-search-mcp",
+      "name": "Brave Search MCP",
+      "kind": "mcp",
+      "what": "Official Brave MCP server for web, news, image, video, and local search via Brave's API",
+      "solves": [
+        "search",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "brave-search",
+          "@brave/brave-search-mcp-server"
+        ],
+        "npm": [
+          "@brave/brave-search-mcp-server"
+        ],
+        "bins": [
+          "brave-search-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "brave-search",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@brave/brave-search-mcp-server",
+            "--transport",
+            "stdio"
+          ]
+        },
+        "docs": "https://github.com/brave/brave-search-mcp-server"
+      },
+      "source": "https://github.com/brave/brave-search-mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "docs",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You search the web yourself and paste results to the agent",
+        "after": "Your agent runs Brave searches on its own while it plans"
+      },
+      "pairsWith": [
+        "context7-mcp",
+        "firecrawl-mcp"
+      ]
+    },
+    {
+      "id": "perplexity-mcp",
+      "name": "Perplexity MCP",
+      "kind": "mcp",
+      "what": "Official Perplexity MCP for real-time web search, reasoning, and research via the Perplexity API",
+      "solves": [
+        "search",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "perplexity",
+          "api.perplexity.ai",
+          "@perplexity-ai/mcp-server"
+        ],
+        "npm": [
+          "@perplexity-ai/mcp-server"
+        ],
+        "bins": [
+          "perplexity-mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "perplexity",
+          "url": "https://api.perplexity.ai/mcp"
+        },
+        "command": "claude mcp add perplexity --env PERPLEXITY_API_KEY=\"your_key_here\" -- npx -y @perplexity-ai/mcp-server",
+        "docs": "https://docs.perplexity.ai/docs/getting-started/integrations/mcp-server"
+      },
+      "source": "https://github.com/perplexityai/modelcontextprotocol",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "docs",
+      "cost": "paid",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You research libraries and errors in a separate browser tab",
+        "after": "Your agent gets cited, up-to-date answers from Perplexity mid-task"
+      },
+      "pairsWith": [
+        "context7-mcp",
+        "exa-mcp"
+      ]
+    },
+    {
+      "id": "maestro",
+      "name": "Maestro",
+      "kind": "cli",
+      "what": "Mobile and web UI testing with YAML flows, plus a built-in MCP server for agents",
+      "solves": [
+        "testing",
+        "ui"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "maestro"
+        ],
+        "mcp": [
+          "maestro"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL \"https://get.maestro.mobile.dev\" | bash",
+        "docs": "https://docs.maestro.dev/maestro-cli/how-to-install-maestro-cli"
+      },
+      "source": "https://github.com/mobile-dev-inc/maestro",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "testing",
+      "cost": "freemium",
+      "setupMin": 15,
+      "changes": {
+        "stage": "test",
+        "before": "You tap through the mobile app on a simulator after each change",
+        "after": "Your agent drives the app via Maestro MCP and saves flows as tests"
+      },
+      "pairsWith": [
+        "expo-eas-cli"
+      ]
+    },
+    {
+      "id": "shadcn-mcp",
+      "name": "shadcn/ui MCP",
+      "kind": "mcp",
+      "what": "Lets your agent browse, search and install shadcn/ui and registry components",
+      "solves": [
+        "ui",
+        "design"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "shadcn"
+        ],
+        "npm": [
+          "shadcn"
+        ],
+        "deps": [
+          "shadcn"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "shadcn",
+          "command": "npx",
+          "args": [
+            "shadcn@latest",
+            "mcp"
+          ]
+        },
+        "command": "npx shadcn@latest mcp init --client claude",
+        "docs": "https://ui.shadcn.com/docs/mcp"
+      },
+      "source": "https://ui.shadcn.com/docs/mcp",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "design",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent guesses component APIs and hand-writes UI from memory",
+        "after": "It pulls real shadcn components from the registry and installs them correctly"
+      },
+      "pairsWith": [
+        "frontend-design",
+        "figma-mcp",
+        "21st-dev-magic-mcp"
+      ]
+    },
+    {
+      "id": "storybook-mcp",
+      "name": "Storybook MCP addon",
+      "kind": "mcp",
+      "what": "Storybook addon that exposes your components and stories to agents over MCP",
+      "solves": [
+        "ui",
+        "design",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "storybook"
+        ],
+        "npm": [
+          "@storybook/addon-mcp"
+        ],
+        "deps": [
+          "@storybook/addon-mcp"
+        ]
+      },
+      "install": {
+        "command": "npx storybook add @storybook/addon-mcp",
+        "docs": "https://storybook.js.org/docs/ai/mcp/overview"
+      },
+      "source": "https://github.com/storybookjs/mcp",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "design",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent invents new components instead of reusing your design system",
+        "after": "It reads your stories and reuses existing components with the right props"
+      },
+      "pairsWith": [
+        "storybook",
+        "shadcn-mcp"
+      ]
+    },
+    {
+      "id": "21st-dev-magic-mcp",
+      "name": "21st.dev Magic MCP",
+      "kind": "mcp",
+      "what": "Generates and fetches polished React UI components from the 21st.dev library via MCP",
+      "solves": [
+        "ui",
+        "design"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "21st",
+          "magic",
+          "21st.dev"
+        ],
+        "npm": [
+          "@21st-dev/magic",
+          "@21st-dev/cli"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "21st",
+          "url": "https://21st.dev/api/mcp"
+        },
+        "command": "npx @21st-dev/cli@latest init --client claude",
+        "docs": "https://21st.dev/mcp"
+      },
+      "source": "https://github.com/21st-dev/magic-mcp",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "design",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You describe a UI and get a bland, generic first draft",
+        "after": "Your agent pulls polished, ready-made components you can drop in"
+      },
+      "pairsWith": [
+        "shadcn-mcp",
+        "frontend-design"
+      ]
+    },
+    {
+      "id": "railway-mcp",
+      "name": "Railway MCP",
+      "kind": "mcp",
+      "what": "Railway's MCP server, now bundled in the Railway CLI, to deploy and manage services",
+      "solves": [
+        "deploy"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "railway"
+        ],
+        "mcp": [
+          "railway",
+          "mcp.railway.com"
+        ],
+        "npm": [
+          "@railway/cli",
+          "@railway/mcp-server"
+        ],
+        "brew": [
+          "railway"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "railway",
+          "command": "railway",
+          "args": [
+            "mcp"
+          ]
+        },
+        "command": "railway mcp install",
+        "docs": "https://docs.railway.com/cli/mcp"
+      },
+      "source": "https://github.com/railwayapp/railway-mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You click through the Railway dashboard to deploy and set env vars",
+        "after": "Your agent creates services, sets variables and deploys from chat"
+      },
+      "pairsWith": [
+        "railway-cli",
+        "docker"
+      ]
+    },
+    {
+      "id": "render-mcp",
+      "name": "Render MCP",
+      "kind": "mcp",
+      "what": "Hosted MCP server to manage Render services, databases, logs and metrics",
+      "solves": [
+        "deploy",
+        "monitoring"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "render",
+          "mcp.render.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "render",
+          "url": "https://mcp.render.com/mcp"
+        },
+        "docs": "https://render.com/docs/mcp-server"
+      },
+      "source": "https://github.com/render-oss/render-mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You dig through the Render dashboard for logs when a deploy breaks",
+        "after": "Your agent pulls logs and metrics and explains what failed"
+      },
+      "pairsWith": [
+        "docker",
+        "sentry-mcp"
+      ]
+    },
+    {
+      "id": "heroku-mcp",
+      "name": "Heroku MCP",
+      "kind": "mcp",
+      "what": "Lets agents manage Heroku apps, dynos, add-ons and Postgres through the Heroku CLI",
+      "solves": [
+        "deploy",
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "heroku"
+        ],
+        "mcp": [
+          "heroku"
+        ],
+        "npm": [
+          "@heroku/mcp-server",
+          "heroku"
+        ],
+        "brew": [
+          "heroku"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "heroku",
+          "command": "heroku",
+          "args": [
+            "mcp:start"
+          ]
+        },
+        "docs": "https://devcenter.heroku.com/articles/heroku-mcp-server"
+      },
+      "source": "https://github.com/heroku/heroku-mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "deploy",
+      "cost": "paid",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You juggle heroku CLI commands to scale, deploy and check logs",
+        "after": "Your agent runs deploys, scaling and log checks for you"
+      },
+      "pairsWith": [
+        "docker"
+      ]
+    },
+    {
+      "id": "aws-cli",
+      "name": "AWS CLI",
+      "kind": "cli",
+      "what": "Official command line tool for managing every AWS service",
+      "solves": [
+        "deploy"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "aws"
+        ],
+        "brew": [
+          "awscli"
+        ],
+        "pip": [
+          "awscli"
+        ]
+      },
+      "install": {
+        "command": "brew install awscli",
+        "docs": "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+      },
+      "source": "https://aws.amazon.com/cli/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "deploy",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "ship",
+        "before": "You click around the AWS console to inspect and change resources",
+        "after": "Your agent runs aws commands to inspect, deploy and fix infra"
+      },
+      "pairsWith": [
+        "aws-docs-mcp",
+        "hashicorp-terraform-mcp"
+      ]
+    },
+    {
+      "id": "hashicorp-terraform-mcp",
+      "name": "Terraform MCP Server",
+      "kind": "mcp",
+      "what": "Gives agents live Terraform Registry provider and module docs, plus HCP Terraform workspace tools",
+      "solves": [
+        "deploy",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "terraform"
+        ],
+        "bins": [
+          "terraform-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "terraform",
+          "command": "docker",
+          "args": [
+            "run",
+            "-i",
+            "--rm",
+            "hashicorp/terraform-mcp-server"
+          ]
+        },
+        "command": "claude mcp add terraform -s user -t stdio -- docker run -i --rm hashicorp/terraform-mcp-server",
+        "docs": "https://developer.hashicorp.com/terraform/mcp-server"
+      },
+      "source": "https://github.com/hashicorp/terraform-mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "deploy",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent writes Terraform with outdated or made-up provider arguments",
+        "after": "It looks up current provider docs and module inputs before writing HCL"
+      },
+      "pairsWith": [
+        "aws-cli",
+        "trivy"
+      ]
+    },
+    {
+      "id": "expo-eas-cli",
+      "name": "EAS CLI",
+      "kind": "cli",
+      "what": "Expo's CLI for building, submitting and updating React Native apps on EAS",
+      "solves": [
+        "deploy",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "eas"
+        ],
+        "npm": [
+          "eas-cli"
+        ]
+      },
+      "install": {
+        "command": "npm install -g eas-cli",
+        "docs": "https://docs.expo.dev/build/setup/"
+      },
+      "source": "https://github.com/expo/eas-cli",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "deploy",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "ship",
+        "before": "You wrangle Xcode and Gradle builds and store uploads by hand",
+        "after": "Your agent runs eas build and eas submit to ship to the stores"
+      },
+      "pairsWith": [
+        "maestro",
+        "sentry-cli"
+      ]
+    },
+    {
+      "id": "prisma-mcp",
+      "name": "Prisma MCP",
+      "kind": "mcp",
+      "what": "Hosted MCP server to manage Prisma Postgres databases, compute apps and storage",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "prisma",
+          "mcp.prisma.io"
+        ],
+        "npm": [
+          "prisma"
+        ],
+        "deps": [
+          "prisma",
+          "@prisma/client"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "prisma",
+          "url": "https://mcp.prisma.io/mcp"
+        },
+        "command": "claude mcp add --transport http prisma https://mcp.prisma.io/mcp",
+        "docs": "https://www.prisma.io/docs/postgres/integrations/mcp-server"
+      },
+      "source": "https://www.prisma.io/docs/postgres/integrations/mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "You leave the editor to create databases and fetch connection strings",
+        "after": "Your agent provisions a Prisma Postgres database right from chat"
+      },
+      "pairsWith": [
+        "postgres-mcp",
+        "squawk",
+        "neon-mcp"
+      ]
+    },
+    {
+      "id": "drizzle-kit",
+      "name": "Drizzle Kit",
+      "kind": "cli",
+      "what": "Drizzle ORM's CLI to generate, run and push SQL migrations from your TypeScript schema",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "drizzle-kit"
+        ],
+        "npm": [
+          "drizzle-kit"
+        ],
+        "deps": [
+          "drizzle-kit",
+          "drizzle-orm"
+        ]
+      },
+      "install": {
+        "command": "npm i -D drizzle-kit",
+        "docs": "https://orm.drizzle.team/docs/kit-overview"
+      },
+      "source": "https://github.com/drizzle-team/drizzle-orm",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You hand-write SQL migrations and hope they match the schema",
+        "after": "Your agent edits the TS schema and runs drizzle-kit generate to sync"
+      },
+      "pairsWith": [
+        "neon-mcp",
+        "squawk",
+        "turso-cli"
+      ]
+    },
+    {
+      "id": "mongodb-mcp",
+      "name": "MongoDB MCP Server",
+      "kind": "mcp",
+      "what": "Lets agents query and manage MongoDB databases and Atlas clusters",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "mongodb"
+        ],
+        "npm": [
+          "mongodb-mcp-server"
+        ],
+        "bins": [
+          "mongodb-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "mongodb",
+          "command": "npx",
+          "args": [
+            "-y",
+            "mongodb-mcp-server@latest",
+            "--readOnly"
+          ]
+        },
+        "command": "npx -y mongodb-mcp-server@latest setup",
+        "docs": "https://www.mongodb.com/docs/mcp-server/"
+      },
+      "source": "https://github.com/mongodb-js/mongodb-mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You copy sample documents into chat so the agent knows your data",
+        "after": "Your agent inspects collections and runs queries against the real DB"
+      },
+      "pairsWith": [
+        "dbhub-mcp"
+      ]
+    },
+    {
+      "id": "redis-mcp",
+      "name": "Redis MCP Server",
+      "kind": "mcp",
+      "what": "Official Redis MCP server for agents to read and write Redis data in natural language",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "redis",
+          "redismcpserver"
+        ],
+        "pip": [
+          "redis-mcp-server"
+        ],
+        "bins": [
+          "redis-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "redis",
+          "command": "uvx",
+          "args": [
+            "--from",
+            "redis-mcp-server@latest",
+            "redis-mcp-server",
+            "--url",
+            "redis://localhost:6379/0"
+          ]
+        },
+        "docs": "https://github.com/redis/mcp-redis"
+      },
+      "source": "https://github.com/redis/mcp-redis",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "test",
+        "before": "You poke at cache keys by hand in redis-cli to check behavior",
+        "after": "Your agent inspects keys and values to confirm the cache works"
+      },
+      "pairsWith": [
+        "upstash-mcp"
+      ]
+    },
+    {
+      "id": "planetscale-cli",
+      "name": "PlanetScale CLI",
+      "kind": "cli",
+      "what": "pscale CLI for PlanetScale databases, branches and deploy requests; MCP is now hosted",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "pscale"
+        ],
+        "brew": [
+          "pscale",
+          "planetscale/tap/pscale"
+        ],
+        "mcp": [
+          "planetscale",
+          "mcp.pscale.dev"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "planetscale",
+          "url": "https://mcp.pscale.dev/mcp/planetscale"
+        },
+        "command": "brew install planetscale/tap/pscale",
+        "docs": "https://planetscale.com/docs/connect/mcp"
+      },
+      "source": "https://github.com/planetscale/cli",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "paid",
+      "setupMin": 10,
+      "changes": {
+        "stage": "ship",
+        "before": "You apply schema changes straight to production and pray",
+        "after": "Your agent opens a branch and deploy request so schema changes ship safely"
+      },
+      "pairsWith": [
+        "drizzle-kit",
+        "prisma-mcp"
+      ]
+    },
+    {
+      "id": "upstash-mcp",
+      "name": "Upstash MCP",
+      "kind": "mcp",
+      "what": "Manage Upstash Redis databases, backups and usage stats from your agent",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "upstash"
+        ],
+        "npm": [
+          "@upstash/mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "upstash",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@upstash/mcp-server@latest",
+            "--email",
+            "YOUR_EMAIL",
+            "--api-key",
+            "YOUR_API_KEY"
+          ]
+        },
+        "command": "claude mcp add --scope user upstash -- npx -y @upstash/mcp-server@latest --email YOUR_EMAIL --api-key YOUR_API_KEY",
+        "docs": "https://github.com/upstash/mcp-server"
+      },
+      "source": "https://github.com/upstash/mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You open the Upstash console to create a Redis DB and copy creds",
+        "after": "Your agent creates the database and wires the credentials for you"
+      },
+      "pairsWith": [
+        "redis-mcp",
+        "vercel-cli"
+      ]
+    },
+    {
+      "id": "convex-mcp",
+      "name": "Convex MCP Server",
+      "kind": "mcp",
+      "what": "Lets agents introspect Convex tables, functions and logs and run queries",
+      "solves": [
+        "database",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "convex"
+        ],
+        "npm": [
+          "convex"
+        ],
+        "deps": [
+          "convex"
+        ],
+        "bins": [
+          "convex"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "convex",
+          "command": "npx",
+          "args": [
+            "-y",
+            "convex@latest",
+            "mcp",
+            "start"
+          ]
+        },
+        "docs": "https://docs.convex.dev/ai/convex-mcp-server"
+      },
+      "source": "https://docs.convex.dev/ai/convex-mcp-server",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent guesses what's in your Convex tables and functions",
+        "after": "It reads your deployment's tables, functions and logs before coding"
+      },
+      "pairsWith": [
+        "vercel-cli"
+      ]
+    },
+    {
+      "id": "firebase-mcp",
+      "name": "Firebase MCP Server",
+      "kind": "mcp",
+      "what": "Firebase CLI's MCP server for Firestore, Auth, Hosting and other Firebase projects",
+      "solves": [
+        "database",
+        "deploy",
+        "auth"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "firebase"
+        ],
+        "mcp": [
+          "firebase"
+        ],
+        "npm": [
+          "firebase-tools"
+        ],
+        "deps": [
+          "firebase",
+          "firebase-admin"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "firebase",
+          "command": "npx",
+          "args": [
+            "-y",
+            "firebase-tools@latest",
+            "mcp"
+          ]
+        },
+        "docs": "https://firebase.google.com/docs/ai-assistance/mcp-server"
+      },
+      "source": "https://github.com/firebase/firebase-tools",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "database",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "You flip between console tabs to check Firestore data and auth users",
+        "after": "Your agent reads Firestore, users and rules directly while it codes"
+      },
+      "pairsWith": [
+        "expo-eas-cli"
+      ]
+    },
+    {
+      "id": "snyk-cli",
+      "name": "Snyk CLI",
+      "kind": "cli",
+      "what": "Scans code, dependencies, containers and IaC for vulnerabilities; also runs as an MCP server",
+      "solves": [
+        "security",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "snyk"
+        ],
+        "npm": [
+          "snyk"
+        ],
+        "brew": [
+          "snyk-cli"
+        ],
+        "mcp": [
+          "snyk"
+        ]
+      },
+      "install": {
+        "command": "npm install -g snyk",
+        "mcp": {
+          "name": "snyk",
+          "command": "npx",
+          "args": [
+            "-y",
+            "snyk@latest",
+            "mcp",
+            "-t",
+            "stdio"
+          ]
+        },
+        "docs": "https://docs.snyk.io/developer-tools/snyk-cli/install-or-update-the-snyk-cli"
+      },
+      "source": "https://github.com/snyk/cli",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "security",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "AI-added packages and code ship without a vulnerability check",
+        "after": "Your agent runs Snyk scans and fixes flagged issues before you commit"
+      },
+      "pairsWith": [
+        "semgrep",
+        "gitleaks",
+        "socket-cli"
+      ]
+    },
+    {
+      "id": "socket-cli",
+      "name": "Socket CLI & MCP",
+      "kind": "cli",
+      "what": "Checks npm/PyPI packages for malware, typosquats and supply-chain risk before you install them",
+      "solves": [
+        "security"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "socket",
+          "socket-mcp"
+        ],
+        "npm": [
+          "socket",
+          "@socketsecurity/mcp"
+        ],
+        "mcp": [
+          "socket-mcp",
+          "mcp.socket.dev"
+        ]
+      },
+      "install": {
+        "command": "npm install -g socket",
+        "mcp": {
+          "name": "socket-mcp",
+          "url": "https://mcp.socket.dev/"
+        },
+        "docs": "https://docs.socket.dev/docs/socket-cli"
+      },
+      "source": "https://github.com/SocketDev/socket-cli",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "security",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "build",
+        "before": "Your agent installs whatever package name it guesses",
+        "after": "Each package gets a supply-chain score and risky installs are blocked"
+      },
+      "pairsWith": [
+        "snyk-cli",
+        "osv-scanner"
+      ]
+    },
+    {
+      "id": "trivy",
+      "name": "Trivy",
+      "kind": "cli",
+      "what": "Open-source scanner for vulnerabilities, secrets and misconfigs in containers, repos and IaC",
+      "solves": [
+        "security",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "trivy"
+        ],
+        "brew": [
+          "trivy"
+        ]
+      },
+      "install": {
+        "command": "brew install trivy",
+        "docs": "https://trivy.dev/docs/latest/getting-started/installation/"
+      },
+      "source": "https://github.com/aquasecurity/trivy",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "security",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "ship",
+        "before": "Docker images and Terraform ship with unknown CVEs and misconfigs",
+        "after": "One trivy scan lists CVEs, secrets and misconfigs before you deploy"
+      },
+      "pairsWith": [
+        "docker",
+        "gitleaks",
+        "hashicorp-terraform-mcp"
+      ]
+    },
+    {
+      "id": "trufflehog",
+      "name": "TruffleHog",
+      "kind": "cli",
+      "what": "Finds and verifies leaked secrets and API keys in git history, files and more",
+      "solves": [
+        "security",
+        "git"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "trufflehog"
+        ],
+        "brew": [
+          "trufflehog"
+        ]
+      },
+      "install": {
+        "command": "brew install trufflehog",
+        "docs": "https://github.com/trufflesecurity/trufflehog"
+      },
+      "source": "https://github.com/trufflesecurity/trufflehog",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "security",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "review",
+        "before": "An agent-pasted API key can sit in git history unnoticed",
+        "after": "TruffleHog flags live, verified secrets before you push"
+      },
+      "pairsWith": [
+        "gitleaks",
+        "semgrep"
+      ]
+    },
+    {
+      "id": "osv-scanner",
+      "name": "OSV-Scanner",
+      "kind": "cli",
+      "what": "Google's scanner that matches your lockfiles against the OSV.dev vulnerability database",
+      "solves": [
+        "security"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "osv-scanner"
+        ],
+        "brew": [
+          "osv-scanner"
+        ]
+      },
+      "install": {
+        "command": "brew install osv-scanner",
+        "docs": "https://google.github.io/osv-scanner/installation/"
+      },
+      "source": "https://github.com/google/osv-scanner",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "security",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "review",
+        "before": "Dependencies your agent adds are never checked for known CVEs",
+        "after": "osv-scanner lists vulnerable packages from your lockfiles in seconds"
+      },
+      "pairsWith": [
+        "semgrep",
+        "socket-cli"
+      ]
+    },
+    {
+      "id": "wispr-flow",
+      "name": "Wispr Flow",
+      "kind": "app",
+      "what": "System-wide voice dictation for Mac that turns speech into clean, formatted text in any app",
+      "solves": [
+        "voice"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Wispr Flow.app"
+        ],
+        "brew": [
+          "wispr-flow"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask wispr-flow",
+        "docs": "https://docs.wisprflow.ai"
+      },
+      "source": "https://wisprflow.ai/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "voice",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You type long prompts and specs to your agent by hand",
+        "after": "You speak the prompt and get clean text in the agent's input"
+      },
+      "pairsWith": [
+        "claude-code",
+        "cursor"
+      ]
+    },
+    {
+      "id": "superwhisper",
+      "name": "superwhisper",
+      "kind": "app",
+      "what": "Mac voice-to-text app with local and cloud models and custom AI rewrite modes",
+      "solves": [
+        "voice"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "superwhisper.app"
+        ],
+        "brew": [
+          "superwhisper"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask superwhisper",
+        "docs": "https://superwhisper.com/docs"
+      },
+      "source": "https://superwhisper.com/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "voice",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "Typing detailed prompts slows down how much context you give",
+        "after": "You dictate rich context and a mode tidies it into a prompt"
+      },
+      "pairsWith": [
+        "claude-code",
+        "raycast"
+      ]
+    },
+    {
+      "id": "macwhisper",
+      "name": "MacWhisper",
+      "kind": "app",
+      "what": "Mac app for on-device Whisper transcription of audio files and live dictation",
+      "solves": [
+        "voice"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "MacWhisper.app"
+        ],
+        "brew": [
+          "macwhisper"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask macwhisper",
+        "docs": "https://goodsnooze.gumroad.com/l/macwhisper"
+      },
+      "source": "https://goodsnooze.gumroad.com/l/macwhisper",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "voice",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "Meeting notes and voice memos stay locked in audio",
+        "after": "You transcribe them locally and paste the text into your agent"
+      },
+      "pairsWith": [
+        "superwhisper"
+      ]
+    },
+    {
+      "id": "voiceink",
+      "name": "VoiceInk",
+      "kind": "app",
+      "what": "Open-source, privacy-focused Mac voice-to-text app using local Whisper models",
+      "solves": [
+        "voice"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "VoiceInk.app"
+        ],
+        "brew": [
+          "voiceink"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask voiceink",
+        "docs": "https://github.com/Beingpax/VoiceInk"
+      },
+      "source": "https://github.com/Beingpax/VoiceInk",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "voice",
+      "cost": "paid",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You type every prompt to your agent by hand",
+        "after": "You dictate prompts offline and the text lands in your terminal"
+      },
+      "pairsWith": [
+        "claude-code"
+      ]
+    },
+    {
+      "id": "lm-studio",
+      "name": "LM Studio",
+      "kind": "app",
+      "what": "Desktop app and lms CLI to download and run local LLMs behind an OpenAI-compatible server",
+      "solves": [
+        "models"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "LM Studio.app"
+        ],
+        "bins": [
+          "lms"
+        ],
+        "brew": [
+          "lm-studio"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask lm-studio",
+        "docs": "https://lmstudio.ai/docs/cli"
+      },
+      "source": "https://lmstudio.ai/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "models",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "build",
+        "before": "Every model call goes to a paid cloud API",
+        "after": "You run open models locally and point tools at a local endpoint"
+      },
+      "pairsWith": [
+        "llm",
+        "continue",
+        "claude-code-router"
+      ]
+    },
+    {
+      "id": "llm",
+      "name": "llm",
+      "kind": "cli",
+      "what": "Simon Willison's CLI and Python library for prompting many LLMs, with plugins and SQLite logs",
+      "solves": [
+        "models"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "llm"
+        ],
+        "brew": [
+          "llm"
+        ],
+        "pip": [
+          "llm"
+        ]
+      },
+      "install": {
+        "command": "brew install llm",
+        "docs": "https://llm.datasette.io/en/stable/setup.html"
+      },
+      "source": "https://github.com/simonw/llm",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "models",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "Quick one-off model questions mean opening a chat app",
+        "after": "You pipe files into llm from the shell and every answer is logged"
+      },
+      "pairsWith": [
+        "ollama",
+        "lm-studio",
+        "litellm"
+      ]
+    },
+    {
+      "id": "jan",
+      "name": "Jan",
+      "kind": "app",
+      "what": "Open-source desktop app for chatting with local or cloud LLMs, with a local API server",
+      "solves": [
+        "models"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Jan.app"
+        ],
+        "brew": [
+          "jan"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask jan",
+        "docs": "https://jan.ai/docs"
+      },
+      "source": "https://github.com/janhq/jan",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "models",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "build",
+        "before": "Your private code and prompts all go to a cloud model",
+        "after": "You chat with an offline model on your Mac via Jan's local API"
+      },
+      "pairsWith": [
+        "ollama",
+        "llm"
+      ]
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama.cpp",
+      "kind": "cli",
+      "what": "Fast C/C++ LLM inference engine with a CLI and an OpenAI-compatible llama-server",
+      "solves": [
+        "models"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "llama",
+          "llama-cli",
+          "llama-server"
+        ],
+        "brew": [
+          "llama.cpp"
+        ]
+      },
+      "install": {
+        "command": "brew install llama.cpp",
+        "docs": "https://github.com/ggml-org/llama.cpp/blob/master/docs/install.md"
+      },
+      "source": "https://github.com/ggml-org/llama.cpp",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "models",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "build",
+        "before": "Running a local model means heavy GUIs or cloud costs",
+        "after": "One command serves a GGUF model on a local OpenAI-style endpoint"
+      },
+      "pairsWith": [
+        "llm",
+        "lm-studio"
+      ]
+    },
+    {
+      "id": "litellm",
+      "name": "LiteLLM Proxy",
+      "kind": "cli",
+      "what": "Open-source gateway that exposes 100+ LLM providers through one OpenAI-compatible API",
+      "solves": [
+        "models",
+        "analytics"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "litellm"
+        ],
+        "pip": [
+          "litellm"
+        ],
+        "deps": [
+          "litellm"
+        ]
+      },
+      "install": {
+        "command": "pip install 'litellm[proxy]'",
+        "docs": "https://docs.litellm.ai/docs/proxy/quick_start"
+      },
+      "source": "https://github.com/BerriAI/litellm",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "models",
+      "cost": "free",
+      "setupMin": 15,
+      "changes": {
+        "stage": "build",
+        "before": "Each tool needs its own provider keys and has no spend limits",
+        "after": "All your tools hit one proxy with shared keys, budgets and logs"
+      },
+      "pairsWith": [
+        "ollama",
+        "claude-code-router",
+        "llm"
+      ]
+    },
+    {
+      "id": "claude-code-router",
+      "name": "Claude Code Router",
+      "kind": "cli",
+      "what": "Routes Claude Code requests to other providers like OpenRouter, DeepSeek or Ollama per task",
+      "solves": [
+        "models",
+        "orchestration"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "bins": [
+          "ccr"
+        ],
+        "npm": [
+          "@musistudio/claude-code-router"
+        ]
+      },
+      "install": {
+        "command": "npm install -g @musistudio/claude-code-router",
+        "docs": "https://github.com/musistudio/claude-code-router"
+      },
+      "source": "https://github.com/musistudio/claude-code-router",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "models",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "build",
+        "before": "Every Claude Code task, even trivial ones, uses the same model",
+        "after": "Background and simple tasks route to cheaper models automatically"
+      },
+      "pairsWith": [
+        "ollama",
+        "litellm",
+        "ccusage"
+      ]
+    },
+    {
+      "id": "datadog-mcp",
+      "name": "Datadog MCP Server",
+      "kind": "mcp",
+      "what": "Remote MCP server that lets agents query Datadog logs, metrics, traces, monitors and incidents.",
+      "solves": [
+        "monitoring",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "datadog",
+          "datadog-mcp",
+          "mcp.datadoghq.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "datadog-mcp",
+          "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp"
+        },
+        "command": "claude mcp add --transport http datadog-mcp https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+        "docs": "https://docs.datadoghq.com/bits_ai/mcp_server/setup/"
+      },
+      "source": "https://docs.datadoghq.com/bits_ai/mcp_server/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "monitoring",
+      "cost": "paid",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You copy errors and traces out of Datadog dashboards into the chat by hand",
+        "after": "Your agent pulls the relevant logs, traces and monitors itself while debugging"
+      },
+      "pairsWith": [
+        "sentry-mcp"
+      ]
+    },
+    {
+      "id": "grafana-mcp",
+      "name": "Grafana MCP Server",
+      "kind": "mcp",
+      "what": "MCP server giving agents access to Grafana dashboards, datasources, Prometheus/Loki queries and alerts.",
+      "solves": [
+        "monitoring",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "mcp-grafana"
+        ],
+        "mcp": [
+          "grafana",
+          "mcp-grafana"
+        ],
+        "brew": [
+          "mcp-grafana"
+        ],
+        "pip": [
+          "mcp-grafana"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "grafana",
+          "command": "uvx",
+          "args": [
+            "mcp-grafana"
+          ]
+        },
+        "command": "brew install mcp-grafana",
+        "docs": "https://github.com/grafana/mcp-grafana#installation"
+      },
+      "source": "https://github.com/grafana/mcp-grafana",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "monitoring",
+      "cost": "free",
+      "setupMin": 10,
+      "changes": {
+        "stage": "ship",
+        "before": "You eyeball Grafana panels and paste metrics into the agent after a deploy",
+        "after": "Your agent queries dashboards, Prometheus and Loki directly to check the release"
+      },
+      "pairsWith": [
+        "k6",
+        "sentry-mcp"
+      ]
+    },
+    {
+      "id": "circleci-mcp",
+      "name": "CircleCI MCP Server",
+      "kind": "mcp",
+      "what": "CircleCI's hosted MCP server lets agents read build failures, logs and flaky tests and rerun pipelines.",
+      "solves": [
+        "ci",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "circleci",
+          "circleci-mcp-server",
+          "mcp.circleci.com",
+          "@circleci/mcp-server-circleci"
+        ],
+        "npm": [
+          "@circleci/mcp-server-circleci"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "circleci",
+          "url": "https://mcp.circleci.com/v1/mcp"
+        },
+        "docs": "https://circleci.com/docs/guides/toolkit/circleci-mcp-overview/"
+      },
+      "source": "https://circleci.com/docs/guides/toolkit/circleci-mcp-overview/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "ci",
+      "cost": "freemium",
+      "setupMin": 5,
+      "changes": {
+        "stage": "ship",
+        "before": "You open CircleCI, dig through failed job logs, and paste them into chat",
+        "after": "Your agent fetches the failing job logs itself and proposes the fix"
+      },
+      "pairsWith": [
+        "gh-cli",
+        "act"
+      ]
+    },
+    {
+      "id": "actionlint",
+      "name": "actionlint",
+      "kind": "cli",
+      "what": "Static checker for GitHub Actions workflow files that catches syntax, expression and shellcheck errors.",
+      "solves": [
+        "ci",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "actionlint"
+        ],
+        "brew": [
+          "actionlint"
+        ]
+      },
+      "install": {
+        "command": "brew install actionlint",
+        "docs": "https://github.com/rhysd/actionlint/blob/main/docs/install.md"
+      },
+      "source": "https://github.com/rhysd/actionlint",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "ci",
+      "cost": "free",
+      "setupMin": 2,
+      "changes": {
+        "stage": "ship",
+        "before": "Agent-written workflow YAML fails only after you push and wait for CI",
+        "after": "actionlint flags broken workflow syntax locally before you push"
+      },
+      "pairsWith": [
+        "act",
+        "gh-cli"
+      ]
+    },
+    {
+      "id": "lefthook",
+      "name": "Lefthook",
+      "kind": "cli",
+      "what": "Fast git hooks manager that runs linters and tests in parallel on commit or push.",
+      "solves": [
+        "code-quality",
+        "git"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "lefthook"
+        ],
+        "brew": [
+          "lefthook"
+        ],
+        "npm": [
+          "lefthook"
+        ],
+        "deps": [
+          "lefthook"
+        ]
+      },
+      "install": {
+        "command": "brew install lefthook && lefthook install",
+        "docs": "https://lefthook.dev/install/"
+      },
+      "source": "https://github.com/evilmartians/lefthook",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "Agent commits slip through with lint errors and failing tests",
+        "after": "Hooks run lint and tests on every agent commit and block bad ones"
+      },
+      "pairsWith": [
+        "gitleaks",
+        "biome",
+        "eslint"
+      ]
+    },
+    {
+      "id": "husky",
+      "name": "Husky",
+      "kind": "cli",
+      "what": "Git hooks for JavaScript projects that run scripts like lint and tests before commits.",
+      "solves": [
+        "code-quality",
+        "git"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "npm": [
+          "husky"
+        ],
+        "deps": [
+          "husky"
+        ]
+      },
+      "install": {
+        "command": "npm install --save-dev husky && npx husky init",
+        "docs": "https://typicode.github.io/husky/get-started.html"
+      },
+      "source": "https://github.com/typicode/husky",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "review",
+        "before": "Agent commits land without anyone running lint or tests first",
+        "after": "A pre-commit hook runs your checks and rejects broken agent commits"
+      },
+      "pairsWith": [
+        "eslint",
+        "prettier",
+        "gitleaks"
+      ]
+    },
+    {
+      "id": "pre-commit",
+      "name": "pre-commit",
+      "kind": "cli",
+      "what": "Framework for managing multi-language pre-commit hooks from a shared config file.",
+      "solves": [
+        "code-quality",
+        "git"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "pre-commit"
+        ],
+        "brew": [
+          "pre-commit"
+        ],
+        "pip": [
+          "pre-commit"
+        ],
+        "deps": [
+          "pre-commit"
+        ]
+      },
+      "install": {
+        "command": "brew install pre-commit && pre-commit install",
+        "docs": "https://pre-commit.com/#install"
+      },
+      "source": "https://pre-commit.com/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "You catch formatting and lint issues in agent code by reading diffs",
+        "after": "Hooks auto-format and lint every commit before it is created"
+      },
+      "pairsWith": [
+        "ruff",
+        "gitleaks"
+      ]
+    },
+    {
+      "id": "jira-cli",
+      "name": "JiraCLI",
+      "kind": "cli",
+      "what": "Interactive command-line tool for searching, creating and moving Jira issues.",
+      "solves": [
+        "project-management",
+        "planning"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "jira"
+        ],
+        "brew": [
+          "jira-cli"
+        ]
+      },
+      "install": {
+        "command": "brew install jira-cli && jira init",
+        "docs": "https://github.com/ankitpokhrel/jira-cli#installation"
+      },
+      "source": "https://github.com/ankitpokhrel/jira-cli",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "project-management",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "plan",
+        "before": "You copy ticket details from the Jira web UI into the agent prompt",
+        "after": "Your agent reads and updates Jira tickets from the terminal itself"
+      },
+      "pairsWith": [
+        "atlassian-mcp",
+        "gh-cli"
+      ]
+    },
+    {
+      "id": "browser-use",
+      "name": "Browser Use",
+      "kind": "mcp",
+      "what": "Python library and MCP server that lets AI agents control a real browser to complete web tasks.",
+      "solves": [
+        "browser",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "browser-use"
+        ],
+        "mcp": [
+          "browser-use"
+        ],
+        "pip": [
+          "browser-use"
+        ],
+        "deps": [
+          "browser-use"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "browser-use",
+          "command": "uvx",
+          "args": [
+            "browser-use",
+            "--mcp"
+          ]
+        },
+        "command": "uv add browser-use",
+        "docs": "https://docs.browser-use.com"
+      },
+      "source": "https://github.com/browser-use/browser-use",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "browser",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "test",
+        "before": "You click through the app yourself to check what the agent built",
+        "after": "The agent drives a browser through the flow and reports what broke"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "firecrawl-mcp"
+      ]
+    },
+    {
+      "id": "browserbase-stagehand",
+      "name": "Stagehand",
+      "kind": "cli",
+      "what": "Browserbase's SDK for browser automation mixing code with natural-language act/extract/observe calls.",
+      "solves": [
+        "browser",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "npm": [
+          "@browserbasehq/stagehand"
+        ],
+        "pip": [
+          "stagehand"
+        ],
+        "deps": [
+          "@browserbasehq/stagehand",
+          "stagehand"
+        ]
+      },
+      "install": {
+        "command": "npm install @browserbasehq/stagehand zod",
+        "docs": "https://docs.stagehand.dev/v4/first-steps/quickstart"
+      },
+      "source": "https://github.com/browserbase/stagehand",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "browser",
+      "cost": "freemium",
+      "setupMin": 10,
+      "changes": {
+        "stage": "test",
+        "before": "Brittle selector-based browser scripts break whenever the UI shifts",
+        "after": "Plain-English steps like act('click login') survive UI changes"
+      },
+      "pairsWith": [
+        "browserbase-mcp",
+        "playwright"
+      ]
+    },
+    {
+      "id": "agent-browser",
+      "name": "agent-browser",
+      "kind": "cli",
+      "what": "Fast Rust browser automation CLI built for AI agents, using element refs from page snapshots.",
+      "solves": [
+        "browser",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "agent-browser"
+        ],
+        "npm": [
+          "agent-browser"
+        ],
+        "brew": [
+          "agent-browser"
+        ],
+        "skills": [
+          "agent-browser"
+        ]
+      },
+      "install": {
+        "command": "npm install -g agent-browser && agent-browser install",
+        "docs": "https://github.com/vercel-labs/agent-browser#installation"
+      },
+      "source": "https://github.com/vercel-labs/agent-browser",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "browser",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "test",
+        "before": "You manually open the page to confirm the agent's UI change works",
+        "after": "The agent opens, clicks and screenshots the page itself via CLI"
+      },
+      "pairsWith": [
+        "playwright-mcp",
+        "chrome-devtools-mcp"
+      ]
+    },
+    {
+      "id": "iterm2",
+      "name": "iTerm2",
+      "kind": "app",
+      "what": "macOS terminal emulator with split panes, search, profiles and deep customization.",
+      "solves": [
+        "orchestration"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "iTerm.app"
+        ],
+        "brew": [
+          "iterm2"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask iterm2",
+        "docs": "https://iterm2.com/downloads.html"
+      },
+      "source": "https://iterm2.com/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "terminal",
+      "cost": "free",
+      "setupMin": 3,
+      "pairsWith": [
+        "claude-code",
+        "tmux"
+      ]
+    },
+    {
+      "id": "tmux",
+      "name": "tmux",
+      "kind": "cli",
+      "what": "Terminal multiplexer for running many persistent shell sessions and panes in one window.",
+      "solves": [
+        "orchestration"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "tmux"
+        ],
+        "brew": [
+          "tmux"
+        ]
+      },
+      "install": {
+        "command": "brew install tmux",
+        "docs": "https://github.com/tmux/tmux/wiki/Installing"
+      },
+      "source": "https://github.com/tmux/tmux",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "terminal",
+      "cost": "free",
+      "setupMin": 2,
+      "pairsWith": [
+        "claude-squad",
+        "lazygit"
+      ]
+    },
+    {
+      "id": "neovim",
+      "name": "Neovim",
+      "kind": "cli",
+      "what": "Extensible Vim-based text editor with Lua config, LSP and a large plugin ecosystem.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "nvim"
+        ],
+        "brew": [
+          "neovim"
+        ]
+      },
+      "install": {
+        "command": "brew install neovim",
+        "docs": "https://neovim.io/doc/install/"
+      },
+      "source": "https://neovim.io/",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "editor",
+      "cost": "free",
+      "setupMin": 5,
+      "pairsWith": [
+        "ripgrep",
+        "lazygit"
+      ]
+    },
+    {
+      "id": "knip",
+      "name": "Knip",
+      "kind": "cli",
+      "what": "Finds unused files, dependencies and exports in JavaScript and TypeScript projects.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "knip"
+        ],
+        "npm": [
+          "knip"
+        ],
+        "deps": [
+          "knip"
+        ]
+      },
+      "install": {
+        "command": "npm init @knip/config",
+        "docs": "https://knip.dev/overview/getting-started"
+      },
+      "source": "https://github.com/webpro-nl/knip",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 5,
+      "changes": {
+        "stage": "review",
+        "before": "Agents leave behind dead files, unused exports and stray dependencies",
+        "after": "Knip lists the leftovers so you or the agent can delete them"
+      },
+      "pairsWith": [
+        "eslint",
+        "biome"
+      ]
+    },
+    {
+      "id": "oxlint",
+      "name": "Oxlint",
+      "kind": "cli",
+      "what": "Very fast Rust-based JavaScript and TypeScript linter from the Oxc project.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "oxlint"
+        ],
+        "npm": [
+          "oxlint"
+        ],
+        "deps": [
+          "oxlint"
+        ]
+      },
+      "install": {
+        "command": "npm install -D oxlint",
+        "docs": "https://oxc.rs/docs/guide/usage/linter/quickstart.html"
+      },
+      "source": "https://github.com/oxc-project/oxc",
+      "verified": true,
+      "updated": "2026-10-02",
+      "category": "quality",
+      "cost": "free",
+      "setupMin": 3,
+      "changes": {
+        "stage": "build",
+        "before": "Slow lint runs mean the agent skips checking its own JS/TS edits",
+        "after": "Oxlint runs in milliseconds so the agent lints after every edit"
+      },
+      "pairsWith": [
+        "eslint",
+        "biome"
+      ]
+    }
+  ],
+  "bundles": [
+    {
+      "id": "project-memory",
+      "name": "Project memory",
+      "members": [
+        "obsidian",
+        "basic-memory",
+        "memory-mcp"
+      ],
+      "why": "You keep decisions in Obsidian notes your agent can read and write, plus a memory store it recalls each session. You stop re-explaining the project every morning.",
+      "solves": [
+        "memory",
+        "notes"
+      ]
+    },
+    {
+      "id": "safe-migrations",
+      "name": "Safe migrations",
+      "members": [
+        "squawk",
+        "postgres-mcp",
+        "atlas"
+      ],
+      "why": "Your agent checks query plans before changing the schema, and every migration gets linted for locks and data loss before it ships.",
+      "solves": [
+        "database",
+        "review"
+      ]
+    },
+    {
+      "id": "review-relief",
+      "name": "Review relief",
+      "members": [
+        "code-review",
+        "pr-review-toolkit",
+        "coderabbit-cli",
+        "gh-cli"
+      ],
+      "why": "Reviewer agents and CodeRabbit flag bugs before you open the diff, and gh lets your agent read and answer PR comments. You review the flagged parts, not every line.",
+      "solves": [
+        "review",
+        "git"
+      ]
+    },
+    {
+      "id": "browser-testing",
+      "name": "Browser testing",
+      "members": [
+        "playwright-mcp",
+        "chrome-devtools-mcp",
+        "playwright"
+      ],
+      "why": "Your agent clicks through the app, reads console and network errors itself, and turns what it checked into tests that rerun on every change.",
+      "solves": [
+        "browser",
+        "testing",
+        "debugging"
+      ]
+    },
+    {
+      "id": "ship-with-confidence",
+      "name": "Ship with confidence",
+      "members": [
+        "act",
+        "gitleaks",
+        "semgrep",
+        "actionlint"
+      ],
+      "why": "You run CI locally, catch leaked keys and risky code, and lint your workflows before you push. Fewer red builds and no secrets in history.",
+      "solves": [
+        "ci",
+        "security"
+      ]
+    },
+    {
+      "id": "talk-to-your-agent",
+      "name": "Talk to your agent",
+      "members": [
+        "wispr-flow",
+        "superwhisper",
+        "claude-code"
+      ],
+      "why": "You speak long, detailed prompts in seconds instead of typing them, so your agent gets the full context. Pick one dictation app.",
+      "solves": [
+        "voice"
+      ]
+    },
+    {
+      "id": "cheap-small-tasks",
+      "name": "Cheap small tasks",
+      "members": [
+        "ollama",
+        "llm",
+        "claude-code-router"
+      ],
+      "why": "You send renames, summaries and quick questions to a free local model and keep the frontier model for real work. Your bill drops without changing how you work.",
+      "solves": [
+        "models"
+      ]
+    },
+    {
+      "id": "spec-first",
+      "name": "Spec first",
+      "members": [
+        "superpowers",
+        "github-spec-kit",
+        "task-master-ai"
+      ],
+      "why": "You write a spec and a task list before any code, and your agent works through it step by step. Fewer rewrites from vague prompts.",
+      "solves": [
+        "planning"
+      ]
+    },
+    {
+      "id": "fresh-docs",
+      "name": "Fresh docs",
+      "members": [
+        "context7-mcp",
+        "deepwiki-mcp",
+        "exa-mcp"
+      ],
+      "why": "Your agent reads current library docs, explains unfamiliar repos and searches the web before it writes code, so it stops inventing old APIs.",
+      "solves": [
+        "docs",
+        "search"
+      ]
+    },
+    {
+      "id": "design-to-code",
+      "name": "Design to code",
+      "members": [
+        "figma-mcp",
+        "shadcn-mcp",
+        "frontend-design"
+      ],
+      "why": "Your agent builds from real Figma frames using real shadcn components, with a design skill that keeps it from looking generic.",
+      "solves": [
+        "design",
+        "ui"
+      ]
+    },
+    {
+      "id": "dependency-guard",
+      "name": "Dependency guard",
+      "members": [
+        "socket-cli",
+        "osv-scanner",
+        "snyk-cli"
+      ],
+      "why": "Packages your agent adds get checked for known vulnerabilities and supply-chain malware before they land in your lockfile.",
+      "solves": [
+        "security"
+      ]
+    },
+    {
+      "id": "prod-debugging",
+      "name": "Production debugging",
+      "members": [
+        "sentry-mcp",
+        "posthog-mcp",
+        "sentry-cli"
+      ],
+      "why": "Your agent pulls the real error, trace and user impact itself, with source maps so stack traces point at your code.",
+      "solves": [
+        "monitoring",
+        "debugging"
+      ]
     }
   ]
 }

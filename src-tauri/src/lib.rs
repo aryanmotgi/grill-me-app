@@ -18,6 +18,7 @@ mod forge;
 mod boot;
 mod blur;
 mod catalog;
+mod learn;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4659,6 +4660,11 @@ pub fn run() {
             forge::forge_front,
             forge::forge_hit_rects,
             forge::forge_window_enter,
+            learn::learn_sessions,
+            learn::memory_load,
+            learn::memory_save,
+            learn::memory_forget,
+            learn::memory_reveal,
             blur::forge_blur_mask,
             forge::perf_enabled,
             forge::perf_report,
