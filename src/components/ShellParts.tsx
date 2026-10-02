@@ -1,3 +1,4 @@
+import { DNAPage } from "./DNAPage";
 import { useApp } from "../store";
 import type { Teammate } from "../types";
 import { DragHandle } from "./DragHandle";
@@ -61,6 +62,8 @@ export function CenterStage({ active, split }: { active: Teammate | undefined; s
       <AutomationsPage />
     ) : view === "brain" ? (
       <BrainPage />
+    ) : view === "dna" ? (
+      <DNAPage />
     ) : view === "flow" ? (
       <FlowPage />
     ) : view === "new" || !active ? (

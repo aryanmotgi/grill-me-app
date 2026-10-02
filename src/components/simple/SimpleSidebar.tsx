@@ -64,6 +64,10 @@ function Footer() {
         </button>
       ) : null}
       <span className="flex-1" />
+      <button className="h-8 px-2 rounded-lg flex items-center gap-1.5 text-[12px] text-dim hover:text-ink hover:bg-raised cursor-pointer"
+        title="Your Coding DNA: how you build, what Grill Me learned" onClick={() => useApp.getState().setView("dna")}>
+        <Icon name="spark" size={13} /> DNA
+      </button>
       <button className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised cursor-pointer"
         title="Settings (⌘,)" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
         <Icon name="gear" size={15} />

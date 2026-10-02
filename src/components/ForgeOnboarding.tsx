@@ -16,6 +16,8 @@ import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 import { interviewBrainOf, pickBrain, readyAis, type AiStatus } from "../lib/aiConnect";
 import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING_OPTIONS, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, localSummary, mergeReply, openingFor, painsFromText, styleFromText, teamFromText, type PromptOpts, type Turn } from "../lib/interview";
+import { useDNA } from "../lib/dnaStore";
+import { fromProfile, fromScan, logEvolutions } from "../lib/dna";
 import { TIPS, tipById, type Tip } from "../lib/tips";
 import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, buildingFromScan, emptyProfile, levelFromScan, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
 
@@ -771,7 +773,13 @@ function Workflow({ f, step }: SceneProps) {
     })();
   }, []);
   if (!loaded || !profile) return null;
-  const save = (p: WorkflowProfile) => { const saved = { ...p, updated: Date.now() }; setProfile(saved); setAppSetting("workflowProfile", saved); return saved; };
+  const save = (p: WorkflowProfile) => {
+    const saved = { ...p, updated: Date.now() };
+    setProfile(saved); setAppSetting("workflowProfile", saved);
+    // the interview is the first thing your Coding DNA learns
+    useDNA.getState().update((d) => fromProfile(d, saved));
+    return saved;
+  };
   // the interview ends on a read-back they can correct (skipping it goes straight on)
   const done = (p: WorkflowProfile, skipped = false) => {
     // no AI to pick a tip or judge experience: the top pain's first tip, the scan's guess
@@ -987,6 +995,8 @@ function Forged({ f, step, scan, catalog, profile, phase, setPhase }: SceneProps
   const have = useMemo(() => toolsYouHave(catalog, scan), [catalog, scan]);
   const stages = useMemo(() => workflowStages(have, scan, profile), [have, scan, profile]);
   const upgrades = useMemo(() => suggestUpgrades(profile, catalog, have, scan), [profile, catalog, have, scan]);
+  // your toolkit, and what was suggested, go into your Coding DNA (as Evolutions)
+  useEffect(() => { useDNA.getState().update((d) => logEvolutions(fromScan(d, scan, have), upgrades)); }, [upgrades]);
   const [nodes, setNodes] = useState<NodeView[]>(() => stages.map((st) => ({ id: st.id, name: st.name, lit: st.covered, tools: st.tools })));
   const [placed, setPlaced] = useState<(Upgrade & { at: number })[]>([]);
   const [focus, setFocus] = useState<(Upgrade & { at: number }) | null>(null);

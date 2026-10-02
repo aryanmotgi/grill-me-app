@@ -45,7 +45,7 @@ export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "previ
 /** What fills the center stage: the session terminal, the home dashboard, or
  *  one of the team surfaces opened from the nav rail (Monocode-style — team
  *  panels are full center views now, not a right-rail sidebar). */
-export type MainView = "home" | "flow" | "new" | "brain" | "automations" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
+export type MainView = "home" | "flow" | "new" | "brain" | "dna" | "automations" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
 
 const RAIL_TAB_VIEW: Record<RailTab, MainView> = {
   files: "session", tasks: "tasks", inbox: "inbox", activity: "feed", team: "team", preview: "preview",

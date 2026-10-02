@@ -96,6 +96,8 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
           onClick={() => go("flow")} />
         <NavItem icon="note" label="Brain" tour="brain" active={view === "brain"} title="Shared project brain: goal, where was I, what's happening"
           onClick={() => go("brain")} />
+        <NavItem icon="spark" label="DNA" active={view === "dna"} title="Your Coding DNA: how you build, what Grill Me learned"
+          onClick={() => go("dna")} />
         <NavItem icon="claude" label="Claude" active={claudeOpen} title="Claude chat panel — sees your sessions (⌘J)"
           onClick={() => togglePanel("claude")} />
         {showPreview ? (

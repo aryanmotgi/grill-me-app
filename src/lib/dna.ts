@@ -385,19 +385,19 @@ function mergeLearned(dna: CodingDNA, live: Learned[], now: number): Learned[] {
 }
 
 /** Rules Grill Me proposes from what it saw. You approve them first. */
-const PROPOSALS: { when: string; id: string; text: string }[] = [
-  { when: "tests-fail", id: "rule:fix-causes", text: "When a test fails, find the cause. Never loosen an assertion, skip a test or add a sleep to make it pass." },
-  { when: "undos", id: "rule:small-steps", text: "Make one small change at a time and show me the diff before moving on." },
-  { when: "rarely-plans", id: "rule:plan-first", text: "For anything bigger than a small fix, write a short plan and wait for my OK before coding." },
-  { when: "frustrated", id: "rule:reproduce", text: "Before fixing a bug, reproduce it with a failing test or a tiny script." },
-  { when: "no-tests", id: "rule:run-tests", text: "Run the tests after every change, and tell me the result." },
+const PROPOSALS: { when: string; id: string; text: string; why: string }[] = [
+  { when: "tests-fail", id: "rule:fix-causes", text: "When a test fails, find the cause. Never loosen an assertion, skip a test or add a sleep to make it pass.", why: "your tests fail often" },
+  { when: "undos", id: "rule:small-steps", text: "Make one small change at a time and show me the diff before moving on.", why: "you often undo AI work" },
+  { when: "rarely-plans", id: "rule:plan-first", text: "For anything bigger than a small fix, write a short plan and wait for my OK before coding.", why: "you rarely ask for a plan first" },
+  { when: "frustrated", id: "rule:reproduce", text: "Before fixing a bug, reproduce it with a failing test or a tiny script.", why: "\"still not working\" comes up a lot" },
+  { when: "no-tests", id: "rule:run-tests", text: "Run the tests after every change, and tell me the result.", why: "tests rarely run in your sessions" },
 ];
 function proposeRules(dna: CodingDNA, now: number): Rule[] {
   let rules = dna.rules;
   const seen = new Set(dna.learned.map((l) => l.id.split(":").pop()));
   for (const p of PROPOSALS) {
     if (!seen.has(p.when) || dna.muted.includes(p.id) || rules.some((r) => r.id === p.id)) continue;
-    rules = [...rules, { id: p.id, text: p.text, source: "sessions" as const, at: now, scope: "personal" as const, status: "proposed" as const, from: `because ${p.when.replace("-", " ")}` }].slice(-MAX.rules);
+    rules = [...rules, { id: p.id, text: p.text, source: "sessions" as const, at: now, scope: "personal" as const, status: "proposed" as const, from: `suggested because ${p.why}` }].slice(-MAX.rules);
   }
   return rules;
 }
@@ -653,3 +653,19 @@ export function needWeights(dna: CodingDNA): Partial<Record<SolveTag, number>> {
 
 /** Tools you removed: never suggest them again. */
 export const removedTools = (dna: CodingDNA) => new Set(dna.toolkit.filter((t) => t.removed).flatMap((t) => [t.id, norm(t.name)]));
+
+/** Import, merge mode: everything in `b` that `a` doesn't have (by id), plus
+ *  b's mutes and past reads. `a` wins where both have an item. */
+export function mergeDNA(a: CodingDNA, b: CodingDNA, now = Date.now()): CodingDNA {
+  const uni = <T extends { id: string }>(x: T[], y: T[], max: number) => [...x, ...y.filter((i) => !x.some((j) => j.id === i.id))].slice(0, max);
+  const flow = { ...a.flow };
+  for (const s of FLOW_STAGES) flow[s] = uni(a.flow[s], b.flow[s], MAX.items);
+  const weeks = [...a.weeks, ...b.weeks.filter((w) => !a.weeks.some((x) => x.start === w.start))].sort((x, y) => x.start - y.start).slice(-MAX.weeks);
+  return {
+    ...a, updated: now, flow,
+    toolkit: uni(a.toolkit, b.toolkit, MAX.toolkit), rules: uni(a.rules, b.rules, MAX.rules), habits: uni(a.habits, b.habits, MAX.items * 2),
+    pains: uni(a.pains, b.pains, MAX.pains), wins: uni(a.wins, b.wins, MAX.wins), evolutions: uni(a.evolutions, b.evolutions, MAX.evolutions),
+    learned: uni(a.learned, b.learned, MAX.learned), moments: uni(a.moments, b.moments, MAX.moments), weeks,
+    muted: [...new Set([...a.muted, ...b.muted])].slice(-300), past: { ...b.past, ...a.past },
+  };
+}
