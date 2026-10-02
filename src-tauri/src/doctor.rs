@@ -49,6 +49,12 @@ fn install_cmd(id: &str) -> Option<&'static str> {
 #[tauri::command(async)]
 pub(crate) fn doctor_install(id: String) -> Result<String, String> {
     let cmd = install_cmd(&id).ok_or_else(|| "Install this one yourself — copy the command".to_string())?;
+    run_fixed(cmd)
+}
+
+/// Run one of our fixed commands in a login shell. Blocks until it finishes
+/// or 10 minutes pass; returns the last lines of output.
+pub(crate) fn run_fixed(cmd: &str) -> Result<String, String> {
     let mut child = Command::new("/bin/zsh")
         .args(["-lc", cmd])
         .stdin(std::process::Stdio::null())

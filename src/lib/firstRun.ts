@@ -5,7 +5,7 @@
 // are marked "done" on first boot and never see it.
 // ---------------------------------------------------------------------------
 
-export const FIRST_RUN_STEPS = ["welcome", "check", "project", "scan", "consent", "team"] as const;
+export const FIRST_RUN_STEPS = ["welcome", "check", "connect", "project", "scan", "consent", "team"] as const;
 export type FirstRunStep = (typeof FIRST_RUN_STEPS)[number] | "done";
 
 export function firstRunStepOf(v: unknown): FirstRunStep {
