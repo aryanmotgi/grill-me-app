@@ -140,6 +140,34 @@ export const synthwave: Theme = {
  *  accent is a muted slate-blue used only on the active tab + primary button;
  *  everything else is neutral gray. The old bright cyan/blue "data" token is
  *  desaturated to near-gray so readouts read as chrome, not color. */
+/** Forge (default): the launch animation's warm ember → gold glow. One bright
+ *  accent (ember orange); gold only in gradients and numbers; green, amber
+ *  and red kept for status. Gradients live in styles.css ([data-theme="forge"]). */
+export const forge: Theme = {
+  name: "forge",
+  bg: "#141015",
+  panel: "#1b161a",
+  raised: "#251e22",
+  overlay: "#201a1e",
+  line: "#352a2b",
+  lineglow: "#5a4038",
+  ink: "#f3ece8",
+  dim: "#b3a49d",
+  faint: "#85776f",
+  accent: "#ff7a2e",
+  accentInk: "#1d0f06",
+  data: "#e8c37a",
+  ok: "#4fcf86",
+  warn: "#ffa63d",
+  danger: "#f2503f",
+  idle: "#6b5d58",
+  termBg: "#110d10",
+  termInk: "#e6ddd8",
+  termClaude: "#ffb27a",
+  termCmd: "#f2c14e",
+  selection: "#4a2a1c",
+};
+
 export const monocode: Theme = {
   name: "monocode",
   bg: "#16171a",
@@ -168,6 +196,7 @@ export const monocode: Theme = {
 };
 
 export const themes: Record<string, Theme> = {
+  forge,
   monocode,
   ember,
   paperwhite,

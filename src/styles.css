@@ -390,11 +390,11 @@ body,
   flex: none;
 }
 .status-dot.working {
-  background: var(--ok);
+  background: var(--grad-ok, var(--ok));
   box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 70%, transparent);
 }
 .status-dot.needs-input {
-  background: var(--warn);
+  background: var(--grad-warn, var(--warn));
   box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 70%, transparent);
 }
 .status-dot.idle {
@@ -483,7 +483,7 @@ select.btn, .btn[type] {
   background: var(--raised);
 }
 .btn.primary {
-  background: var(--accent);
+  background: var(--grad-accent, var(--accent));
   border-color: var(--accent);
   color: var(--accentInk);
   font-weight: 600;
@@ -885,4 +885,108 @@ select.btn, .btn[type] {
 .tabbar { container-type: inline-size; }
 @container (max-width: 680px) {
   .tb-label { display: none; }
+}
+
+/* ==== Forge (default theme): the launch animation's ember → gold glow ====
+   Gradient tokens are read by .btn.primary and the status dots above, and
+   laid over solid accent / done / problem fills below. Other themes don't
+   define them, so they fall back to their flat colours. */
+:root[data-theme="forge"] {
+  --grad-accent: linear-gradient(100deg, #ff5a24 0%, #ff8a3a 45%, #f2c14e 100%);
+  --grad-ok: linear-gradient(100deg, #22b866 0%, #4fcf86 50%, #b6e86e 100%);
+  --grad-warn: linear-gradient(100deg, #ff8a2a 0%, #ffb347 60%, #f2c14e 100%);
+  --grad-danger: linear-gradient(100deg, #d91f3a 0%, #f2503f 50%, #ff8a4c 100%);
+  --glow-accent: 0 0 0 1px rgba(255, 122, 46, 0.35), 0 6px 22px rgba(255, 122, 46, 0.28);
+  --glow-ok: 0 0 10px rgba(79, 207, 134, 0.45);
+  --glow-danger: 0 0 10px rgba(242, 80, 63, 0.5);
+}
+:root[data-theme="forge"] .btn.primary {
+  border-color: transparent;
+  box-shadow: var(--glow-accent);
+}
+:root[data-theme="forge"] .btn.primary:disabled {
+  box-shadow: none;
+}
+/* solid fills only (the /15-style tints keep their flat wash) */
+:root[data-theme="forge"] .bg-accent { background-image: var(--grad-accent); }
+:root[data-theme="forge"] .bg-ok { background-image: var(--grad-ok); box-shadow: var(--glow-ok); }
+:root[data-theme="forge"] .bg-danger { background-image: var(--grad-danger); box-shadow: var(--glow-danger); }
+:root[data-theme="forge"] .bg-warn { background-image: var(--grad-warn); }
+:root[data-theme="forge"] .status-dot.working { box-shadow: var(--glow-ok); }
+:root[data-theme="forge"] .tag.danger {
+  border-color: transparent;
+  background: linear-gradient(var(--panel), var(--panel)) padding-box, var(--grad-danger) border-box;
+  border: 1px solid transparent;
+}
+:root[data-theme="forge"] .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px rgba(255, 122, 46, 0.18);
+}
+:root[data-theme="forge"] #root {
+  --glow-a: 6%;
+  --grid-a: 0%;
+}
+:root[data-theme="forge"] #root::after {
+  display: none;
+}
+
+/* Forge gradient ground (default background): warm plum-black with ember
+   and gold pools, like the launch animation's desktop. Static gradients. */
+:root.bg-gradient[data-theme="forge"] {
+  --bg: rgba(20, 16, 21, 0.32) !important;
+  --panel: rgba(28, 22, 27, 0.58) !important;
+  --raised: rgba(255, 236, 225, 0.06) !important;
+  --line: rgba(255, 222, 205, 0.085) !important;
+  --ground-color: #141015;
+  --ground-image:
+    radial-gradient(40% 44% at 6% 92%, rgba(196, 84, 40, 0.26) 0%, transparent 70%),
+    radial-gradient(30% 34% at 34% 74%, rgba(160, 82, 44, 0.10) 0%, transparent 70%),
+    radial-gradient(28% 36% at 96% 10%, rgba(242, 160, 78, 0.12) 0%, transparent 70%),
+    radial-gradient(26% 32% at 90% 60%, rgba(110, 60, 120, 0.14) 0%, transparent 70%),
+    radial-gradient(40% 40% at 50% 40%, rgba(44, 34, 40, 0.55) 0%, transparent 80%),
+    linear-gradient(180deg, #1c161b 0%, #141015 100%);
+}
+:root.bg-gradient[data-theme="forge"] #root {
+  background-color: var(--ground-color);
+  background-image: var(--ground-image);
+  background-attachment: fixed;
+}
+:root.bg-gradient[data-theme="forge"] .ground {
+  background-color: var(--ground-color);
+  background-image: var(--ground-image);
+}
+
+/* Forge glass (native macOS vibrancy), same rules as monocode's */
+:root.vibrant[data-theme="forge"] {
+  --bg: rgba(22, 17, 22, 0.44) !important;
+  --panel: rgba(30, 24, 29, 0.52) !important;
+  --raised: rgba(48, 38, 43, 0.55) !important;
+  --overlay: rgba(32, 26, 30, 0.9) !important;
+  --line: rgba(255, 225, 205, 0.09) !important;
+  --termBg: #110d10 !important;
+}
+:root.vibrant[data-theme="forge"] .glass,
+:root.vibrant[data-theme="forge"] .scrim {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root.vibrant[data-theme="forge"] .glass {
+  background: color-mix(in srgb, #1d171c 92%, transparent);
+}
+:root.vibrant[data-theme="forge"] .status-dot.needs-input,
+:root.vibrant[data-theme="forge"] .caret::after {
+  animation: none;
+}
+:root.vibrant[data-theme="forge"],
+:root.vibrant[data-theme="forge"] body,
+:root.vibrant[data-theme="forge"] #root {
+  background-color: transparent;
+}
+:root.vibrant[data-theme="forge"] #root {
+  background-image: none;
+}
+:root.vibrant[data-theme="forge"] .ground {
+  background-color: #141015;
+  background-image: radial-gradient(40% 40% at 50% 40%, rgba(60, 40, 44, 0.55) 0%, transparent 80%);
 }
