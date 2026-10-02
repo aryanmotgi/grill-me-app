@@ -53,6 +53,8 @@ pub fn enter(win: &WebviewWindow) {
         let _ = win.set_position(LogicalPosition::new(pos.x, pos.y));
     }
     let _ = win.set_always_on_top(true);
+    // soft vibrancy only behind what the forge draws (masked by the page)
+    crate::blur::install(win);
     let _ = win.show();
     let _ = win.set_focus();
     OVERLAY.store(true, Ordering::SeqCst);
@@ -134,6 +136,7 @@ fn restore(win: &WebviewWindow) {
 #[tauri::command(async)]
 pub fn forge_window_done(app: AppHandle) {
     escape_anywhere(&app, false);
+    crate::blur::remove(&app);
     let Some(main) = app.get_webview_window("main") else { return };
     OVERLAY.store(false, Ordering::SeqCst);
     std::thread::sleep(std::time::Duration::from_millis(60));

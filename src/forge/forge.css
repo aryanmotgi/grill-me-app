@@ -174,12 +174,5 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
   .forge-content, .forge-row, .forge-placed { animation: none; }
 }
 
-/* the Spark's words and the small notes sit on a soft, edgeless pool of
-   shade (not a box), so long text stays readable over busy, bright apps */
-.forge-say::before, .forge-note::before, .forge-micro::before {
-  content: ""; position: absolute; inset: -26px -60px; z-index: -1; pointer-events: none;
-  background: radial-gradient(closest-side, rgba(0,0,0,.6), rgba(0,0,0,.32) 55%, rgba(0,0,0,0));
-  filter: blur(6px);
-}
-.forge-note, .forge-micro { position: relative; z-index: 0; }
-.forge-say { isolation: isolate; }
+/* readability over busy apps comes from a native, soft blur behind each
+   piece (ForgeOnboarding: startBlurMask); the text outline is the backup */

@@ -185,7 +185,8 @@ export function ForgeOnboarding() {
       else world.sparkBorn(world.W / 2, world.H * .34);
       setReady(true);
     })();
-    return () => { clearInterval(hitTimer); world.stop(); document.documentElement.classList.remove("forge-on"); };
+    const stopBlur = native() ? startBlurMask(rootRef.current!, sayRef.current!) : () => {};
+    return () => { clearInterval(hitTimer); stopBlur(); world.stop(); document.documentElement.classList.remove("forge-on"); };
   }, []);
 
   // Esc / "Leave": always works, from anywhere
@@ -252,6 +253,89 @@ export function ForgeOnboarding() {
       <div ref={toastRef} className="forge-toast" role="status" />
     </div>
   );
+}
+
+// ---- the soft blur behind what's drawn -------------------------------------------------
+// macOS vibrancy sits behind the whole (transparent) window, but a mask
+// limits it to where the forge draws: each piece of text, option or diagram
+// gets a soft blob that fades in when it appears, grows as text types, and
+// fades out when it goes. Painted small (1/6 size) and stretched by macOS, so
+// the edges stay soft. Sent ~20×/s, only when something changed.
+const BLUR_SCALE = 6;
+const BLUR_PAD = 14;
+const BLUR_PIECES = ".forge-btn, .forge-link, .forge-opt, .forge-type input, .forge-up, .forge-placed, .forge-card, .forge-note, .forge-micro, .forge-check, .forge-files > div, .forge-list, .forge-tag, .forge-orb-act, .forge-hud > *";
+
+function startBlurMask(root: HTMLElement, say: HTMLElement): () => void {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+  const ids = new WeakMap<Element, string>();
+  let nextId = 0;
+  const idOf = (el: Element) => { let k = ids.get(el); if (!k) { k = `e${++nextId}`; ids.set(el, k); } return k; };
+  const pieces = new Map<string, { r: [number, number, number, number]; a: number; target: number }>();
+  let lastSig = "";
+
+  const union = (rs: DOMRect[]): [number, number, number, number] | null => {
+    const v = rs.filter((r) => r.width > 0 && r.height > 0);
+    if (!v.length) return null;
+    const x0 = Math.min(...v.map((r) => r.left)), y0 = Math.min(...v.map((r) => r.top));
+    const x1 = Math.max(...v.map((r) => r.right)), y1 = Math.max(...v.map((r) => r.bottom));
+    return [x0, y0, x1 - x0, y1 - y0];
+  };
+
+  const tick = () => {
+    const now = new Map<string, [number, number, number, number]>();
+    // the Spark's words: one blob per typed line, so it grows as it types
+    if (say.classList.contains("on")) {
+      const span = say.querySelector("span");
+      if (span) [...span.getClientRects()].forEach((r, i) => { if (r.width > 1) now.set(`say${i}`, [r.left, r.top, r.width, r.height]); });
+    }
+    root.querySelectorAll(BLUR_PIECES).forEach((el) => {
+      const he = el as HTMLElement;
+      if (he.offsetParent === null) return;
+      const r = he.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) now.set(idOf(el), [r.left, r.top, r.width, r.height]);
+    });
+    // diagrams: one soft field behind the constellation, one behind the path
+    const labels = root.querySelector(".forge-labels");
+    if (labels && !labels.classList.contains("recede")) {
+      const stars = [...root.querySelectorAll(".forge-star")].filter((e) => parseFloat((e as HTMLElement).style.opacity || "0") > .1);
+      const sky = union(stars.map((e) => e.getBoundingClientRect()));
+      if (sky) now.set("constellation", [sky[0] - 30, sky[1] - 50, sky[2] + 60, sky[3] + 70]);
+    }
+    const path = union([...root.querySelectorAll(".forge-stage")].map((e) => e.getBoundingClientRect()));
+    if (path) now.set("path", [path[0] - 20, path[1] - 70, path[2] + 40, path[3] + 80]);
+
+    for (const [k, r] of now) { const p = pieces.get(k); if (p) { p.r = r; p.target = 1; } else pieces.set(k, { r, a: 0, target: 1 }); }
+    for (const [k, p] of pieces) {
+      if (!now.has(k)) p.target = 0;
+      p.a += (p.target - p.a) * .28;
+      if (p.target === 0 && p.a < .02) pieces.delete(k);
+    }
+
+    const sig = [...pieces.values()].map((p) => `${p.r.map((n) => Math.round(n / 3)).join(",")}:${p.a.toFixed(2)}`).join("|");
+    if (sig === lastSig) return;
+    lastSig = sig;
+    const w = Math.ceil(innerWidth / BLUR_SCALE), h = Math.ceil(innerHeight / BLUR_SCALE);
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    ctx.clearRect(0, 0, w, h);
+    for (const p of pieces.values()) {
+      if (p.a < .01) continue;
+      const [x, y, rw, rh] = p.r;
+      // draw only the blurred shadow of the shape (shape itself is off-canvas)
+      ctx.save();
+      ctx.shadowColor = `rgba(255,255,255,${Math.min(1, p.a)})`;
+      ctx.shadowBlur = 22 / BLUR_SCALE * 2.4;
+      ctx.shadowOffsetX = 10000;
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.roundRect((x - BLUR_PAD) / BLUR_SCALE - 10000, (y - BLUR_PAD) / BLUR_SCALE, (rw + BLUR_PAD * 2) / BLUR_SCALE, (rh + BLUR_PAD * 2) / BLUR_SCALE, 18 / BLUR_SCALE);
+      ctx.fill();
+      ctx.restore();
+    }
+    void invoke("forge_blur_mask", { pngBase64: canvas.toDataURL("image/png") }).catch(() => {});
+  };
+  const timer = window.setInterval(tick, 50);
+  return () => clearInterval(timer);
 }
 
 /** Show first-run setup? Waits for settings so existing users never see a flash. */

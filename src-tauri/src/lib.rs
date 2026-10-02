@@ -16,6 +16,7 @@ mod interview;
 mod splash;
 mod forge;
 mod boot;
+mod blur;
 mod catalog;
 pub mod mcp;
 
@@ -4654,6 +4655,7 @@ pub fn run() {
             forge::save_share_card,
             forge::forge_front,
             forge::forge_hit_rects,
+            blur::forge_blur_mask,
             forge::perf_enabled,
             forge::perf_report,
             boot::boot_wait,
