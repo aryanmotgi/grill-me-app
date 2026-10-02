@@ -65,6 +65,17 @@ def test_join_page_never_needs_the_secret():
     assert r.status_code == 200 and "joining a team" in r.text
 
 
+def test_catalog_is_served():
+    r = client.get("/v1/catalog")
+    assert r.status_code == 200
+    doc = r.json()
+    assert isinstance(doc["version"], str) and doc["version"]
+    assert isinstance(doc["entries"], list) and len(doc["entries"]) > 0
+    ids = [e["id"] for e in doc["entries"]]
+    assert len(ids) == len(set(ids))
+    assert all(e["source"].startswith("https://") for e in doc["entries"])
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

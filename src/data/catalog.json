@@ -1,0 +1,3099 @@
+{
+  "version": "2026.10.1",
+  "updated": "2026-10-01",
+  "entries": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "kind": "agent",
+      "what": "Anthropic's agentic coding tool that runs in the terminal and edits, runs, and reviews code.",
+      "solves": [
+        "orchestration",
+        "code-quality",
+        "debugging",
+        "git"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "bins": [
+          "claude"
+        ],
+        "npm": [
+          "@anthropic-ai/claude-code"
+        ],
+        "brew": [
+          "claude-code"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://claude.ai/install.sh | bash",
+        "docs": "https://code.claude.com/docs/en/setup"
+      },
+      "source": "https://github.com/anthropics/claude-code",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "codex-cli",
+      "name": "OpenAI Codex CLI",
+      "kind": "agent",
+      "what": "OpenAI's open-source coding agent that runs locally in the terminal (also ships as a desktop app).",
+      "solves": [
+        "orchestration",
+        "code-quality",
+        "debugging"
+      ],
+      "agents": [
+        "codex"
+      ],
+      "detect": {
+        "bins": [
+          "codex"
+        ],
+        "apps": [
+          "Codex.app"
+        ],
+        "npm": [
+          "@openai/codex"
+        ],
+        "brew": [
+          "codex"
+        ]
+      },
+      "install": {
+        "command": "npm install -g @openai/codex",
+        "docs": "https://developers.openai.com/codex"
+      },
+      "source": "https://github.com/openai/codex",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "kind": "agent",
+      "what": "AI code editor with a built-in agent, plus the Cursor CLI for running the agent in the terminal.",
+      "solves": [
+        "orchestration",
+        "code-quality",
+        "review"
+      ],
+      "agents": [
+        "cursor"
+      ],
+      "detect": {
+        "bins": [
+          "cursor",
+          "cursor-agent"
+        ],
+        "apps": [
+          "Cursor.app"
+        ],
+        "brew": [
+          "cursor",
+          "cursor-cli"
+        ]
+      },
+      "install": {
+        "command": "curl https://cursor.com/install -fsS | bash",
+        "docs": "https://cursor.com/docs/cli/installation"
+      },
+      "source": "https://cursor.com",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "kind": "agent",
+      "what": "Google's open-source terminal coding agent for Gemini models (deprecated for personal accounts in June 2026 in favor of Antigravity CLI).",
+      "solves": [
+        "orchestration",
+        "code-quality"
+      ],
+      "agents": [
+        "gemini"
+      ],
+      "detect": {
+        "bins": [
+          "gemini"
+        ],
+        "npm": [
+          "@google/gemini-cli"
+        ],
+        "brew": [
+          "gemini-cli"
+        ]
+      },
+      "install": {
+        "command": "npm install -g @google/gemini-cli",
+        "docs": "https://geminicli.com/docs/"
+      },
+      "source": "https://github.com/google-gemini/gemini-cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "copilot-cli",
+      "name": "GitHub Copilot CLI",
+      "kind": "agent",
+      "what": "GitHub Copilot's coding agent in the terminal, invoked as copilot.",
+      "solves": [
+        "orchestration",
+        "code-quality",
+        "git"
+      ],
+      "agents": [
+        "copilot"
+      ],
+      "detect": {
+        "bins": [
+          "copilot"
+        ],
+        "npm": [
+          "@github/copilot"
+        ],
+        "brew": [
+          "copilot-cli"
+        ]
+      },
+      "install": {
+        "command": "npm install -g @github/copilot",
+        "docs": "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli"
+      },
+      "source": "https://github.com/github/copilot-cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "windsurf",
+      "name": "Windsurf (Devin Desktop)",
+      "kind": "agent",
+      "what": "Cognition's AI code editor, rebranded from Windsurf to Devin Desktop.",
+      "solves": [
+        "orchestration",
+        "code-quality"
+      ],
+      "agents": [
+        "windsurf"
+      ],
+      "detect": {
+        "bins": [
+          "devin-desktop",
+          "windsurf"
+        ],
+        "apps": [
+          "Devin.app",
+          "Windsurf.app"
+        ],
+        "brew": [
+          "devin-desktop",
+          "windsurf"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask devin-desktop",
+        "docs": "https://docs.devin.ai/desktop/getting-started"
+      },
+      "source": "https://devin.ai/download",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "aider",
+      "name": "Aider",
+      "kind": "agent",
+      "what": "AI pair programming in the terminal that edits code in your local git repo.",
+      "solves": [
+        "code-quality",
+        "git"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "aider"
+        ],
+        "pip": [
+          "aider-chat",
+          "aider-install"
+        ],
+        "brew": [
+          "aider"
+        ]
+      },
+      "install": {
+        "command": "python -m pip install aider-install && aider-install",
+        "docs": "https://aider.chat/docs/install.html"
+      },
+      "source": "https://github.com/Aider-AI/aider",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "zed",
+      "name": "Zed",
+      "kind": "agent",
+      "what": "High-performance code editor with a built-in AI agent panel and support for external agents.",
+      "solves": [
+        "code-quality",
+        "orchestration"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "zed"
+        ],
+        "apps": [
+          "Zed.app"
+        ],
+        "brew": [
+          "zed"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask zed",
+        "docs": "https://zed.dev/docs/installation"
+      },
+      "source": "https://zed.dev",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "cline",
+      "name": "Cline",
+      "kind": "agent",
+      "what": "Autonomous coding agent available as a VS Code extension, CLI, and desktop app.",
+      "solves": [
+        "orchestration",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "cline"
+        ],
+        "apps": [
+          "Cline.app"
+        ],
+        "npm": [
+          "cline"
+        ],
+        "brew": [
+          "cline-app"
+        ]
+      },
+      "install": {
+        "command": "npm i -g cline",
+        "docs": "https://docs.cline.bot"
+      },
+      "source": "https://github.com/cline/cline",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "kind": "agent",
+      "what": "Open-source coding agent for the terminal, with a desktop app.",
+      "solves": [
+        "orchestration",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "opencode"
+        ],
+        "apps": [
+          "OpenCode.app"
+        ],
+        "npm": [
+          "opencode-ai"
+        ],
+        "brew": [
+          "opencode",
+          "opencode-desktop"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://opencode.ai/install | bash",
+        "docs": "https://opencode.ai/docs"
+      },
+      "source": "https://github.com/sst/opencode",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "amp",
+      "name": "Amp",
+      "kind": "agent",
+      "what": "Sourcegraph's frontier coding agent available via CLI, web, and native apps.",
+      "solves": [
+        "orchestration",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "amp"
+        ],
+        "apps": [
+          "Amp.app"
+        ],
+        "npm": [
+          "@sourcegraph/amp"
+        ],
+        "brew": [
+          "amp-app"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://ampcode.com/install.sh | bash",
+        "docs": "https://ampcode.com/manual"
+      },
+      "source": "https://ampcode.com",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "goose",
+      "name": "goose",
+      "kind": "agent",
+      "what": "Open-source, extensible AI agent (desktop app and CLI) with MCP extensions, now under the Agentic AI Foundation.",
+      "solves": [
+        "orchestration",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "goose"
+        ],
+        "apps": [
+          "Goose.app"
+        ],
+        "brew": [
+          "block-goose-cli",
+          "block-goose"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash",
+        "docs": "https://goose-docs.ai/docs/getting-started/installation"
+      },
+      "source": "https://github.com/aaif-goose/goose",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "kiro",
+      "name": "Kiro",
+      "kind": "agent",
+      "what": "AWS's spec-driven agentic IDE and terminal CLI.",
+      "solves": [
+        "planning",
+        "orchestration",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "kiro",
+          "kiro-cli"
+        ],
+        "apps": [
+          "Kiro.app",
+          "Kiro CLI.app"
+        ],
+        "brew": [
+          "kiro",
+          "kiro-cli"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://cli.kiro.dev/install | bash",
+        "docs": "https://kiro.dev/docs/cli/"
+      },
+      "source": "https://kiro.dev",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "continue",
+      "name": "Continue",
+      "kind": "agent",
+      "what": "Open-source AI coding assistant (VS Code/JetBrains extension and cn CLI); repo is now read-only after its final 2.0.0 release.",
+      "solves": [
+        "code-quality",
+        "review",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "cn"
+        ],
+        "npm": [
+          "@continuedev/cli"
+        ]
+      },
+      "install": {
+        "command": "npm i -g @continuedev/cli",
+        "docs": "https://docs.continue.dev"
+      },
+      "source": "https://github.com/continuedev/continue",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "obsidian",
+      "name": "Obsidian",
+      "kind": "app",
+      "what": "Local-first Markdown note-taking app with linked notes and plugins.",
+      "solves": [
+        "notes",
+        "memory",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "obsidian"
+        ],
+        "apps": [
+          "Obsidian.app"
+        ],
+        "brew": [
+          "obsidian"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask obsidian",
+        "docs": "https://obsidian.md/download"
+      },
+      "source": "https://obsidian.md",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "notion",
+      "name": "Notion",
+      "kind": "app",
+      "what": "All-in-one workspace for docs, wikis, and project tracking.",
+      "solves": [
+        "notes",
+        "docs",
+        "project-management"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Notion.app"
+        ],
+        "brew": [
+          "notion"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask notion",
+        "docs": "https://www.notion.com/desktop"
+      },
+      "source": "https://www.notion.com",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "linear",
+      "name": "Linear",
+      "kind": "app",
+      "what": "Issue tracking and project management app for software teams.",
+      "solves": [
+        "project-management",
+        "planning"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Linear.app"
+        ],
+        "brew": [
+          "linear"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask linear",
+        "docs": "https://linear.app/download"
+      },
+      "source": "https://linear.app",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "raycast",
+      "name": "Raycast",
+      "kind": "app",
+      "what": "Extensible macOS launcher with commands, extensions, and AI.",
+      "solves": [
+        "search",
+        "orchestration"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Raycast.app"
+        ],
+        "brew": [
+          "raycast"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask raycast",
+        "docs": "https://www.raycast.com/"
+      },
+      "source": "https://www.raycast.com",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "warp",
+      "name": "Warp",
+      "kind": "app",
+      "what": "Modern terminal with built-in AI agents.",
+      "solves": [
+        "orchestration",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Warp.app"
+        ],
+        "brew": [
+          "warp"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask warp",
+        "docs": "https://docs.warp.dev/getting-started/quickstart/installation-and-setup"
+      },
+      "source": "https://www.warp.dev",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "vscode",
+      "name": "Visual Studio Code",
+      "kind": "app",
+      "what": "Microsoft's extensible code editor.",
+      "solves": [
+        "code-quality",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "code"
+        ],
+        "apps": [
+          "Visual Studio Code.app"
+        ],
+        "brew": [
+          "visual-studio-code"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask visual-studio-code",
+        "docs": "https://code.visualstudio.com/docs/setup/mac"
+      },
+      "source": "https://code.visualstudio.com",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "ghostty",
+      "name": "Ghostty",
+      "kind": "app",
+      "what": "Fast, native, GPU-accelerated terminal emulator.",
+      "solves": [
+        "ui"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Ghostty.app"
+        ],
+        "brew": [
+          "ghostty"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask ghostty",
+        "docs": "https://ghostty.org/docs/install/binary"
+      },
+      "source": "https://ghostty.org",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "figma",
+      "name": "Figma",
+      "kind": "app",
+      "what": "Collaborative interface design and prototyping tool.",
+      "solves": [
+        "design",
+        "ui"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "apps": [
+          "Figma.app"
+        ],
+        "brew": [
+          "figma"
+        ]
+      },
+      "install": {
+        "command": "brew install --cask figma",
+        "docs": "https://www.figma.com/downloads/"
+      },
+      "source": "https://www.figma.com",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "linear-mcp",
+      "name": "Linear MCP",
+      "kind": "mcp",
+      "what": "Lets agents find, create, and update Linear issues, projects, and comments.",
+      "solves": [
+        "project-management",
+        "planning"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "linear",
+          "linear-server",
+          "mcp.linear.app"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "linear",
+          "url": "https://mcp.linear.app/mcp"
+        },
+        "command": "claude mcp add --transport http linear-server https://mcp.linear.app/mcp",
+        "docs": "https://linear.app/docs/mcp"
+      },
+      "source": "https://linear.app/docs/mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "notion-mcp",
+      "name": "Notion MCP",
+      "kind": "mcp",
+      "what": "Lets agents search, read, and edit pages and databases in your Notion workspace.",
+      "solves": [
+        "notes",
+        "docs",
+        "project-management"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "notion",
+          "mcp.notion.com",
+          "@notionhq/notion-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "notion",
+          "url": "https://mcp.notion.com/mcp"
+        },
+        "command": "claude mcp add --transport http notion https://mcp.notion.com/mcp",
+        "docs": "https://developers.notion.com/docs/get-started-with-mcp"
+      },
+      "source": "https://developers.notion.com/docs/mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "github-mcp",
+      "name": "GitHub MCP",
+      "kind": "mcp",
+      "what": "Lets agents work with GitHub repos, issues, pull requests, and Actions through GitHub's official server.",
+      "solves": [
+        "git",
+        "review",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "github",
+          "api.githubcopilot.com",
+          "github-mcp-server",
+          "ghcr.io/github/github-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "github",
+          "url": "https://api.githubcopilot.com/mcp/"
+        },
+        "command": "claude mcp add --transport http github https://api.githubcopilot.com/mcp/ --header \"Authorization: Bearer YOUR_GITHUB_PAT\"",
+        "docs": "https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-claude.md"
+      },
+      "source": "https://github.com/github/github-mcp-server",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "figma-mcp",
+      "name": "Figma MCP",
+      "kind": "mcp",
+      "what": "Gives agents design context from Figma files and lets them generate code from or write to the canvas.",
+      "solves": [
+        "design",
+        "ui"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "figma",
+          "mcp.figma.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "figma",
+          "url": "https://mcp.figma.com/mcp"
+        },
+        "command": "claude mcp add --transport http figma https://mcp.figma.com/mcp",
+        "docs": "https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/"
+      },
+      "source": "https://developers.figma.com/docs/figma-mcp-server/",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "sentry-mcp",
+      "name": "Sentry MCP",
+      "kind": "mcp",
+      "what": "Lets agents query Sentry issues, errors, and traces to debug production problems.",
+      "solves": [
+        "monitoring",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "sentry",
+          "mcp.sentry.dev",
+          "@sentry/mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "sentry",
+          "url": "https://mcp.sentry.dev/mcp"
+        },
+        "command": "claude mcp add --transport http sentry https://mcp.sentry.dev/mcp",
+        "docs": "https://mcp.sentry.dev/"
+      },
+      "source": "https://github.com/getsentry/sentry-mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "supabase-mcp",
+      "name": "Supabase MCP",
+      "kind": "mcp",
+      "what": "Lets agents manage Supabase projects: run SQL, inspect schemas, deploy Edge Functions, and read logs.",
+      "solves": [
+        "database",
+        "auth",
+        "deploy"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "supabase",
+          "mcp.supabase.com",
+          "@supabase/mcp-server-supabase"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "supabase",
+          "url": "https://mcp.supabase.com/mcp"
+        },
+        "command": "claude mcp add --scope project --transport http supabase \"https://mcp.supabase.com/mcp\"",
+        "docs": "https://supabase.com/docs/guides/getting-started/mcp"
+      },
+      "source": "https://github.com/supabase-community/supabase-mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "neon-mcp",
+      "name": "Neon MCP",
+      "kind": "mcp",
+      "what": "Lets agents manage Neon Postgres projects, branches, and run queries and schema changes.",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "neon",
+          "mcp.neon.tech",
+          "@neondatabase/mcp-server-neon"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "neon",
+          "url": "https://mcp.neon.tech/mcp"
+        },
+        "docs": "https://neon.com/docs/ai/neon-mcp-server"
+      },
+      "source": "https://github.com/neondatabase/mcp-server-neon",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "stripe-mcp",
+      "name": "Stripe MCP",
+      "kind": "mcp",
+      "what": "Lets agents call the Stripe API and search Stripe documentation.",
+      "solves": [
+        "payments",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "stripe",
+          "mcp.stripe.com",
+          "@stripe/mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "stripe",
+          "url": "https://mcp.stripe.com"
+        },
+        "command": "claude mcp add --transport http stripe https://mcp.stripe.com/",
+        "docs": "https://docs.stripe.com/mcp"
+      },
+      "source": "https://docs.stripe.com/mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "vercel-mcp",
+      "name": "Vercel MCP",
+      "kind": "mcp",
+      "what": "Lets agents search Vercel docs and manage projects, deployments, and logs.",
+      "solves": [
+        "deploy",
+        "docs",
+        "analytics"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "vercel",
+          "mcp.vercel.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "vercel",
+          "url": "https://mcp.vercel.com"
+        },
+        "command": "claude mcp add --transport http vercel https://mcp.vercel.com",
+        "docs": "https://vercel.com/docs/agent-resources/vercel-mcp"
+      },
+      "source": "https://vercel.com/docs/agent-resources/vercel-mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "playwright-mcp",
+      "name": "Playwright MCP",
+      "kind": "mcp",
+      "what": "Lets agents drive a real browser via Playwright using accessibility snapshots.",
+      "solves": [
+        "browser",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "playwright",
+          "@playwright/mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "playwright",
+          "command": "npx",
+          "args": [
+            "@playwright/mcp@latest"
+          ]
+        },
+        "command": "claude mcp add playwright npx @playwright/mcp@latest",
+        "docs": "https://github.com/microsoft/playwright-mcp"
+      },
+      "source": "https://github.com/microsoft/playwright-mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "chrome-devtools-mcp",
+      "name": "Chrome DevTools MCP",
+      "kind": "mcp",
+      "what": "Lets agents control and inspect a live Chrome browser for debugging and performance analysis.",
+      "solves": [
+        "browser",
+        "debugging",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "chrome-devtools",
+          "chrome-devtools-mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "chrome-devtools",
+          "command": "npx",
+          "args": [
+            "-y",
+            "chrome-devtools-mcp@latest"
+          ]
+        },
+        "command": "claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest",
+        "docs": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/client-configurations.md"
+      },
+      "source": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "context7-mcp",
+      "name": "Context7",
+      "kind": "mcp",
+      "what": "Feeds agents up-to-date, version-specific library documentation and code examples.",
+      "solves": [
+        "docs",
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "context7",
+          "mcp.context7.com",
+          "@upstash/context7-mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "context7",
+          "url": "https://mcp.context7.com/mcp"
+        },
+        "docs": "https://context7.com/docs/clients/claude-code"
+      },
+      "source": "https://github.com/upstash/context7",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "exa-mcp",
+      "name": "Exa MCP",
+      "kind": "mcp",
+      "what": "Gives agents web search, code search, and page fetching via Exa.",
+      "solves": [
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "exa",
+          "mcp.exa.ai",
+          "exa-mcp-server"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "exa",
+          "url": "https://mcp.exa.ai/mcp"
+        },
+        "docs": "https://exa.ai/docs/reference/exa-mcp"
+      },
+      "source": "https://github.com/exa-labs/exa-mcp-server",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "tavily-mcp",
+      "name": "Tavily MCP",
+      "kind": "mcp",
+      "what": "Gives agents real-time web search and page extraction via Tavily.",
+      "solves": [
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "tavily",
+          "tavily-remote-mcp",
+          "mcp.tavily.com",
+          "tavily-mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "tavily",
+          "url": "https://mcp.tavily.com/mcp"
+        },
+        "command": "claude mcp add --transport http tavily https://mcp.tavily.com/mcp",
+        "docs": "https://docs.tavily.com/documentation/mcp"
+      },
+      "source": "https://github.com/tavily-ai/tavily-mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "slack-mcp",
+      "name": "Slack MCP",
+      "kind": "mcp",
+      "what": "Lets agents search, read, and send Slack messages, threads, and canvases.",
+      "solves": [
+        "search",
+        "notes"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "slack",
+          "mcp.slack.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "slack",
+          "url": "https://mcp.slack.com/mcp"
+        },
+        "docs": "https://docs.slack.dev/ai/slack-mcp-server/"
+      },
+      "source": "https://docs.slack.dev/ai/slack-mcp-server/",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "atlassian-mcp",
+      "name": "Atlassian Rovo MCP",
+      "kind": "mcp",
+      "what": "Lets agents read and update Jira issues and Confluence pages.",
+      "solves": [
+        "project-management",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "atlassian",
+          "mcp.atlassian.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "atlassian",
+          "url": "https://mcp.atlassian.com/v2/mcp"
+        },
+        "command": "claude mcp add --transport http atlassian https://mcp.atlassian.com/v2/mcp",
+        "docs": "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/"
+      },
+      "source": "https://support.atlassian.com/atlassian-rovo-mcp-server/",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "filesystem-mcp",
+      "name": "Filesystem MCP",
+      "kind": "mcp",
+      "what": "Gives agents read/write access to files inside directories you allow.",
+      "solves": [
+        "memory"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "filesystem",
+          "@modelcontextprotocol/server-filesystem"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "filesystem",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/path/to/allowed/dir"
+          ]
+        },
+        "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+      },
+      "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "memory-mcp",
+      "name": "Memory MCP",
+      "kind": "mcp",
+      "what": "Gives agents persistent memory via a local knowledge graph.",
+      "solves": [
+        "memory"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "memory",
+          "@modelcontextprotocol/server-memory"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "memory",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-memory"
+          ]
+        },
+        "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory"
+      },
+      "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "sequential-thinking-mcp",
+      "name": "Sequential Thinking MCP",
+      "kind": "mcp",
+      "what": "Gives agents a tool for structured step-by-step reasoning and revising thoughts.",
+      "solves": [
+        "planning"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "sequential-thinking",
+          "sequentialthinking",
+          "@modelcontextprotocol/server-sequential-thinking"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "sequential-thinking",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-sequential-thinking"
+          ]
+        },
+        "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking"
+      },
+      "source": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "obsidian-mcp",
+      "name": "Obsidian MCP (community)",
+      "kind": "mcp",
+      "what": "Lets agents read and edit notes in an Obsidian vault via the Local REST API plugin.",
+      "solves": [
+        "notes",
+        "memory"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "mcp-obsidian",
+          "obsidian"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "mcp-obsidian",
+          "command": "uvx",
+          "args": [
+            "mcp-obsidian"
+          ]
+        },
+        "docs": "https://github.com/MarkusPfundstein/mcp-obsidian"
+      },
+      "source": "https://github.com/MarkusPfundstein/mcp-obsidian",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "posthog-mcp",
+      "name": "PostHog MCP",
+      "kind": "mcp",
+      "what": "Lets agents query PostHog analytics, manage feature flags, and investigate errors.",
+      "solves": [
+        "analytics",
+        "monitoring"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "posthog",
+          "mcp.posthog.com",
+          "@posthog/wizard"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "posthog",
+          "url": "https://mcp.posthog.com/mcp"
+        },
+        "command": "npx @posthog/wizard mcp add",
+        "docs": "https://posthog.com/docs/model-context-protocol"
+      },
+      "source": "https://posthog.com/docs/model-context-protocol",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "cloudflare-mcp",
+      "name": "Cloudflare MCP",
+      "kind": "mcp",
+      "what": "Gives agents broad access to Cloudflare's APIs through Cloudflare's Code Mode server.",
+      "solves": [
+        "deploy",
+        "monitoring"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "cloudflare",
+          "mcp.cloudflare.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "cloudflare",
+          "url": "https://mcp.cloudflare.com/mcp"
+        },
+        "docs": "https://github.com/cloudflare/mcp-server-cloudflare"
+      },
+      "source": "https://github.com/cloudflare/mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "cloudflare-docs-mcp",
+      "name": "Cloudflare Docs MCP",
+      "kind": "mcp",
+      "what": "Gives agents up-to-date Cloudflare documentation.",
+      "solves": [
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "cloudflare-docs",
+          "docs.mcp.cloudflare.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "cloudflare-docs",
+          "url": "https://docs.mcp.cloudflare.com/mcp"
+        },
+        "docs": "https://github.com/cloudflare/mcp-server-cloudflare"
+      },
+      "source": "https://github.com/cloudflare/mcp-server-cloudflare",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "cloudflare-bindings-mcp",
+      "name": "Cloudflare Workers Bindings MCP",
+      "kind": "mcp",
+      "what": "Lets agents build Workers apps using storage, AI, and compute bindings.",
+      "solves": [
+        "deploy",
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "cloudflare-bindings",
+          "bindings.mcp.cloudflare.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "cloudflare-bindings",
+          "url": "https://bindings.mcp.cloudflare.com/mcp"
+        },
+        "docs": "https://github.com/cloudflare/mcp-server-cloudflare"
+      },
+      "source": "https://github.com/cloudflare/mcp-server-cloudflare",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "firecrawl-mcp",
+      "name": "Firecrawl MCP",
+      "kind": "mcp",
+      "what": "Lets agents scrape, crawl, and search the web as clean markdown.",
+      "solves": [
+        "search",
+        "browser"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "firecrawl",
+          "firecrawl-mcp",
+          "mcp.firecrawl.dev"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "firecrawl",
+          "url": "https://mcp.firecrawl.dev/v2/mcp"
+        },
+        "docs": "https://github.com/firecrawl/firecrawl-mcp-server"
+      },
+      "source": "https://github.com/firecrawl/firecrawl-mcp-server",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "browserbase-mcp",
+      "name": "Browserbase MCP",
+      "kind": "mcp",
+      "what": "Lets agents control cloud browsers via Browserbase and Stagehand.",
+      "solves": [
+        "browser",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "browserbase",
+          "mcp.browserbase.com",
+          "@browserbasehq/mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "browserbase",
+          "url": "https://mcp.browserbase.com/mcp"
+        },
+        "docs": "https://github.com/browserbase/mcp-server-browserbase"
+      },
+      "source": "https://github.com/browserbase/mcp-server-browserbase",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "asana-mcp",
+      "name": "Asana MCP",
+      "kind": "mcp",
+      "what": "Lets agents read and manage Asana tasks, projects, and goals.",
+      "solves": [
+        "project-management",
+        "planning"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "asana",
+          "mcp.asana.com"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "asana",
+          "url": "https://mcp.asana.com/v2/mcp"
+        },
+        "docs": "https://developers.asana.com/docs/using-asanas-mcp-server"
+      },
+      "source": "https://developers.asana.com/docs/using-asanas-mcp-server",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "huggingface-mcp",
+      "name": "Hugging Face MCP",
+      "kind": "mcp",
+      "what": "Lets agents search Hugging Face models, datasets, papers, and Spaces.",
+      "solves": [
+        "search",
+        "docs"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "hf-mcp-server",
+          "huggingface",
+          "huggingface.co"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "hf-mcp-server",
+          "url": "https://huggingface.co/mcp"
+        },
+        "command": "claude mcp add hf-mcp-server -t http https://huggingface.co/mcp?login",
+        "docs": "https://github.com/huggingface/hf-mcp-server"
+      },
+      "source": "https://github.com/huggingface/hf-mcp-server",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "netlify-mcp",
+      "name": "Netlify MCP",
+      "kind": "mcp",
+      "what": "Lets agents create, build, deploy, and manage Netlify projects.",
+      "solves": [
+        "deploy"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "netlify",
+          "@netlify/mcp"
+        ]
+      },
+      "install": {
+        "mcp": {
+          "name": "netlify",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@netlify/mcp"
+          ]
+        },
+        "docs": "https://docs.netlify.com/welcome/build-with-ai/netlify-mcp-server/"
+      },
+      "source": "https://github.com/netlify/netlify-mcp",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "superpowers",
+      "name": "Superpowers",
+      "kind": "plugin",
+      "what": "Skills framework that makes coding agents brainstorm, write plans, do test-driven development, debug systematically and review code before finishing.",
+      "solves": [
+        "planning",
+        "testing",
+        "debugging",
+        "review"
+      ],
+      "agents": [
+        "claude",
+        "codex",
+        "cursor",
+        "gemini",
+        "copilot"
+      ],
+      "detect": {
+        "plugins": [
+          "superpowers"
+        ],
+        "skills": [
+          "using-superpowers"
+        ]
+      },
+      "install": {
+        "command": "/plugin install superpowers@claude-plugins-official",
+        "docs": "https://github.com/obra/superpowers"
+      },
+      "source": "https://github.com/obra/superpowers",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "gstack",
+      "name": "gstack",
+      "kind": "skill",
+      "what": "Garry Tan's suite of Claude Code skills that act as a virtual engineering team: product and eng plan reviews, design review, QA with a headless browser, and ship/deploy workflows.",
+      "solves": [
+        "planning",
+        "review",
+        "testing",
+        "deploy"
+      ],
+      "agents": [
+        "claude",
+        "codex",
+        "cursor"
+      ],
+      "detect": {
+        "skills": [
+          "gstack"
+        ]
+      },
+      "install": {
+        "command": "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+        "docs": "https://github.com/garrytan/gstack"
+      },
+      "source": "https://github.com/garrytan/gstack",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "caveman",
+      "name": "Caveman",
+      "kind": "plugin",
+      "what": "Makes the agent answer in terse caveman-style speech to cut output tokens while keeping technical accuracy, plus compressed commits and reviews.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "claude",
+        "codex",
+        "gemini",
+        "cursor",
+        "windsurf"
+      ],
+      "detect": {
+        "plugins": [
+          "caveman"
+        ],
+        "skills": [
+          "caveman"
+        ]
+      },
+      "install": {
+        "command": "npx skills add JuliusBrussee/caveman -g",
+        "docs": "https://github.com/JuliusBrussee/caveman"
+      },
+      "source": "https://github.com/JuliusBrussee/caveman",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "vercel-plugin",
+      "name": "Vercel Plugin",
+      "kind": "plugin",
+      "what": "Vercel ecosystem plugin with skills for Next.js, AI SDK, functions, storage, env vars and deployments, plus specialist agents and deploy commands.",
+      "solves": [
+        "deploy",
+        "docs",
+        "ui"
+      ],
+      "agents": [
+        "claude",
+        "cursor",
+        "copilot",
+        "codex"
+      ],
+      "detect": {
+        "plugins": [
+          "vercel-plugin",
+          "vercel"
+        ]
+      },
+      "install": {
+        "command": "npx plugins add vercel/vercel-plugin",
+        "docs": "https://github.com/vercel/vercel-plugin"
+      },
+      "source": "https://github.com/vercel/vercel-plugin",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "stripe-plugin",
+      "name": "Stripe Plugin",
+      "kind": "plugin",
+      "what": "Stripe's official Claude Code plugin with Stripe best-practice skills, error explanations, test card lookup and the Stripe MCP server.",
+      "solves": [
+        "payments",
+        "docs"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "stripe"
+        ]
+      },
+      "install": {
+        "command": "/plugin install stripe@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/stripe/ai",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "context7-plugin",
+      "name": "Context7 Plugin",
+      "kind": "plugin",
+      "what": "Connects Claude Code to Upstash Context7's hosted MCP server for up-to-date library documentation lookup.",
+      "solves": [
+        "docs",
+        "search"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "context7"
+        ],
+        "mcp": [
+          "mcp.context7.com"
+        ]
+      },
+      "install": {
+        "command": "/plugin install context7@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/context7",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "frontend-design",
+      "name": "Frontend Design",
+      "kind": "plugin",
+      "what": "Skill that helps Claude build distinctive, production-grade frontend interfaces that avoid generic AI aesthetics.",
+      "solves": [
+        "design",
+        "ui"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "frontend-design"
+        ]
+      },
+      "install": {
+        "command": "/plugin install frontend-design@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/frontend-design",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "code-review",
+      "name": "Code Review",
+      "kind": "plugin",
+      "what": "Automated pull request review using multiple specialized agents with confidence-based scoring to filter false positives.",
+      "solves": [
+        "review",
+        "code-quality"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "code-review"
+        ]
+      },
+      "install": {
+        "command": "/plugin install code-review@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-review",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "pr-review-toolkit",
+      "name": "PR Review Toolkit",
+      "kind": "plugin",
+      "what": "Set of PR review agents for comments, tests, error handling, type design, code quality and simplification.",
+      "solves": [
+        "review",
+        "code-quality",
+        "testing"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "pr-review-toolkit"
+        ]
+      },
+      "install": {
+        "command": "/plugin install pr-review-toolkit@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/pr-review-toolkit",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "commit-commands",
+      "name": "Commit Commands",
+      "kind": "plugin",
+      "what": "Slash commands for git workflows: commit, push and open a pull request.",
+      "solves": [
+        "git"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "commit-commands"
+        ]
+      },
+      "install": {
+        "command": "/plugin install commit-commands@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/commit-commands",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "feature-dev",
+      "name": "Feature Dev",
+      "kind": "plugin",
+      "what": "Guided feature development workflow with agents for codebase exploration, architecture design and quality review.",
+      "solves": [
+        "planning",
+        "review"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "feature-dev"
+        ]
+      },
+      "install": {
+        "command": "/plugin install feature-dev@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/feature-dev",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "code-simplifier",
+      "name": "Code Simplifier",
+      "kind": "plugin",
+      "what": "Agent that refines recently modified code for clarity, consistency and maintainability without changing behavior.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "code-simplifier"
+        ]
+      },
+      "install": {
+        "command": "/plugin install code-simplifier@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-simplifier",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "security-guidance",
+      "name": "Security Guidance",
+      "kind": "plugin",
+      "what": "Security review for Claude-written code: pattern warnings on edits and LLM-powered diff review.",
+      "solves": [
+        "security",
+        "review"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "security-guidance"
+        ]
+      },
+      "install": {
+        "command": "/plugin install security-guidance@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/security-guidance",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "hookify",
+      "name": "Hookify",
+      "kind": "plugin",
+      "what": "Creates custom Claude Code hooks from simple rules to block unwanted behaviors.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "hookify"
+        ]
+      },
+      "install": {
+        "command": "/plugin install hookify@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/hookify",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "ralph-loop",
+      "name": "Ralph Loop",
+      "kind": "plugin",
+      "what": "Runs Claude on the same task repeatedly in a self-referential loop until it is done (the Ralph Wiggum technique).",
+      "solves": [
+        "orchestration"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "ralph-loop"
+        ]
+      },
+      "install": {
+        "command": "/plugin install ralph-loop@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/ralph-loop",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "plugin-dev",
+      "name": "Plugin Dev",
+      "kind": "plugin",
+      "what": "Toolkit with skills for building Claude Code plugins: hooks, MCP integration, commands and agents.",
+      "solves": [
+        "docs"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "plugin-dev"
+        ]
+      },
+      "install": {
+        "command": "/plugin install plugin-dev@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/plugin-dev",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "skill-creator",
+      "name": "Skill Creator Plugin",
+      "kind": "plugin",
+      "what": "Create new skills, improve existing ones and measure skill performance.",
+      "solves": [
+        "docs"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "skill-creator"
+        ]
+      },
+      "install": {
+        "command": "/plugin install skill-creator@claude-plugins-official",
+        "docs": "https://code.claude.com/docs/en/plugins"
+      },
+      "source": "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/skill-creator",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skills",
+      "name": "Anthropic Agent Skills",
+      "kind": "plugin",
+      "what": "Anthropic's official skills repo, installable as document-skills (docx, pdf, pptx, xlsx) and example-skills plugin packs.",
+      "solves": [
+        "docs",
+        "design",
+        "testing"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "plugins": [
+          "document-skills",
+          "example-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install document-skills@anthropic-agent-skills && /plugin install example-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skill-pdf",
+      "name": "PDF Skill",
+      "kind": "skill",
+      "what": "Reads, extracts, fills forms in, merges and creates PDF files.",
+      "solves": [
+        "docs"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "skills": [
+          "pdf"
+        ],
+        "plugins": [
+          "document-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install document-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills/tree/main/skills/pdf",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skill-docx",
+      "name": "DOCX Skill",
+      "kind": "skill",
+      "what": "Creates and edits Word documents, including tracked changes and comments.",
+      "solves": [
+        "docs"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "skills": [
+          "docx"
+        ],
+        "plugins": [
+          "document-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install document-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills/tree/main/skills/docx",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skill-xlsx",
+      "name": "XLSX Skill",
+      "kind": "skill",
+      "what": "Creates and edits Excel spreadsheets with formulas, formatting and data analysis.",
+      "solves": [
+        "docs",
+        "analytics"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "skills": [
+          "xlsx"
+        ],
+        "plugins": [
+          "document-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install document-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills/tree/main/skills/xlsx",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skill-pptx",
+      "name": "PPTX Skill",
+      "kind": "skill",
+      "what": "Creates and edits PowerPoint presentations.",
+      "solves": [
+        "docs",
+        "design"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "skills": [
+          "pptx"
+        ],
+        "plugins": [
+          "document-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install document-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills/tree/main/skills/pptx",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skill-skill-creator",
+      "name": "Skill Creator",
+      "kind": "skill",
+      "what": "Guides creating and improving Agent Skills.",
+      "solves": [
+        "docs"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "skills": [
+          "skill-creator"
+        ],
+        "plugins": [
+          "example-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install example-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills/tree/main/skills/skill-creator",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skill-mcp-builder",
+      "name": "MCP Builder",
+      "kind": "skill",
+      "what": "Guides building high-quality MCP servers.",
+      "solves": [
+        "docs"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "skills": [
+          "mcp-builder"
+        ],
+        "plugins": [
+          "example-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install example-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills/tree/main/skills/mcp-builder",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "anthropic-skill-webapp-testing",
+      "name": "Webapp Testing",
+      "kind": "skill",
+      "what": "Tests local web apps with Playwright: verifies UI, captures screenshots and reads browser logs.",
+      "solves": [
+        "testing",
+        "browser"
+      ],
+      "agents": [
+        "claude"
+      ],
+      "detect": {
+        "skills": [
+          "webapp-testing"
+        ],
+        "plugins": [
+          "example-skills"
+        ]
+      },
+      "install": {
+        "command": "/plugin marketplace add anthropics/skills && /plugin install example-skills@anthropic-agent-skills",
+        "docs": "https://github.com/anthropics/skills"
+      },
+      "source": "https://github.com/anthropics/skills/tree/main/skills/webapp-testing",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "playwright-skill",
+      "name": "Playwright Skill",
+      "kind": "skill",
+      "what": "Lets Claude write and run custom Playwright browser automation scripts, with a visible browser by default.",
+      "solves": [
+        "browser",
+        "testing"
+      ],
+      "agents": [
+        "claude",
+        "cursor",
+        "copilot"
+      ],
+      "detect": {
+        "skills": [
+          "playwright-skill"
+        ]
+      },
+      "install": {
+        "command": "npx skills add lackeyjb/playwright-skill --skill playwright-skill --global --yes",
+        "docs": "https://github.com/lackeyjb/playwright-skill"
+      },
+      "source": "https://github.com/lackeyjb/playwright-skill",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "gh-cli",
+      "name": "GitHub CLI",
+      "kind": "cli",
+      "what": "Work with GitHub repos, pull requests, issues and Actions from the terminal.",
+      "solves": [
+        "git",
+        "review",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "gh"
+        ],
+        "brew": [
+          "gh"
+        ]
+      },
+      "install": {
+        "command": "brew install gh",
+        "docs": "https://cli.github.com/"
+      },
+      "source": "https://github.com/cli/cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "vercel-cli",
+      "name": "Vercel CLI",
+      "kind": "cli",
+      "what": "Deploy and manage Vercel projects, env vars, domains and logs from the terminal.",
+      "solves": [
+        "deploy",
+        "monitoring"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "vercel",
+          "vc"
+        ],
+        "npm": [
+          "vercel"
+        ],
+        "deps": [
+          "vercel"
+        ]
+      },
+      "install": {
+        "command": "npm i -g vercel",
+        "docs": "https://vercel.com/docs/cli"
+      },
+      "source": "https://github.com/vercel/vercel",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "supabase-cli",
+      "name": "Supabase CLI",
+      "kind": "cli",
+      "what": "Run Supabase locally and manage database migrations, functions and projects.",
+      "solves": [
+        "database",
+        "deploy",
+        "auth"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "supabase"
+        ],
+        "brew": [
+          "supabase"
+        ],
+        "npm": [
+          "supabase"
+        ],
+        "deps": [
+          "supabase"
+        ]
+      },
+      "install": {
+        "command": "brew install supabase/tap/supabase",
+        "docs": "https://supabase.com/docs/guides/local-development/cli/getting-started"
+      },
+      "source": "https://github.com/supabase/cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "wrangler",
+      "name": "Wrangler (Cloudflare)",
+      "kind": "cli",
+      "what": "Develop, test and deploy Cloudflare Workers and manage Cloudflare resources.",
+      "solves": [
+        "deploy"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "wrangler"
+        ],
+        "brew": [
+          "cloudflare-wrangler"
+        ],
+        "npm": [
+          "wrangler"
+        ],
+        "deps": [
+          "wrangler"
+        ]
+      },
+      "install": {
+        "command": "npm i -D wrangler@latest",
+        "docs": "https://developers.cloudflare.com/workers/wrangler/install-and-update/"
+      },
+      "source": "https://github.com/cloudflare/workers-sdk",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "flyctl",
+      "name": "flyctl (Fly.io)",
+      "kind": "cli",
+      "what": "Launch, deploy and manage apps on Fly.io from the terminal.",
+      "solves": [
+        "deploy",
+        "monitoring"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "flyctl",
+          "fly"
+        ],
+        "brew": [
+          "flyctl"
+        ]
+      },
+      "install": {
+        "command": "brew install flyctl",
+        "docs": "https://docs.fly.io/flyctl/install"
+      },
+      "source": "https://github.com/superfly/flyctl",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "railway-cli",
+      "name": "Railway CLI",
+      "kind": "cli",
+      "what": "Deploy and manage Railway projects, services and environment variables.",
+      "solves": [
+        "deploy"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "railway"
+        ],
+        "brew": [
+          "railway"
+        ],
+        "npm": [
+          "@railway/cli"
+        ]
+      },
+      "install": {
+        "command": "brew install railway",
+        "docs": "https://docs.railway.com/guides/cli"
+      },
+      "source": "https://github.com/railwayapp/cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "netlify-cli",
+      "name": "Netlify CLI",
+      "kind": "cli",
+      "what": "Run local dev, build and deploy sites to Netlify from the terminal.",
+      "solves": [
+        "deploy"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "netlify",
+          "ntl"
+        ],
+        "brew": [
+          "netlify-cli"
+        ],
+        "npm": [
+          "netlify-cli"
+        ],
+        "deps": [
+          "netlify-cli"
+        ]
+      },
+      "install": {
+        "command": "npm install -g netlify-cli",
+        "docs": "https://docs.netlify.com/cli/get-started/"
+      },
+      "source": "https://github.com/netlify/cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "playwright",
+      "name": "Playwright Test",
+      "kind": "cli",
+      "what": "End-to-end browser testing framework for web apps across Chromium, Firefox and WebKit.",
+      "solves": [
+        "testing",
+        "browser"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "deps": [
+          "@playwright/test",
+          "playwright"
+        ]
+      },
+      "install": {
+        "command": "npm init playwright@latest",
+        "docs": "https://playwright.dev/docs/intro"
+      },
+      "source": "https://github.com/microsoft/playwright",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "vitest",
+      "name": "Vitest",
+      "kind": "cli",
+      "what": "Fast Vite-native unit test framework for JavaScript and TypeScript.",
+      "solves": [
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "deps": [
+          "vitest"
+        ]
+      },
+      "install": {
+        "command": "npm install -D vitest",
+        "docs": "https://vitest.dev/guide/"
+      },
+      "source": "https://github.com/vitest-dev/vitest",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "jest",
+      "name": "Jest",
+      "kind": "cli",
+      "what": "JavaScript testing framework for unit and snapshot tests.",
+      "solves": [
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "deps": [
+          "jest"
+        ]
+      },
+      "install": {
+        "command": "npm install --save-dev jest",
+        "docs": "https://jestjs.io/docs/getting-started"
+      },
+      "source": "https://github.com/jestjs/jest",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "docker",
+      "name": "Docker",
+      "kind": "cli",
+      "what": "Build, run and ship applications in containers.",
+      "solves": [
+        "deploy",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "docker"
+        ],
+        "apps": [
+          "Docker.app"
+        ],
+        "brew": [
+          "docker",
+          "docker-desktop"
+        ]
+      },
+      "install": {
+        "docs": "https://docs.docker.com/desktop/setup/install/mac-install/"
+      },
+      "source": "https://www.docker.com/",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "uv",
+      "name": "uv",
+      "kind": "cli",
+      "what": "Extremely fast Python package and project manager written in Rust.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "uv",
+          "uvx"
+        ],
+        "brew": [
+          "uv"
+        ],
+        "pip": [
+          "uv"
+        ]
+      },
+      "install": {
+        "command": "curl -LsSf https://astral.sh/uv/install.sh | sh",
+        "docs": "https://docs.astral.sh/uv/getting-started/installation/"
+      },
+      "source": "https://github.com/astral-sh/uv",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "bun",
+      "name": "Bun",
+      "kind": "cli",
+      "what": "All-in-one JavaScript runtime, bundler, test runner and package manager.",
+      "solves": [
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "bun",
+          "bunx"
+        ],
+        "brew": [
+          "bun"
+        ],
+        "npm": [
+          "bun"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://bun.com/install | bash",
+        "docs": "https://bun.com/docs/installation"
+      },
+      "source": "https://github.com/oven-sh/bun",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "pnpm",
+      "name": "pnpm",
+      "kind": "cli",
+      "what": "Fast, disk-space-efficient JavaScript package manager.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "pnpm",
+          "pnpx"
+        ],
+        "brew": [
+          "pnpm"
+        ],
+        "npm": [
+          "pnpm"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://get.pnpm.io/install.sh | sh -",
+        "docs": "https://pnpm.io/installation"
+      },
+      "source": "https://github.com/pnpm/pnpm",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "kind": "cli",
+      "what": "Download and run large language models locally.",
+      "solves": [
+        "orchestration"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "ollama"
+        ],
+        "apps": [
+          "Ollama.app"
+        ],
+        "brew": [
+          "ollama",
+          "ollama-app"
+        ]
+      },
+      "install": {
+        "command": "curl -fsSL https://ollama.com/install.sh | sh",
+        "docs": "https://ollama.com/download/mac"
+      },
+      "source": "https://github.com/ollama/ollama",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "stripe-cli",
+      "name": "Stripe CLI",
+      "kind": "cli",
+      "what": "Build, test and manage Stripe integrations, including forwarding webhooks locally.",
+      "solves": [
+        "payments",
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "stripe"
+        ],
+        "brew": [
+          "stripe-cli"
+        ],
+        "npm": [
+          "@stripe/cli"
+        ]
+      },
+      "install": {
+        "command": "brew install stripe",
+        "docs": "https://docs.stripe.com/stripe-cli/install"
+      },
+      "source": "https://github.com/stripe/stripe-cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "neonctl",
+      "name": "Neon CLI",
+      "kind": "cli",
+      "what": "Manage Neon serverless Postgres projects, branches and databases from the terminal.",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "neon",
+          "neonctl"
+        ],
+        "brew": [
+          "neonctl"
+        ],
+        "npm": [
+          "neon",
+          "neonctl"
+        ]
+      },
+      "install": {
+        "command": "npm i -g neon@latest",
+        "docs": "https://neon.com/docs/reference/cli-install"
+      },
+      "source": "https://github.com/neondatabase/neonctl",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "turso-cli",
+      "name": "Turso CLI",
+      "kind": "cli",
+      "what": "Manage Turso (libSQL) cloud databases, groups and auth tokens.",
+      "solves": [
+        "database"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "turso"
+        ],
+        "brew": [
+          "tursodatabase/tap/turso"
+        ]
+      },
+      "install": {
+        "command": "brew install tursodatabase/tap/turso",
+        "docs": "https://docs.turso.tech/cli/installation"
+      },
+      "source": "https://github.com/tursodatabase/turso-cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "eslint",
+      "name": "ESLint",
+      "kind": "cli",
+      "what": "Pluggable linter that finds and fixes problems in JavaScript and TypeScript code.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "eslint"
+        ],
+        "brew": [
+          "eslint"
+        ],
+        "deps": [
+          "eslint"
+        ]
+      },
+      "install": {
+        "command": "npm init @eslint/config@latest",
+        "docs": "https://eslint.org/docs/latest/use/getting-started"
+      },
+      "source": "https://github.com/eslint/eslint",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "prettier",
+      "name": "Prettier",
+      "kind": "cli",
+      "what": "Opinionated code formatter for JavaScript, CSS, JSON, Markdown and more.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "prettier"
+        ],
+        "brew": [
+          "prettier"
+        ],
+        "deps": [
+          "prettier"
+        ]
+      },
+      "install": {
+        "command": "npm install --save-dev --save-exact prettier",
+        "docs": "https://prettier.io/docs/install"
+      },
+      "source": "https://github.com/prettier/prettier",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "biome",
+      "name": "Biome",
+      "kind": "cli",
+      "what": "Fast formatter and linter for JavaScript, TypeScript, JSON and CSS.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "biome"
+        ],
+        "brew": [
+          "biome"
+        ],
+        "deps": [
+          "@biomejs/biome"
+        ]
+      },
+      "install": {
+        "command": "npm i -D -E @biomejs/biome",
+        "docs": "https://biomejs.dev/guides/getting-started/"
+      },
+      "source": "https://github.com/biomejs/biome",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "ruff",
+      "name": "Ruff",
+      "kind": "cli",
+      "what": "Extremely fast Python linter and code formatter written in Rust.",
+      "solves": [
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "ruff"
+        ],
+        "brew": [
+          "ruff"
+        ],
+        "pip": [
+          "ruff"
+        ],
+        "deps": [
+          "ruff"
+        ]
+      },
+      "install": {
+        "command": "uv tool install ruff@latest",
+        "docs": "https://docs.astral.sh/ruff/installation/"
+      },
+      "source": "https://github.com/astral-sh/ruff",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "pytest",
+      "name": "pytest",
+      "kind": "cli",
+      "what": "Python testing framework for writing small to complex functional tests.",
+      "solves": [
+        "testing"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "pytest"
+        ],
+        "brew": [
+          "pytest"
+        ],
+        "pip": [
+          "pytest"
+        ],
+        "deps": [
+          "pytest"
+        ]
+      },
+      "install": {
+        "command": "pip install -U pytest",
+        "docs": "https://docs.pytest.org/en/stable/getting-started.html"
+      },
+      "source": "https://github.com/pytest-dev/pytest",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "sentry-cli",
+      "name": "Sentry CLI",
+      "kind": "cli",
+      "what": "Upload source maps and debug files, manage releases and send events to Sentry.",
+      "solves": [
+        "monitoring",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "sentry-cli"
+        ],
+        "brew": [
+          "getsentry/tools/sentry-cli"
+        ],
+        "npm": [
+          "@sentry/cli"
+        ],
+        "deps": [
+          "@sentry/cli"
+        ]
+      },
+      "install": {
+        "command": "brew install getsentry/tools/sentry-cli",
+        "docs": "https://docs.sentry.io/cli/installation/"
+      },
+      "source": "https://github.com/getsentry/sentry-cli",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "lazygit",
+      "name": "lazygit",
+      "kind": "cli",
+      "what": "Simple terminal UI for git commands.",
+      "solves": [
+        "git"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "lazygit"
+        ],
+        "brew": [
+          "lazygit"
+        ]
+      },
+      "install": {
+        "command": "brew install lazygit",
+        "docs": "https://github.com/jesseduffield/lazygit#installation"
+      },
+      "source": "https://github.com/jesseduffield/lazygit",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "ripgrep",
+      "name": "ripgrep",
+      "kind": "cli",
+      "what": "Fast recursive search of directories for a regex pattern, respecting .gitignore.",
+      "solves": [
+        "search"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "rg"
+        ],
+        "brew": [
+          "ripgrep"
+        ]
+      },
+      "install": {
+        "command": "brew install ripgrep",
+        "docs": "https://github.com/BurntSushi/ripgrep#installation"
+      },
+      "source": "https://github.com/BurntSushi/ripgrep",
+      "verified": true,
+      "updated": "2026-10-01"
+    },
+    {
+      "id": "jq",
+      "name": "jq",
+      "kind": "cli",
+      "what": "Lightweight command-line JSON processor.",
+      "solves": [
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "jq"
+        ],
+        "brew": [
+          "jq"
+        ]
+      },
+      "install": {
+        "command": "brew install jq",
+        "docs": "https://jqlang.org/download/"
+      },
+      "source": "https://github.com/jqlang/jq",
+      "verified": true,
+      "updated": "2026-10-01"
+    }
+  ]
+}

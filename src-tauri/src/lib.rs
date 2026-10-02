@@ -11,6 +11,7 @@ mod automations;
 mod tailscale;
 mod remote;
 mod doctor;
+mod catalog;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4618,6 +4619,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            catalog::catalog_lookup,
+            catalog::catalog_fetch_remote,
             doctor::system_doctor,
             doctor::doctor_install,
             uninstall_all,

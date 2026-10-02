@@ -17,9 +17,14 @@ Lets teammates on different networks share one team room, with nothing to instal
 | `POST /v1/rooms {doc}` | New room → `{room, secret, version: 1}` |
 | `POST /v1/rooms/{room}/tick {since?, member?, presence?}` | Record presence; return `{now, presence, version, doc?}` (no `doc` when unchanged) |
 | `PUT /v1/rooms/{room} {expected, doc}` | Compare-and-swap → `{version}` or `409 {version, doc}` |
+| `GET /v1/catalog` | The tool catalog (`relay/catalog.json`), loaded at startup |
 | `GET /join/{room}` | The page an invite link opens |
 
 Room calls need `Authorization: Bearer <secret>`. A wrong secret looks the same as a missing room (`404`).
+
+## Tool catalog
+
+`GET /v1/catalog` serves `relay/catalog.json`, a copy of the app's built-in `src/data/catalog.json`. The app (`catalog_fetch_remote` in `src-tauri/src/catalog.rs`) caches it at `~/.grillme/catalog.json` and uses it in place of the built-in one when its `version` is newer. To publish catalog changes without an app release: edit `src/data/catalog.json`, bump `version`, run `scripts/sync-catalog.sh`, then deploy the relay.
 
 ## What it stores
 
