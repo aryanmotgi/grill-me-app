@@ -1,3 +1,4 @@
+import { usePendingChat } from "../lib/pendingChat";
 import { submitToAgent } from "../lib/ptyReady";
 import { useMemo, useRef, useState } from "react";
 import { useApp, ptyIdFor } from "../store";
@@ -85,6 +86,8 @@ export function Composer({ mateId }: { mateId: string }) {
     if (!text || sending || viewOnly) return;
     setSending(true);
     try {
+      // show it in the chat now; the transcript catches up a moment later
+      usePendingChat.getState().add(mateId, text);
       await submitToAgent(ptyIdFor(mateId), text);
       setDraft("");
       setCaret(0);

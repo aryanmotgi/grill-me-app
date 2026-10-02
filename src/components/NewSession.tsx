@@ -1,7 +1,9 @@
+import { usePendingChat } from "../lib/pendingChat";
 import { useEffect, useRef, useState } from "react";
 import { useAutoGrow } from "../hooks/useAutoGrow";
 import { uiLayoutOf } from "../lib/uiLayout";
-import { useApp } from "../store";
+import { ptyIdFor, useApp } from "../store";
+import { deliverBriefWhenReady } from "../lib/ptyReady";
 import type { AgentId } from "../data/sources/git";
 import { SKILL_LOADERS, loadSkill, type SkillLoader } from "../data/skills";
 import { AgentLogo } from "./AgentLogo";
@@ -12,8 +14,9 @@ import { GrillFlame } from "./GrillMark";
 // Monocode-style "What should we work on?" screen — the center view for a
 // new session. A pixel dot-grid banner up top, then one composer card:
 // context chips (project + the branch it will create), the prompt, and a
-// toolbar (+ menu, agent picker, send). Sending spawns a worktree session on
-// feat/<slug> and briefs the prompt in once the agent is ready.
+// toolbar (+ menu, agent picker, send). By default the prompt goes to the
+// session working in the project folder itself; "New worktree" instead spawns
+// a session on its own copy (feat/<slug>), for agents working in parallel.
 // ---------------------------------------------------------------------------
 
 /** kebab slug from the first few words of the prompt — session id + branch */
@@ -126,6 +129,12 @@ export function NewSession() {
   const project = projects.find((p) => p.id === activeProject);
   const projectName = project?.name ?? members[0]?.repoPath.split("/").pop() ?? "this project";
   const slug = promptSlug(text, members.map((m) => m.id));
+  // where it runs: the project folder itself (default), or a new worktree
+  const where = useApp((s) => (s.appSettings.newSessionWhere === "worktree" ? "worktree" : "folder"));
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const clean = (p?: string) => (p ?? "").replace(/\/+$/, "");
+  const folderSession = members.find((m) => clean(m.repoPath) === clean(project?.path) && (m.agent ?? "claude") === agent)
+    ?? members.find((m) => m.id === "me" && (m.agent ?? "claude") === agent);
   const branch = `feat/${slug}`;
   const agents: { id: AgentId; name: string; ok: boolean }[] = available.length
     ? available.map((a) => ({ id: a.id, name: a.name, ok: a.installed }))
@@ -136,6 +145,17 @@ export function NewSession() {
     const body = text.trim();
     if (!body || busy) return;
     setBusy(true);
+    // "This folder": hand it to the session already working in the project
+    // folder (same agent), instead of making a new worktree and branch
+    if (where === "folder" && folderSession) {
+      const playbook0 = skill ? `Follow this ${skill.s.label} playbook:\n\n${skill.body.trim()}\n\n---\n\n` : "";
+      const brief0 = agent === "claude" && grill ? grillPrefix(grill, hoursLeft) + (plan ? PLAN_PREFIX : "") + playbook0 + body : (plan ? PLAN_PREFIX : "") + playbook0 + body;
+      useApp.getState().setActive(folderSession.id);
+      usePendingChat.getState().add(folderSession.id, body);
+      setText(""); setSkill(null); setBusy(false);
+      void deliverBriefWhenReady(ptyIdFor(folderSession.id), brief0).then((ok) => { if (!ok) toast("The session didn't get ready in time. Try sending again from its chat.", "warn"); });
+      return;
+    }
     // the slash command must lead the message for Claude Code to run the skill
     const playbook = skill ? `Follow this ${skill.s.label} playbook:\n\n${skill.body.trim()}\n\n---\n\n` : "";
     const brief = agent === "claude" && grill
@@ -169,12 +189,16 @@ export function NewSession() {
 
         <div className="composer-card relative rounded-xl">
           <div className="flex items-center gap-4 px-4 pt-3 text-[12px] text-faint">
-            <span className="flex items-center gap-1.5" title={members[0]?.repoPath}>
-              <Icon name="folder" size={13} /> New worktree
-            </span>
-            <span className="flex items-center gap-1.5 font-mono text-[11px]" title="Branch this session will create">
-              <Icon name="branch" size={13} /> {text.trim() ? branch : "feat/…"}
-            </span>
+            <button type="button" className="flex items-center gap-1.5 hover:text-ink cursor-pointer"
+              title={where === "folder" ? "Works right in your project folder, on its current branch. Click for a separate worktree (for agents working in parallel)." : "A separate copy of the project on its own branch, so this agent can work in parallel. Click to work in your folder instead."}
+              onClick={() => setAppSetting("newSessionWhere", where === "folder" ? "worktree" : "folder")}>
+              <Icon name="folder" size={13} /> {where === "folder" ? `This folder${folderSession ? "" : " (starts a session)"}` : "New worktree"} <span className="text-faint">· change</span>
+            </button>
+            {where === "worktree" || !folderSession ? (
+              <span className="flex items-center gap-1.5 font-mono text-[11px]" title="Branch this session will create">
+                <Icon name="branch" size={13} /> {text.trim() ? branch : "feat/…"}
+              </span>
+            ) : <span className="flex items-center gap-1.5 text-[11px]" title={folderSession.repoPath}><Icon name="branch" size={13} /> current branch</span>}
           </div>
 
           <textarea
