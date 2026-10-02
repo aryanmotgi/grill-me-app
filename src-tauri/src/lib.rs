@@ -4,6 +4,7 @@ use std::process::Command;
 
 mod room;
 mod relay;
+mod scan;
 mod bridge;
 mod claude_panel;
 mod automations;
@@ -4745,6 +4746,8 @@ pub fn run() {
             room::room_client,
             relay::room_relay_create,
             relay::room_relay_join,
+            scan::workflow_scan,
+            scan::workflow_scan_delete,
             room::room_brainstorm_reply,
             room::room_make_plan,
             room::room_make_tasks
