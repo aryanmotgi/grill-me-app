@@ -32,7 +32,8 @@ describe("launch timeline", () => {
   });
   it("notices when macOS stops drawing the splash", () => {
     expect(stalled(1000, 1200, false)).toBe(false);
-    expect(stalled(1000, 2000, false)).toBe(true);
+    expect(stalled(1000, 2500, false)).toBe(false); // a hitch isn't a stall
+    expect(stalled(1000, 4500, false)).toBe(true);
     expect(stalled(1000, 1001, true)).toBe(true);
   });
 });

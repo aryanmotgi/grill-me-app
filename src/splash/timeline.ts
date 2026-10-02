@@ -59,8 +59,9 @@ export function welcomeLine(name: string, mates: number | null): { hello: string
 }
 
 /** No animation frame for this long means macOS isn't drawing the splash
- *  (another Space, covered, screen asleep): skip it and open the app. */
-export const STALL_MS = 600;
+ *  (another Space, covered, screen asleep): skip it and open the app. Long
+ *  enough that a busy moment (the app loading behind) never cuts it short. */
+export const STALL_MS = 3000;
 
 export function stalled(lastFrameMs: number, nowMs: number, hidden: boolean): boolean {
   return hidden || nowMs - lastFrameMs > STALL_MS;
