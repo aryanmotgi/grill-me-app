@@ -3,6 +3,7 @@ import { useApp } from "../store";
 import { ForgeWorld } from "../forge/engine";
 import { constellationFromScan, toolCount } from "../forge/constellation";
 import { playLogo3D } from "../forge/logo3d";
+import { GlassCard } from "../forge/glassCard";
 import "../forge/forge.css";
 import { LOGO_TEXT } from "../brand";
 import { probeFps } from "../lib/perf";
@@ -155,6 +156,8 @@ export function ForgeOnboarding() {
   const labelsRef = useRef<HTMLDivElement>(null);
   const toastRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLCanvasElement>(null);
+  const cardRef = useRef<GlassCard | null>(null);
   const [f, setF] = useState<Forge | null>(null);
   const [ready, setReady] = useState(false);
   const [finale, setFinale] = useState<null | "full" | "fast">(null);
@@ -199,6 +202,8 @@ export function ForgeOnboarding() {
       const rects: number[][] = [];
       const add = (x: number, y: number, w: number, h: number) => { if (w > 0 && h > 0) rects.push([Math.round(x - 8), Math.round(y - 8), Math.round(w + 16), Math.round(h + 16)]); };
       rootRef.current.querySelectorAll(".forge-panel, .forge-hud, .forge-toast.on").forEach((el) => { const r = el.getBoundingClientRect(); add(r.left, r.top, r.width, r.height); });
+      const card = cardRef.current?.rect();
+      if (card) add(...card);
       if (world.spark.born && world.spark.alpha > 0) add(...world.sparkRect());
       const key = JSON.stringify(rects);
       if (key !== lastHit) { lastHit = key; void invoke("forge_hit_rects", { rects }).catch(() => {}); }
@@ -221,6 +226,21 @@ export function ForgeOnboarding() {
       setReady(true);
     })();
     return () => { clearInterval(hitTimer); stopBlur(); world.stop(); document.documentElement.classList.remove("forge-on"); };
+  }, []);
+
+  // the stage's card: wavy glass under the diagrams (so they stay bright),
+  // following the stage and fading in and out with it
+  useEffect(() => {
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches || location.search.includes("reduce-motion");
+    const card = new GlassCard(backdropRef.current!, reduce);
+    cardRef.current = card;
+    let raf = 0;
+    const follow = () => {
+      card.setRect(shownRect(rootRef.current));
+      raf = requestAnimationFrame(follow);
+    };
+    raf = requestAnimationFrame(follow);
+    return () => { cancelAnimationFrame(raf); card.stop(); cardRef.current = null; };
   }, []);
 
   // Esc / "Leave": always works, from anywhere
@@ -262,6 +282,7 @@ export function ForgeOnboarding() {
 
   return (
     <div ref={rootRef} className="forge" role="dialog" aria-label="Set up Grill Me">
+      <canvas ref={backdropRef} className="forge-backdrop" aria-hidden />
       <canvas ref={shadeRef} />
       <canvas ref={canvasRef} />
       <canvas ref={logoRef} className="forge-logo" />
@@ -280,6 +301,18 @@ export function ForgeOnboarding() {
       <div ref={toastRef} className="forge-toast" role="status" />
     </div>
   );
+}
+
+/** The part of the stage that's showing (it grows as the body types and content fades in). */
+function shownRect(root: HTMLElement | null) {
+  const panel = root?.querySelector<HTMLElement>(".forge-panel");
+  if (!panel) return null;
+  const rs = [...panel.querySelectorAll<HTMLElement>(".forge-eyebrow, .forge-title, .forge-body, .forge-stagebody.in, .forge-footer.in, .forge-foot-note")]
+    .map((k) => k.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+  if (!rs.length) return null;
+  const p = panel.getBoundingClientRect();
+  const top = Math.min(...rs.map((r) => r.top)), bottom = Math.max(...rs.map((r) => r.bottom));
+  return { left: p.left, top, width: p.width, height: bottom - top };
 }
 
 // ---- the soft blur behind the stage -----------------------------------------------------
@@ -303,7 +336,7 @@ function startBlurMask(root: HTMLElement): () => void {
       const rs = kids.map((k) => k.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
       if (rs.length) {
         const x0 = Math.min(...rs.map((r) => r.left)), y0 = Math.min(...rs.map((r) => r.top)), x1 = Math.max(...rs.map((r) => r.right)), y1 = Math.max(...rs.map((r) => r.bottom));
-        now.set("panel", { r: [x0, y0, x1 - x0, y1 - y0], pad: 46 });
+        now.set("panel", { r: [x0, y0, x1 - x0, y1 - y0], pad: 30 });
       }
     }
     root.querySelectorAll(".forge-hud > *").forEach((el, i) => { const r = el.getBoundingClientRect(); if (r.width) now.set(`hud${i}`, { r: [r.left, r.top, r.width, r.height], pad: 12 }); });

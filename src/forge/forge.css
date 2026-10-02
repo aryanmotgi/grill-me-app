@@ -30,6 +30,9 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
   border: 1px solid rgba(255,255,255,.18); background: rgba(16, 12, 14, .5); text-shadow: none; transition: color .2s, border-color .2s; }
 .forge-hud button:hover, .forge-hud button:focus-visible { color: #fff; border-color: rgba(255,255,255,.45); }
 
+/* the stage's card: wavy glass drawn by glassCard.ts, under the diagrams */
+.forge canvas.forge-backdrop { inset: auto; left: 0; top: 0; width: 0; height: 0; opacity: 0; }
+
 /* ---- the stage ---------------------------------------------------------------------- */
 .forge-panel { position: absolute; left: 50%; top: clamp(130px, 22vh, 240px); transform: translateX(-50%);
   width: min(660px, calc(100vw - 48px)); display: flex; flex-direction: column; gap: 12px; z-index: 4;
