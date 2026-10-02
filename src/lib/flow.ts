@@ -246,12 +246,16 @@ export function sessionSentence(t: Teammate): string {
 
 /** What this Mac publishes about its sessions. Titles come from the caller
  *  (they live in settings); tests from the auto-test store. */
+/** Enough to spot overlap without shipping a whole repo listing. */
+export const DIGEST_FILES_MAX = 20;
+
 export function digestSessions(args: {
   sessions: Teammate[];
   titleOf: (t: Teammate) => string;
   testsOf: (id: string) => boolean | null;
   member: string;
   memberName: string;
+  machine?: string;
   now: number;
 }): TeamSession[] {
   return args.sessions.map((t) => ({
@@ -264,6 +268,8 @@ export function digestSessions(args: {
     sentence: sessionSentence(t),
     branch: t.branch,
     tests: args.testsOf(t.id),
+    files: (t.changes ?? []).map((c) => c.file).slice(0, DIGEST_FILES_MAX),
+    ...(args.machine ? { machine: args.machine } : {}),
     ts: args.now,
   }));
 }

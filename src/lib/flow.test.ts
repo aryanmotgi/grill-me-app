@@ -81,6 +81,18 @@ describe("team session digest", () => {
     expect(d[1].tests).toBeNull();
   });
 
+  it("carries each session's changed files (capped) and the publishing machine", () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ file: `f${i}.ts`, summary: "+1" }));
+    const t = { ...mk("s1", "working"), changes: many } as unknown as Teammate;
+    const [d] = digestSessions({ sessions: [t], titleOf: () => "A", testsOf: () => null, member: "m", memberName: "M", machine: "mac-1", now: 1 });
+    expect(d.files).toHaveLength(20);
+    expect(d.files?.[0]).toBe("f0.ts");
+    expect(d.machine).toBe("mac-1");
+    const [bare] = digestSessions({ sessions: [mk("s2", "idle")], titleOf: () => "B", testsOf: () => null, member: "m", memberName: "M", now: 1 });
+    expect(bare.files).toEqual([]);
+    expect(bare.machine).toBeUndefined();
+  });
+
   it("only counts as changed when something besides the timestamp moved", () => {
     const base = digestSessions({ sessions: [mk("s1", "idle")], titleOf: () => "A", testsOf: () => null, member: "m", memberName: "M", now: 1 });
     const later = digestSessions({ sessions: [mk("s1", "idle")], titleOf: () => "A", testsOf: () => null, member: "m", memberName: "M", now: 2 });

@@ -56,6 +56,38 @@ fn goal_or_empty(b: &Value) -> Value {
 }
 
 /// A string field, "" when missing or not a string.
+/// One teammate session as a context line: who, what, branch, files.
+fn teammate_line(d: &Value) -> String {
+    let files = files_of(d);
+    let shown = js::head(&files, 8).join(", ");
+    let more = if files.len() > 8 { format!(" (+{} more)", files.len() - 8) } else { String::new() };
+    let files = if files.is_empty() { String::new() } else { format!("\n  files: {shown}{more}") };
+    let doing = str_of(get(d, "sentence"));
+    let doing = if doing.is_empty() { String::new() } else { format!(": {}", clip(&doing, 140)) };
+    format!(
+        "- **{} · {}** ({}, {}){doing}{files}",
+        str_of(get(d, "memberName")),
+        str_of(get(d, "title")),
+        str_of(get(d, "status")),
+        str_of(get(d, "branch")),
+    )
+}
+
+/// The digest's file list, filtered to names safe to show.
+fn files_of(d: &Value) -> Vec<String> {
+    get(d, "files").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).filter(|f| safe_name(f)).map(str::to_owned).collect()).unwrap_or_default()
+}
+
+/// Stable 32-bit content signature (fits a JSON number exactly).
+fn signature(parts: impl Iterator<Item = String>) -> f64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for p in parts {
+        p.hash(&mut h);
+    }
+    (h.finish() & 0xffff_ffff) as f64
+}
+
 fn str_of(v: Option<&Value>) -> String {
     v.and_then(Value::as_str).unwrap_or("").to_string()
 }
@@ -95,6 +127,17 @@ impl Ctx {
             Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
             _ => 0.0,
         }
+    }
+
+    /// Has the content behind `key` changed since we last told this session?
+    /// Records the new signature either way.
+    fn seen_changed(&self, key: &str, sig: f64) -> bool {
+        let prev = self.cursor(key);
+        if prev == sig {
+            return false;
+        }
+        self.set_cursor(key, sig);
+        true
     }
 
     pub fn set_cursor(&self, key: &str, ms: f64) {
@@ -198,6 +241,39 @@ impl Ctx {
                 let lines: Vec<String> =
                     js::head(&tasks, 15).iter().map(|t| format!("- [{}] {}", to_str(get(t, "status")), to_str(get(t, "title")))).collect();
                 out.push(format!("**Open tasks:**\n{}", lines.join("\n")));
+            }
+        }
+
+        // Task board moved since this session last heard? (hooks only: the
+        // full catch-up above already lists open tasks)
+        if let Some(member) = exclude {
+            let open: Vec<Value> = read_list(&proj.dir.join("tasks.json")).into_iter().filter(|t| !eq_str(get(t, "status"), Some("done"))).collect();
+            let sig = signature(open.iter().map(|t| format!("{}|{}|{}|{}", str_of(get(t, "id")), str_of(get(t, "status")), str_of(get(t, "owner")), str_of(get(t, "title")))));
+            // always record it, so a full catch-up's list isn't repeated next turn
+            let changed = self.seen_changed(&format!("tasks:{member}"), sig);
+            if !full {
+                if changed && !open.is_empty() {
+                    let lines: Vec<String> = js::head(&open, 15).iter().map(|t| format!("- [{}] {}", to_str(get(t, "status")), to_str(get(t, "title")))).collect();
+                    out.push(format!("**Task board changed — open tasks now:**\n{}", lines.join("\n")));
+                }
+            }
+        }
+
+        // What teammates' agents are doing on their own Macs (session digests
+        // over the room). Re-sent to a session only when a teammate's task,
+        // branch or files change — not on every status blink.
+        let mates = self.teammate_sessions();
+        if !mates.is_empty() {
+            let sig = signature(mates.iter().map(|d| {
+                format!("{}|{}|{}|{}", str_of(get(d, "id")), str_of(get(d, "title")), str_of(get(d, "branch")), files_of(d).join(","))
+            }));
+            let show = match exclude {
+                Some(member) => self.seen_changed(&format!("team:{member}"), sig) || full,
+                None => true,
+            };
+            if show {
+                let lines: Vec<String> = mates.iter().map(teammate_line).collect();
+                out.push(format!("**Teammates right now** (their agents, on their own computers):\n{}", lines.join("\n")));
             }
         }
 
@@ -718,6 +794,46 @@ mod tests {
         assert!(!crossed(end, end + 1.0 * MIN, end + 2.0 * MIN));
         // a reader who has never looked (since = 0) sees the latest crossing
         assert!(crossed(end, 0.0, end - 100.0 * MIN));
+    }
+
+    #[test]
+    fn hooks_tell_agents_about_teammates_and_task_changes() {
+        let home = std::env::temp_dir().join(format!("grillme-mates-{}-{}", std::process::id(), js::now_ms()));
+        let g = home.join(".grillme");
+        std::fs::create_dir_all(&g).unwrap();
+        let now = js::now_ms() as i64;
+        std::fs::write(g.join("settings.json"), json!({ "installId": "mac-me" }).to_string()).unwrap();
+        let digest = |files: &[&str]| json!([
+            { "id": "m1:me", "member": "m1", "memberName": "Me", "session": "me", "title": "Mine", "status": "working", "sentence": "x", "branch": "feat/me", "files": ["mine.ts"], "machine": "mac-me", "ts": now },
+            { "id": "m2:me", "member": "m2", "memberName": "Maya", "session": "me", "title": "Login", "status": "working", "sentence": "working in auth.ts", "branch": "feat/login", "files": files, "machine": "mac-maya", "ts": now },
+        ]).to_string();
+        std::fs::write(g.join("team-sessions.json"), digest(&["src/auth.ts"])).unwrap();
+        std::fs::write(g.join("tasks.json"), json!([{ "id": "t1", "title": "Login page", "status": "todo", "owner": "m2" }]).to_string()).unwrap();
+        let h = home.to_string_lossy().into_owned();
+        let ctx = Ctx { root: format!("{h}/.grillme"), home: h, remote: Default::default(), scope: None, forced: None };
+
+        // session start: teammates + open tasks, never my own session
+        let first = ctx.catch_up(0.0, Some("me"), true).unwrap();
+        assert!(first.contains("**Teammates right now**"), "{first}");
+        assert!(first.contains("**Maya · Login** (working, feat/login): working in auth.ts\n  files: src/auth.ts"), "{first}");
+        assert!(!first.contains("Mine"), "own session leaked: {first}");
+        assert!(first.contains("**Open tasks:**"));
+
+        // next prompt, nothing moved: silence (no repeats)
+        let quiet = ctx.catch_up(js::now_ms(), Some("me"), false).unwrap();
+        assert!(!quiet.contains("Teammates") && !quiet.contains("Task board"), "{quiet}");
+
+        // Maya touches another file → told once
+        std::fs::write(g.join("team-sessions.json"), digest(&["src/auth.ts", "src/api.ts"])).unwrap();
+        let moved = ctx.catch_up(js::now_ms(), Some("me"), false).unwrap();
+        assert!(moved.contains("files: src/auth.ts, src/api.ts"), "{moved}");
+        assert!(!ctx.catch_up(js::now_ms(), Some("me"), false).unwrap().contains("Teammates"));
+
+        // the board changes → the open tasks come along
+        std::fs::write(g.join("tasks.json"), json!([{ "id": "t1", "title": "Login page", "status": "in-progress", "owner": "m2" }]).to_string()).unwrap();
+        let board = ctx.catch_up(js::now_ms(), Some("me"), false).unwrap();
+        assert!(board.contains("**Task board changed — open tasks now:**\n- [in-progress] Login page"), "{board}");
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]

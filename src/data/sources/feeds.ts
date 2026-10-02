@@ -232,6 +232,7 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       testsOf: lastTestOk,
       member: self.memberId,
       memberName: state.members.find((m) => m.id === self.memberId)?.name ?? self.memberId,
+      machine: typeof st.appSettings.installId === "string" ? st.appSettings.installId : undefined,
       now,
     });
     if (!digestChanged(lastDigest, next) && now - lastPublish < 30_000) return;
