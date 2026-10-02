@@ -303,7 +303,9 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
   );
 }
 
-export function SessionList() {
+/** `bare`: just the grouped rows — the simple layout's sidebar already has
+ *  search (⌘K) and a New button, so it drops the duplicates. */
+export function SessionList({ bare = false }: { bare?: boolean } = {}) {
   const teammates = useApp((s) => s.teammates);
   const appMode = useApp((s) => s.appMode);
   const ownId = useApp((s) => s.members[0]?.id);
@@ -372,7 +374,7 @@ export function SessionList() {
 
   return (
     <aside data-tour="sessions" className="w-full h-full bg-panel flex flex-col overflow-hidden">
-      <div className="px-2 pt-1 pb-2 flex-none">
+      {bare ? null : <div className="px-2 pt-1 pb-2 flex-none">
         <input
           id="session-search"
           className="w-full bg-raised/60 hairline rounded-lg px-3 h-8 text-[12.5px] outline-none focus:border-accent placeholder:text-faint"
@@ -380,7 +382,7 @@ export function SessionList() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-      </div>
+      </div>}
       <div className="overflow-y-auto flex-1">
         {shown.length === 0 ? (
           q ? (
@@ -411,7 +413,7 @@ export function SessionList() {
           ))
         )}
       </div>
-      <Spawner />
+      {bare ? null : <Spawner />}
     </aside>
   );
 }

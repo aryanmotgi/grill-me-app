@@ -37,8 +37,12 @@ function CodeView({ content, filename }: { content: string; filename: string }) 
 
 type FileMode = "view" | "edit" | "diff";
 
-export function EditorPane() {
-  const width = useApp((s) => s.panelSizes.right);
+/** `embedded`: fill the parent (the simple layout's Changes tab) instead of
+ *  being its own fixed-width column. */
+export function EditorPane({ embedded = false }: { embedded?: boolean } = {}) {
+  const paneWidth = useApp((s) => s.panelSizes.right);
+  const width = embedded ? undefined : paneWidth;
+  const frame = embedded ? "flex-1 min-h-0" : "flex-none border-l border-line";
   const openFiles = useApp((s) => s.openFiles);
   const activeFile = useApp((s) => s.activeFile);
   const openFileTab = useApp((s) => s.openFile);
@@ -121,7 +125,7 @@ export function EditorPane() {
 
   if (openFiles.length === 0) {
     return (
-      <aside style={{ width }} className="flex-none border-l border-line bg-panel flex flex-col items-center justify-center gap-2">
+      <aside style={{ width }} className={`${frame} bg-panel flex flex-col items-center justify-center gap-2`}>
         <Icon name="file" size={26} className="text-faint" />
         <p className="text-[11px] text-faint text-center px-6">
           Open a file from the Explorer or Changes tab — it shows up here.
@@ -131,7 +135,7 @@ export function EditorPane() {
   }
 
   return (
-    <aside style={{ width }} className="flex-none border-l border-line bg-panel flex flex-col overflow-hidden">
+    <aside style={{ width }} className={`${frame} bg-panel flex flex-col overflow-hidden`}>
       {/* file tabs */}
       <div className="flex items-stretch h-8 flex-none border-b border-line overflow-x-auto">
         {openFiles.map((f) => {

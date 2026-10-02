@@ -1,61 +1,29 @@
 import { useEffect, useRef, useState } from "react";
-import { useApp, ptyIdFor } from "./store";
+import { useApp } from "./store";
+import { BottomTerminal } from "./components/BottomTerminal";
+import { DragHandle } from "./components/DragHandle";
+import { SimpleShell } from "./components/simple/SimpleShell";
+import { CenterStage, Overlays } from "./components/ShellParts";
+import { uiLayoutOf } from "./lib/uiLayout";
 import { applyTheme, themes } from "./theme/themes";
 import { NavRail } from "./components/NavRail";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { EditorPane } from "./components/EditorPane";
-import { SessionPane } from "./components/SessionPane";
 import { SessionTabs } from "./components/SessionTabs";
 import { XtermPane } from "./components/XtermPane";
-import { TaskBoard } from "./components/TaskBoard";
-import { Inbox } from "./components/Inbox";
-import { ActivityTimeline } from "./components/ActivityTimeline";
-import { QuickSwitcher } from "./components/QuickSwitcher";
 import { ConflictBanner, Toasts } from "./components/Chrome";
-import { SettingsModal } from "./components/Settings";
-import { ProjectPicker } from "./components/ProjectPicker";
-import { Onboarding } from "./components/Onboarding";
-import { InstallConsent } from "./components/InstallConsent";
-import { FlowPage } from "./components/FlowPage";
-import { ReviewModal } from "./components/ReviewModal";
-import { SessionHandoff } from "./components/SessionHandoff";
-import { HomeDashboard } from "./components/HomeDashboard";
-import { FeatureIndex } from "./components/FeatureIndex";
-import { DiffBoard } from "./components/DiffBoard";
-import { PrDashboard } from "./components/PrDashboard";
-import { CrossSessionSearch } from "./components/CrossSessionSearch";
-import { SessionScrubber } from "./components/SessionScrubber";
-import { PresenceMap } from "./components/PresenceMap";
-import { KanbanBoard } from "./components/KanbanBoard";
-import { TokenDashboard } from "./components/TokenDashboard";
-import { BranchGraph } from "./components/BranchGraph";
-import { StandupSummary } from "./components/StandupSummary";
-import { MergeConductor } from "./components/MergeConductor";
-import { ReleaseNotes } from "./components/ReleaseNotes";
-import { Broadcast } from "./components/Broadcast";
-import { WatchSession } from "./components/WatchSession";
-import { SnippetLibrary } from "./components/SnippetLibrary";
-import { DecisionsLog } from "./components/DecisionsLog";
-import { Cheatsheet } from "./components/Cheatsheet";
 import { ModeSelect } from "./components/ModeSelect";
 import { CinemaMode } from "./components/CinemaMode";
-import { CheckpointRunner } from "./components/CheckpointRunner";
-import { SessionTemplates } from "./components/SessionTemplates";
 import { TeamFlow } from "./components/teamflow/TeamFlow";
-import { NewSession } from "./components/NewSession";
 import { ClaudeDock } from "./components/ClaudePanel";
 import { togglePanel, useLayout } from "./components/Dock";
 import { useRemoteAutostart } from "./components/ClaudeConnect";
 import { useDoctorOnLaunch } from "./components/DoctorTab";
 import { leftEdgePanel, panelsOn } from "./lib/layout";
-import { BrainPage, useWelcomeBack } from "./components/BrainPage";
-import { AutomationsPage, useAutomations } from "./components/Automations";
-import { Kickoff } from "./components/Kickoff";
-import { ShipQueue } from "./components/ShipQueue";
-import { PreviewPage } from "./components/PreviewPage";
+import { useWelcomeBack } from "./components/BrainPage";
+import { useAutomations } from "./components/Automations";
 import { StatusBar } from "./components/StatusBar";
-import { BridgePanel, useBridgeFeed } from "./components/BridgePanel";
-import { TeamView } from "./components/TeamView";
+import { useBridgeFeed } from "./components/BridgePanel";
 import { useTeamChatFeed } from "./components/teamChatActions";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
@@ -72,25 +40,9 @@ function blockingOverlayOpen(s: ReturnType<typeof useApp.getState>): boolean {
   );
 }
 
-function DragHandle({ onDrag, onDone }: { onDrag: (dx: number) => void; onDone: () => void }) {
-  return (
-    <div
-      className="w-[5px] flex-none cursor-col-resize bg-line/40 hover:bg-accent/60 transition-colors"
-      onMouseDown={(e) => {
-        e.preventDefault();
-        let last = e.clientX;
-        const move = (ev: MouseEvent) => { onDrag(ev.clientX - last); last = ev.clientX; };
-        const up = () => {
-          window.removeEventListener("mousemove", move);
-          window.removeEventListener("mouseup", up);
-          onDone();
-        };
-        window.addEventListener("mousemove", move);
-        window.addEventListener("mouseup", up);
-      }}
-    />
-  );
-}
+
+
+
 
 export default function App() {
   const {
@@ -98,7 +50,7 @@ export default function App() {
     setSwitcherOpen, toggleFocus, shipSession, setRailTab, setPickerOpen,
     dense, mergePilotOpen, setMergePilotOpen, members, setActive,
     panelSizes, setPanelSize, view, setView, appMode, teamFlowNeeded,
-    cinemaOpen, toggleCinema, setCinemaOpen, bottomTermOpen, toggleBottomTerm,
+    cinemaOpen, toggleCinema, setCinemaOpen,
   } = useApp();
 
   useEffect(() => {
@@ -322,6 +274,7 @@ export default function App() {
   useAutomations();
   useRemoteAutostart();
   useDoctorOnLaunch();
+  const uiLayout = useApp((s) => uiLayoutOf(s.appSettings));
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);
@@ -341,6 +294,8 @@ export default function App() {
     );
   }
 
+  if (uiLayout === "simple") return <SimpleShell active={active} split={split} />;
+
   return (
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
       <ConflictBanner />
@@ -348,67 +303,8 @@ export default function App() {
         {focusMode ? null : dockSide("left")}
         <main className="flex-1 min-w-0 flex flex-col">
           {focusMode ? null : <SessionTabs padLeft={edgePanel === null} />}
-          {view === "home" ? (
-            <HomeDashboard />
-          ) : view === "preview" ? (
-            <PreviewPage />
-          ) : view === "automations" ? (
-            <AutomationsPage />
-          ) : view === "brain" ? (
-            <BrainPage />
-          ) : view === "flow" ? (
-            <FlowPage />
-          ) : view === "new" || !active ? (
-            <NewSession />
-          ) : view === "tasks" || view === "inbox" || view === "feed" || view === "team" ? (
-            // team surfaces as full center screens (Monocode-style): the nav
-            // rail toggles them; Esc/clicking a session tab returns to it
-            <div className="flex-1 min-h-0 flex flex-col max-w-[860px] w-full mx-auto border-x border-line bg-panel">
-              {view === "tasks" ? <TaskBoard /> : null}
-              {view === "inbox" ? <Inbox /> : null}
-              {view === "feed" ? <ActivityTimeline /> : null}
-              {view === "team" ? <TeamView /> : null}
-            </div>
-          ) : (
-          <>
-          <div className="flex-1 min-h-0 flex">
-            <div className="min-w-0 flex" style={{ flexBasis: split && !focusMode ? `${panelSizes.split * 100}%` : "100%" }}>
-              <SessionPane mate={active} />
-            </div>
-            {split && split.id !== active.id && !focusMode ? (
-              <>
-                <DragHandle onDrag={(dx) => {
-                  const el = document.querySelector("main");
-                  if (el) setPanelSize("split", Math.min(0.8, Math.max(0.2, panelSizes.split + dx / el.clientWidth)));
-                }} onDone={() => setPanelSize("split", panelSizes.split, true)} />
-                <div className="min-w-0 flex flex-1">
-                  <SessionPane mate={split} />
-                </div>
-              </>
-            ) : null}
-          </div>
-          </>
-          )}
-          {/* Monocode-style bottom terminal: a plain shell in the ACTIVE
-              session's worktree (own pty id — never fights the SessionPane
-              shell tab over a stream). ⌘` or the header button toggles it. */}
-          {bottomTermOpen && active && members.some((m) => m.id === active.id) ? (
-            <div className="h-[30%] flex-none border-t border-line flex flex-col">
-              <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
-                <span className="panel-label">terminal — {members.find((m) => m.id === active.id)?.repoPath}</span>
-                <span className="flex-1" />
-                <button className="btn" onClick={toggleBottomTerm}>close (⌘`)</button>
-              </div>
-              <div className="flex-1 min-h-0">
-                <XtermPane
-                  id={`${ptyIdFor(active.id)}:termpanel`}
-                  cwd={members.find((m) => m.id === active.id)?.repoPath ?? "."}
-                  themeName={themeName}
-                  shell
-                />
-              </div>
-            </div>
-          ) : null}
+          <CenterStage active={active} split={split} />
+          <BottomTerminal active={active} />
           {mergePilotOpen && members[0] ? (
             <div className="h-[38%] flex-none border-t border-line flex flex-col">
               <div className="flex items-center px-3 h-7 bg-panel border-b border-line">
@@ -432,36 +328,7 @@ export default function App() {
         {showEditor ? <EditorPane /> : null}
         {focusMode ? null : dockSide("right")}
       </div>
-      <QuickSwitcher />
-      <SettingsModal />
-      <ProjectPicker />
-      <InstallConsent />
-      <Onboarding />
-      <ReviewModal />
-      <SessionHandoff />
-      <FeatureIndex />
-      <DiffBoard />
-      <PrDashboard />
-      <CrossSessionSearch />
-      <SessionScrubber />
-      <PresenceMap />
-      <KanbanBoard />
-      <TokenDashboard />
-      <BranchGraph />
-      <StandupSummary />
-      <MergeConductor />
-      <ReleaseNotes />
-      <SessionTemplates />
-      <Broadcast />
-      <WatchSession />
-      <SnippetLibrary />
-      <DecisionsLog />
-      <Cheatsheet />
-      <CheckpointRunner />
-      <BridgePanel />
-      <Kickoff />
-      <ShipQueue />
-      <Toasts />
+      <Overlays />
     </div>
   );
 }
