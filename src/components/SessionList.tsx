@@ -308,7 +308,9 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
 export function SessionList({ bare = false }: { bare?: boolean } = {}) {
   const teammates = useApp((s) => s.teammates);
   const appMode = useApp((s) => s.appMode);
-  const ownId = useApp((s) => s.members[0]?.id);
+  // select the stable members array, map outside (a fresh array from the
+  // selector would re-render forever)
+  const ownIds = useApp((s) => s.members).map((m) => m.id);
   const sessionOrder = useApp((s) => s.sessionOrder);
   const setSessionOrder = useApp((s) => s.setSessionOrder);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -322,7 +324,7 @@ export function SessionList({ bare = false }: { bare?: boolean } = {}) {
   const ordered = applySessionOrder(teammates, sessionOrder);
   const orderedIds = ordered.map((t) => t.id);
   // solo: only the own session row (members[0]; first fake row in browser dev)
-  const visible = visibleSessions(ordered, appMode, ownId);
+  const visible = visibleSessions(ordered, appMode, ownIds);
   const q = query.trim().toLowerCase();
   const shown = q
     ? visible.filter((t) =>

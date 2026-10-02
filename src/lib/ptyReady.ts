@@ -39,12 +39,27 @@ export function hasIdlePrompt(tail: string): boolean {
   );
 }
 
-/** Alive + idle prompt + not mid-generation. */
+/**
+ * Claude Code's first-run "do you trust this folder?" screen. Every new
+ * worktree gets it. Its menu has a ❯ cursor too, so without this check the
+ * screen passed for an idle prompt and a brief got typed into the menu.
+ */
+export function isTrustPrompt(tail: string): boolean {
+  return /yes, i trust this folder|is this a project you created or one you trust|do you trust the files in this folder/i.test(tail);
+}
+
+/** Keys that pick "Yes, I trust this folder": the menu opens on "No, exit". */
+export const TRUST_ACCEPT_KEYS = ["\x1b[B", "\r"] as const;
+
+/** Alive + idle prompt + not mid-generation (and not the trust screen). */
 export function isReady(status: PtyStatus | undefined): boolean {
   if (!status?.alive) return false;
   const tail = tailText(status);
-  return !isMidGeneration(tail, status.quietMs) && hasIdlePrompt(tail);
+  return !isTrustPrompt(tail) && !isMidGeneration(tail, status.quietMs) && hasIdlePrompt(tail);
 }
+
+/** A brief waits this long for someone to answer the trust screen. */
+const TRUST_WAIT_MS = 10 * 60_000;
 
 /**
  * Poll pty_status until the session with `ptyId` is ready.
@@ -55,11 +70,15 @@ export async function waitForPtyReady(
   { intervalMs = 1000, timeoutMs = 30000 }: { intervalMs?: number; timeoutMs?: number } = {},
 ): Promise<boolean> {
   const { invoke } = await import("@tauri-apps/api/core");
-  const deadline = Date.now() + timeoutMs;
+  const start = Date.now();
+  let deadline = start + timeoutMs;
   for (;;) {
     try {
       const statuses = await invoke<PtyStatus[]>("pty_status");
-      if (isReady(statuses.find((s) => s.id === ptyId))) return true;
+      const st = statuses.find((s) => s.id === ptyId);
+      if (isReady(st)) return true;
+      // waiting on a human to trust the folder: keep the brief, don't drop it
+      if (st?.alive && isTrustPrompt(tailText(st))) deadline = Math.max(deadline, start + TRUST_WAIT_MS);
     } catch {
       // transient read failure — keep polling until the deadline
     }

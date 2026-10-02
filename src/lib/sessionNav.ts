@@ -8,17 +8,18 @@ import { surfaceVisible, type AppMode } from "./soloVisibility";
 /**
  * The session rows actually shown in the list, in render order. Mirrors
  * SessionList's own filter EXACTLY (same source of truth) so keyboard
- * selection can never point at a row that isn't on screen: solo mode shows
- * only the own session (members[0], or the first fake row in browser dev).
+ * selection can never point at a row that isn't on screen. Solo mode shows
+ * every session that runs on this Mac (`ownIds` = members) — they're all
+ * yours, including parallel ones from "New" — and falls back to the first row
+ * when there are none (browser dev's sample rows).
  */
 export function visibleSessions<T extends { id: string }>(
   teammates: T[],
   mode: AppMode,
-  ownId: string | undefined,
+  ownIds: string[],
 ): T[] {
-  return surfaceVisible(mode, "other-session-rows")
-    ? teammates
-    : teammates.filter((t, i) => (ownId ? t.id === ownId : i === 0));
+  if (surfaceVisible(mode, "other-session-rows")) return teammates;
+  return ownIds.length ? teammates.filter((t) => ownIds.includes(t.id)) : teammates.slice(0, 1);
 }
 
 /**

@@ -5,6 +5,46 @@ import { modelLabel, parseTranscript, toRows, type ChatItem, type ChatRow } from
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
+import { TRUST_ACCEPT_KEYS } from "../lib/ptyReady";
+
+/** Claude Code asks once per new folder whether to trust it. A brand-new
+ *  session's worktree always hits this, and the chat can't show Claude's
+ *  menu, so answer it here. Its default is "No, exit", so we move to "Yes". */
+function TrustCard({ mate, folder, onOpenTerminal }: { mate: Teammate; folder?: string; onOpenTerminal: () => void }) {
+  const toast = useApp((s) => s.toast);
+  const [busy, setBusy] = useState(false);
+  const accept = async () => {
+    setBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      for (const key of TRUST_ACCEPT_KEYS) {
+        await invoke("pty_write", { id: ptyIdFor(mate.id), data: key });
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } catch (e) {
+      toast(`Couldn't answer Claude: ${e}`, "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-[13px]">
+      <div className="flex items-center gap-3">
+        <span className="status-dot needs-input" />
+        <span className="flex-1 text-ink">Claude asks whether you trust this folder before it starts.</span>
+      </div>
+      <p className="text-[12px] text-dim">
+        It's a copy of your project that Grill Me made for this session{folder ? <> (<span className="font-mono">{folder.split("/").pop()}</span>)</> : null}. Your message is sent as soon as you say yes.
+      </p>
+      <div className="flex gap-2">
+        <button className="composer-btn" disabled={busy} onClick={() => void accept()}>
+          {busy ? <span className="spinner" /> : <Icon name="check" size={12} />} Yes, trust this folder
+        </button>
+        <button className="composer-btn" onClick={onOpenTerminal}><Icon name="terminal" size={12} /> Open terminal</button>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Monocode-style chat view of a Claude Code session. The agent keeps running
@@ -228,7 +268,9 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
         )}
 
         {mate.status === "working" ? <Working since={lastUserTs} model={lastModel} /> : null}
-        {mate.status === "needs-input" ? (
+        {mate.trustPrompt ? (
+          <TrustCard mate={mate} folder={member?.repoPath} onOpenTerminal={onOpenTerminal} />
+        ) : mate.status === "needs-input" ? (
           <div className="flex items-center gap-3 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-[13px]">
             <span className="status-dot needs-input" />
             <span className="flex-1 text-ink">Claude is waiting on you — it may be asking a question or for approval.</span>

@@ -21,13 +21,15 @@ export function SessionTabs({ padLeft = false }: { padLeft?: boolean }) {
   const activeId = useApp((s) => s.activeId);
   const setActive = useApp((s) => s.setActive);
   const appMode = useApp((s) => s.appMode);
-  const ownId = useApp((s) => s.members[0]?.id);
+  // select the stable members array, map outside (a fresh array from the
+  // selector would re-render forever)
+  const ownIds = useApp((s) => s.members).map((m) => m.id);
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
   const shipSession = useApp((s) => s.shipSession);
 
   const insertSnippet = useApp((s) => s.insertSnippet);
-  const shown = visibleSessions(teammates, appMode, ownId);
+  const shown = visibleSessions(teammates, appMode, ownIds);
   const active = teammates.find((t) => t.id === activeId);
 
   return (
