@@ -33,7 +33,7 @@ const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
 // "no matches here" hint. Row-level filtering below is automatic via context.
 const SEARCH_INDEX: Record<Tab, string[]> = {
   setup: ["setup", "doctor", "install", "missing", "node", "claude", "git", "gh", "github", "tailscale", "health"],
-  team: ["team", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
+  team: ["team", "solo", "mode", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
   appearance: ["theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "backup", "restore", "export", "import"],
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
   notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat", "budget", "token", "rate", "limit", "cap"],
@@ -111,6 +111,31 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </div>
       <div className="flex-1 flex items-center gap-2 min-w-0">{children}</div>
     </div>
+  );
+}
+
+/** Solo ⇄ Team. ModeSelect promises "switch any time in Settings" — this is
+ *  that switch. Going solo leaves the room first so teammates see you go. */
+function WorkModeRow() {
+  const appMode = useApp((s) => s.appMode);
+  const setAppMode = useApp((s) => s.setAppMode);
+  const inRoom = useApp((s) => s.room !== null);
+  const pick = async (m: "solo" | "team") => {
+    if (m === appMode) return;
+    if (m === "solo" && inRoom) await useApp.getState().leaveRoom();
+    setAppMode(m);
+    useApp.getState().setSettingsOpen(false);
+  };
+  return (
+    <Row label="Working mode" hint={inRoom ? "Switching to Solo leaves your team room" : "Team opens the create/join steps"}>
+      <div className="flex gap-1">
+        {(["solo", "team"] as const).map((m) => (
+          <button key={m} className={`btn ${appMode === m ? "active" : ""}`} aria-pressed={appMode === m} onClick={() => pick(m)}>
+            {m === "solo" ? "Solo" : "Team"}
+          </button>
+        ))}
+      </div>
+    </Row>
   );
 }
 
@@ -288,6 +313,8 @@ export function SettingsModal() {
                   No matches for “{query.trim()}” in {active.label}. Tabs with a dot in the rail match your search.
                 </div>
               ) : null}
+
+              {tab === "team" ? <WorkModeRow /> : null}
 
               {tab === "team" ? (
                 <TeamTab
@@ -551,7 +578,7 @@ export function SettingsModal() {
                     <Toggle checked={appSettings.showPreview !== false} onChange={(v) => setAppSetting("showPreview", v)} />
                   </Row>
                   {!q ? <div className="panel-label mt-4 mb-1">housekeeping</div> : null}
-                  <Row label="Replay onboarding tour" hint="Shows the 5-step walkthrough again on next view">
+                  <Row label="Replay onboarding tour" hint="Shows the walkthrough again on next view">
                     <button className="btn" onClick={() => { setAppSetting("onboarded", false); toast("Tour will replay"); }}>replay</button>
                   </Row>
                   <Row label="Clear all inbox messages" hint="Empties the shared inbox for this project — cannot be undone">

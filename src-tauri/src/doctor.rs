@@ -38,6 +38,8 @@ pub(crate) fn system_doctor() -> Vec<Value> {
             "Every session is a Claude Code process.", "curl -fsSL https://claude.ai/install.sh | bash"),
         check("git", "Git", true, login("git --version"),
             "Worktrees, diffs, checkpoints and shipping.", "xcode-select --install"),
+        check("python3", "Python 3", true, login("python3 --version"),
+            "Runs the safety hook that blocks dangerous commands.", "xcode-select --install"),
         check("gh", "GitHub CLI", false, login("gh --version"),
             "Opens and merges PRs from the Ship queue.", "brew install gh && gh auth login"),
         check("tailscale", "Tailscale", false, ts_detail,

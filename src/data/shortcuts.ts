@@ -31,7 +31,14 @@ export const SHORTCUT_GROUPS: [string, Shortcut[]][] = [
     { keys: "⌘S", what: "Ship the active session (runs /ship — tests before push)" },
     { keys: "⌘.", what: "Focus mode — collapse to just your pane" },
     { keys: "⇧C", what: "Cinema mode — full-bleed the active session (Esc exits)" },
-    { keys: "⌘1–5", what: "Right rail tabs: tasks / inbox / activity / team / preview" },
+    { keys: "⌘1–5", what: "Views: tasks / inbox / feed / team / preview" },
+    { keys: "⌘,", what: "Settings" },
+  ]],
+  ["Panels", [
+    { keys: "⌘B", what: "Show or hide the sessions panel" },
+    { keys: "⌘⇧B", what: "Show or hide the nav rail" },
+    { keys: "⌘J", what: "Show or hide the Claude panel" },
+    { keys: "⌘`", what: "Show or hide the bottom terminal" },
   ]],
   ["Project screen", [
     { keys: "1–9 / Enter", what: "Quick-open a project from the launch screen" },

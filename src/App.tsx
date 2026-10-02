@@ -418,7 +418,7 @@ export default function App() {
               </div>
               <div className="flex-1 min-h-0">
                 <XtermPane id="merge-pilot" cwd={members[0].repoPath} themeName={themeName} shell
-                  autorun="git fetch origin && git merge origin/main --no-edit && npm run build" />
+                  autorun={'git fetch origin && git merge "$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD || echo origin/main)" --no-edit && npm run build'} />
               </div>
             </div>
           ) : null}
