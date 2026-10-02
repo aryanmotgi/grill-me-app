@@ -58,6 +58,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
   const chatUnread = useChatUnread();
   const claudeOpen = useLayout()[0].claude.open;
   const moreSetting = useApp((s) => s.appSettings.navMoreOpen === true);
+  const showPreview = useApp((s) => s.appSettings.showPreview !== false);
   const moreOpen = moreSetting || ["automations", "tasks", "inbox", "feed", "team"].includes(view);
 
   const go = (v: MainView) => setView(view === v ? "session" : v);
@@ -97,8 +98,10 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
           onClick={() => go("brain")} />
         <NavItem icon="claude" label="Claude" active={claudeOpen} title="Claude chat panel — sees your sessions (⌘J)"
           onClick={() => togglePanel("claude")} />
-        <NavItem icon="eye" label="Preview" active={view === "preview"} title="Live preview of the app you're building"
-          onClick={() => go("preview")} />
+        {showPreview ? (
+          <NavItem icon="eye" label="Preview" active={view === "preview"} title="Live preview of the app you're building"
+            onClick={() => go("preview")} />
+        ) : null}
 
         {/* the rest folds away so the rail stays calm; opens itself when one is active */}
         <button className="flex items-center gap-2 px-2.5 h-7 mt-1 text-[12px] text-faint hover:text-dim cursor-pointer"
