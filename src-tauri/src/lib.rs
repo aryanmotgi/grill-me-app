@@ -4617,6 +4617,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             doctor::system_doctor,
+            doctor::doctor_install,
             uninstall_all,
             doctor::diagnostics,
             team_config,

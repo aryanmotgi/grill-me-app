@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAutoGrow } from "../hooks/useAutoGrow";
+import { uiLayoutOf } from "../lib/uiLayout";
 import { useApp } from "../store";
 import type { AgentId } from "../data/sources/git";
 import { SKILL_LOADERS, loadSkill, type SkillLoader } from "../data/skills";
@@ -104,6 +105,9 @@ export function NewSession() {
   const [plan, setPlan] = useState(false);
   const [skill, setSkill] = useState<{ s: SkillLoader; body: string } | null>(null);
   const [grill, setGrill] = useState<GrillMode>("");
+  // the simple layout speaks plainly and skips /grillme (a personal skill most
+  // people don't have installed)
+  const simple = useApp((s) => uiLayoutOf(s.appSettings) === "simple");
   const hackEndsAt = useApp((s) => s.appSettings.hackathonEndsAt as number | undefined);
   const hoursLeft = hackEndsAt ? (hackEndsAt - Date.now()) / 3_600_000 : null;
   const [menu, setMenu] = useState<"" | "add" | "agent">("");
@@ -161,7 +165,7 @@ export function NewSession() {
     <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
       <PixelBanner />
       <div className="w-full max-w-[820px] mx-auto px-6 pb-16 pt-[6vh]">
-        <h1 className="text-[20px] font-medium text-ink mb-4 px-1">What are we grilling in {projectName}?</h1>
+        <h1 className="text-[20px] font-medium text-ink mb-4 px-1">{simple ? `What should your agent work on in ${projectName}?` : `What are we grilling in ${projectName}?`}</h1>
 
         <div className="composer-card relative rounded-xl">
           <div className="flex items-center gap-4 px-4 pt-3 text-[12px] text-faint">
@@ -194,7 +198,7 @@ export function NewSession() {
             <button className="composer-btn" title="Agent for this session" onClick={() => setMenu(menu === "agent" ? "" : "agent")}>
               <AgentLogo agent={agent} size={14} /> {agentName} <Icon name="chevron" size={10} className="rotate-90 opacity-60" />
             </button>
-            {agent === "claude" ? (
+            {agent === "claude" && !simple ? (
               <button className={`composer-btn ${grill ? "grill-on" : ""}`}
                 title={grill ? "Grill mode on — the /grillme coach orients and grills you before building. Click to turn off." : "Grill mode: run this through the /grillme coach first"}
                 onClick={() => setGrill(grill ? "" : "grill")}>
@@ -264,14 +268,14 @@ export function NewSession() {
         </div>
 
         <div className="flex flex-wrap gap-2 mt-4 px-1">
-          <Starter icon={<GrillFlame px={1.5} />} label="Grill me on this" hint="Orient, grill my understanding, then plan — via /grillme"
-            onClick={() => { setAgent("claude"); setGrill("grill"); ta.current?.focus(); }} />
+          {simple ? null : <Starter icon={<GrillFlame px={1.5} />} label="Grill me on this" hint="Orient, grill my understanding, then plan — via /grillme"
+            onClick={() => { setAgent("claude"); setGrill("grill"); ta.current?.focus(); }} />}
           <Starter icon={<Icon name="bolt" size={13} />} label="Start a hackathon" hint="Idea → goal + parallel tasks → one session per task"
             onClick={() => void import("./Kickoff").then(({ useKickoff }) => useKickoff.getState().setOpen(true))} />
-          <Starter icon={<Icon name="clock" size={13} />} label="Hackathon mode"
+          {simple ? null : <Starter icon={<Icon name="clock" size={13} />} label="Hackathon mode"
             hint={`/grillme --hackathon — scoped to ${hoursLeft !== null && hoursLeft > 0 ? `${Math.ceil(hoursLeft)}h left on the clock` : "24h (set the clock in the status bar)"}`}
-            onClick={() => { setAgent("claude"); setGrill("hack"); ta.current?.focus(); }} />
-          <Starter icon={<Icon name="swap" size={13} />} label="Fan out a checklist" hint="Paste a checklist → one session per independent item"
+            onClick={() => { setAgent("claude"); setGrill("hack"); ta.current?.focus(); }} />}
+          <Starter icon={<Icon name="swap" size={13} />} label={simple ? "Split a checklist into sessions" : "Fan out a checklist"} hint="Paste a checklist → one session per independent item"
             onClick={() => useApp.getState().setView("tasks")} />
           <Starter icon={<Icon name="doc" size={13} />} label="From template" hint="Branch prefix + a saved starting brief"
             onClick={() => useApp.setState({ sessionTemplatesOpen: true })} />

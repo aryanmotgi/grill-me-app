@@ -23,6 +23,94 @@ fn check(id: &str, label: &str, required: bool, found: Option<String>, why: &str
             "detail": found.map(first_line).unwrap_or_default(), "why": why, "fix": fix })
 }
 
+/// `claude auth status` prints JSON with `loggedIn`; anything else (not
+/// installed, older CLI, error) counts as not signed in.
+fn claude_signed_in() -> Option<String> {
+    let out = login("claude auth status")?;
+    let v: Value = serde_json::from_str(&out).ok()?;
+    (v["loggedIn"] == true).then(|| v["authMethod"].as_str().unwrap_or("signed in").to_string())
+}
+
+/// What "Install for me" runs for each check. The id picks from this fixed
+/// list, so the webview can never ask for an arbitrary command.
+fn install_cmd(id: &str) -> Option<&'static str> {
+    match id {
+        "claude" => Some("curl -fsSL https://claude.ai/install.sh | bash"),
+        // opens the browser sign-in and waits for it to finish
+        "claude-login" => Some("claude auth login"),
+        // macOS: Apple's own installer dialog for git + python3
+        "git" | "python3" => Some("xcode-select --install"),
+        _ => None,
+    }
+}
+
+/// Run the fix for one check (onboarding's "Install for me"). Blocks until it
+/// finishes or 10 minutes pass; returns the last lines of output.
+#[tauri::command(async)]
+pub(crate) fn doctor_install(id: String) -> Result<String, String> {
+    let cmd = install_cmd(&id).ok_or_else(|| "Install this one yourself — copy the command".to_string())?;
+    let mut child = Command::new("/bin/zsh")
+        .args(["-lc", cmd])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    // drain both pipes on their own threads so a chatty installer never
+    // blocks on a full pipe while we wait for it
+    let drain = |r: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut r) = r { let _ = std::io::Read::read_to_string(&mut r, &mut buf); }
+            buf
+        })
+    };
+    let out_t = drain(child.stdout.take().map(|r| Box::new(r) as Box<dyn std::io::Read + Send>));
+    let err_t = drain(child.stderr.take().map(|r| Box::new(r) as Box<dyn std::io::Read + Send>));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            return Err("Took longer than 10 minutes — try the command in Terminal".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    };
+    let text = format!("{}{}", out_t.join().unwrap_or_default(), err_t.join().unwrap_or_default());
+    let tail = last_lines(&text, 4);
+    if status.success() {
+        Ok(tail)
+    } else {
+        Err(if tail.is_empty() { format!("exited with {status}") } else { tail })
+    }
+}
+
+fn last_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{install_cmd, last_lines};
+
+    #[test]
+    fn install_only_runs_known_fixes() {
+        assert!(install_cmd("claude").unwrap().contains("claude.ai/install.sh"));
+        assert_eq!(install_cmd("claude-login"), Some("claude auth login"));
+        assert!(install_cmd("gh").is_none());
+        assert!(install_cmd("rm -rf /").is_none());
+    }
+
+    #[test]
+    fn keeps_the_last_non_empty_lines() {
+        assert_eq!(last_lines("a\n\nb\nc\n", 2), "b\nc");
+        assert_eq!(last_lines("", 3), "");
+    }
+}
+
 #[tauri::command(async)]
 pub(crate) fn system_doctor() -> Vec<Value> {
     let api_up = std::net::TcpStream::connect_timeout(
@@ -36,6 +124,8 @@ pub(crate) fn system_doctor() -> Vec<Value> {
     vec![
         check("claude", "Claude Code", true, login("claude --version"),
             "Every session is a Claude Code process.", "curl -fsSL https://claude.ai/install.sh | bash"),
+        check("claude-login", "Signed in to Claude", true, claude_signed_in(),
+            "Sessions run on your own Claude plan.", "claude auth login"),
         check("git", "Git", true, login("git --version"),
             "Worktrees, diffs, checkpoints and shipping.", "xcode-select --install"),
         check("python3", "Python 3", true, login("python3 --version"),
