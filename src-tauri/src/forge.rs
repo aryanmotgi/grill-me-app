@@ -27,6 +27,10 @@ static OVERLAY: AtomicBool = AtomicBool::new(false);
 /// without one, anyone who already used the app (mode, project or the old
 /// tour) is not a first run.
 pub fn first_run(settings: &Value) -> bool {
+    // "Finish later" last time: setup resumes at launch
+    if settings["firstRunPaused"].is_string() {
+        return true;
+    }
     match settings["firstRunStep"].as_str() {
         Some(step) => step != "done",
         None => settings["appMode"].is_null() && settings["activeProject"].is_null() && settings["onboarded"] != true,
@@ -205,6 +209,18 @@ pub fn forge_window_done(app: AppHandle) {
     let _ = main.set_focus();
 }
 
+/// "Finish setup" from inside the app: back to the see-through setup overlay.
+#[tauri::command(async)]
+pub fn forge_window_enter(app: AppHandle) {
+    let Some(main) = app.get_webview_window("main") else { return };
+    let w = main.clone();
+    let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
+        let _ = window_vibrancy::clear_vibrancy(&w);
+        enter(&w);
+    });
+}
+
 /// Save the workflow card to ~/Downloads (never overwriting) and show it in
 /// Finder. Takes the PNG as base64 (from a canvas). Returns the path.
 #[tauri::command]
@@ -232,6 +248,14 @@ fn free_name(dir: &std::path::Path, stem: &str, ext: &str) -> std::path::PathBuf
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_paused_setup_resumes_at_launch() {
+        use serde_json::json;
+        assert!(first_run(&json!({"firstRunStep": "done", "firstRunPaused": "tools"})));
+        assert!(!first_run(&json!({"firstRunStep": "done", "firstRunPaused": null})));
+        assert!(first_run(&json!({"firstRunStep": "setup"})));
+    }
+
     use super::*;
     use serde_json::json;
 
