@@ -14,6 +14,7 @@ mod doctor;
 mod ai_connect;
 mod interview;
 mod splash;
+mod forge;
 mod catalog;
 pub mod mcp;
 
@@ -4638,6 +4639,8 @@ pub fn run() {
             interview::interview_turn,
             splash::splash_reveal,
             splash::splash_close,
+            forge::forge_window_done,
+            forge::save_share_card,
             uninstall_all,
             doctor::diagnostics,
             team_config,

@@ -54,6 +54,10 @@ pub fn start(app: &AppHandle) {
     let settings: Value = raw.as_deref().and_then(|t| serde_json::from_str(t).ok()).unwrap_or_else(|| json!({}));
     let (enabled, mode, name) = plan(&settings);
     let Some(main) = app.get_webview_window("main") else { return };
+    // first run: the app window becomes the full-screen forge, and the splash
+    // hands its logo to the forge instead of opening a box
+    let forge = crate::forge::first_run(&settings);
+    let forge_frame = if forge { crate::forge::cover_screen(&main) } else { None };
     if !enabled {
         show_main(app);
         return;
@@ -65,9 +69,14 @@ pub fn start(app: &AppHandle) {
 
     // cover exactly the frame the app window will open in
     let scale = main.scale_factor().unwrap_or(1.0);
-    let size = main.outer_size().map(|s| s.to_logical::<f64>(scale)).unwrap_or(tauri::LogicalSize::new(1440.0, 900.0));
-    let pos = main.outer_position().ok().map(|p| p.to_logical::<f64>(scale));
-    let boot = json!({ "mode": mode, "name": name });
+    let mut size = main.outer_size().map(|s| s.to_logical::<f64>(scale)).unwrap_or(tauri::LogicalSize::new(1440.0, 900.0));
+    let mut pos = main.outer_position().ok().map(|p| p.to_logical::<f64>(scale));
+    // the window's own frame updates lazily on macOS: use the frame we just set
+    if let Some((x, y, w, h)) = forge_frame {
+        size = tauri::LogicalSize::new(w, h);
+        pos = Some(tauri::LogicalPosition::new(x, y));
+    }
+    let boot = json!({ "mode": mode, "name": name, "forge": forge });
     let mut b = WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
         .title("Grill Me")
         .initialization_script(&format!("window.__GRILLME_SPLASH__ = {boot};"))

@@ -12,6 +12,7 @@ describe("interview", () => {
   it("keeps only allowed values from the AI", () => {
     const r = mergeReply(empty(), { say: "Cool. Solo?", building: "web", team: "galaxy", style: null, pains: ["testing", "vibes", "review"], agents: ["codex", "skynet"], done: false });
     expect(r.say).toBe("Cool. Solo?");
+    expect(r.options).toEqual([]);
     expect(r.profile.building).toBe("web");
     expect(r.profile.team).toBeUndefined();
     expect(r.profile.pains).toEqual(["testing", "review"]);
@@ -49,5 +50,12 @@ describe("interview", () => {
     expect(filled(p).filter((f) => f.done).length).toBe(3);
     expect(complete(p)).toBe(false);
     expect(complete({ ...p, pains: ["testing"] })).toBe(true);
+  });
+  it("keeps a few short answer options, none once it's done", () => {
+    const r = mergeReply(empty(), { say: "How do you plan?", options: ["Plan first", "", 42, "x".repeat(80), "a", "b", "c", "d"], done: false });
+    expect(r.options).toHaveLength(6);
+    expect(r.options[0]).toBe("Plan first");
+    expect(r.options[1].length).toBe(48);
+    expect(mergeReply(empty(), { say: "Thanks!", options: ["x"], done: true }).options).toEqual([]);
   });
 });

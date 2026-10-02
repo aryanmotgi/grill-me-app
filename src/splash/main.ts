@@ -21,11 +21,16 @@ import { LOGO_TEXT } from "../brand";
 import { GIVE_UP_S, MAX_STEP_S, PACE, REVEAL_AT, TIMELINE, WELCOME_HOLD_S, clamp, modeOf, nextFill, shouldExpand, skipOffset, span, stalled, welcomeLine } from "./timeline";
 
 // the app passes these in (src-tauri/src/splash.rs); a browser preview uses ?mode=back&name=…
-const boot = (window as { __GRILLME_SPLASH__?: { mode?: string; name?: string } }).__GRILLME_SPLASH__;
+const boot = (window as { __GRILLME_SPLASH__?: { mode?: string; name?: string; forge?: boolean } }).__GRILLME_SPLASH__;
+
 const params = new URLSearchParams(location.search);
 const mode = modeOf(boot?.mode ?? params.get("mode"));
 const tl = TIMELINE[mode];
 const userName = boot?.name ?? params.get("name") ?? "";
+// first run: no box. After the spin the full-screen forge (the app window,
+// shown underneath) takes over with the same logo in embers and bursts it.
+const forge = boot?.forge === true || params.get("forge") === "1";
+let handedOff: number | null = null;
 const native = "__TAURI_INTERNALS__" in window;
 
 
@@ -295,6 +300,16 @@ function tick(now: number) {
     return;
   }
   const t = clock + offset;
+  if (forge) {
+    // hold the logo (facing front) until the app has loaded, then hand off
+    update(Math.min(t, tl.fold[0] - 0.001), 0, 0);
+    if (handedOff === null && t >= tl.spin[1] && progress >= 1) { handedOff = t; revealed = true; void call("splash_reveal"); }
+    canvas.style.opacity = handedOff === null ? "1" : String(1 - span(t, handedOff + 0.6, handedOff + 1.1));
+    renderer.render(scene, camera);
+    if (handedOff !== null && t > handedOff + 1.2 && !closed) { closed = true; void call("splash_close"); return; }
+    requestAnimationFrame(tick);
+    return;
+  }
   shownFill = nextFill(shownFill, progress, t, dt, tl);
   if (expandAt === null && shouldExpand(t, shownFill, tl)) { expandAt = t; if (mode === "back") setWelcome(); }
   const e = expandAt === null ? 0 : span(t, expandAt, expandAt + tl.expand);
