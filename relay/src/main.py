@@ -24,6 +24,7 @@ import secrets
 import ssl
 import threading
 import time
+from pathlib import Path
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -157,6 +158,19 @@ def hash_secret(secret):
 store = Store()
 
 
+def load_catalog():
+    """The tool catalog the apps refresh from (relay/catalog.json, a copy of
+    src/data/catalog.json made by scripts/sync-catalog.sh). Loaded once."""
+    try:
+        doc = json.loads((Path(__file__).resolve().parent.parent / "catalog.json").read_text())
+        return doc if isinstance(doc, dict) and isinstance(doc.get("entries"), list) else None
+    except (OSError, ValueError):
+        return None
+
+
+CATALOG = load_catalog()
+
+
 def err(status, msg):
     return JSONResponse({"error": msg}, status_code=status)
 
@@ -186,6 +200,13 @@ async def json_body(request, limit=MAX_DOC_BYTES):
 @app.get("/v1/health")
 def health():
     return {"ok": True, "store": store.kind}
+
+
+@app.get("/v1/catalog")
+def catalog():
+    if CATALOG is None:
+        return err(503, "catalog unavailable")
+    return JSONResponse(CATALOG, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.post("/v1/rooms")

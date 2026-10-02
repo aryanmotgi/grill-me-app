@@ -4,12 +4,14 @@ use std::process::Command;
 
 mod room;
 mod relay;
+mod scan;
 mod bridge;
 mod claude_panel;
 mod automations;
 mod tailscale;
 mod remote;
 mod doctor;
+mod catalog;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4617,6 +4619,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            catalog::catalog_lookup,
+            catalog::catalog_fetch_remote,
             doctor::system_doctor,
             doctor::doctor_install,
             uninstall_all,
@@ -4745,6 +4749,8 @@ pub fn run() {
             room::room_client,
             relay::room_relay_create,
             relay::room_relay_join,
+            scan::workflow_scan,
+            scan::workflow_scan_delete,
             room::room_brainstorm_reply,
             room::room_make_plan,
             room::room_make_tasks
