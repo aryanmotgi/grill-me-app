@@ -14,7 +14,7 @@ import type { Catalog } from "../lib/catalog";
 import { builtinCatalog, loadCatalog } from "../lib/catalogLoad";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
-import { interviewBrainOf, pickBrain, readyAis, statusLabel, type AiStatus } from "../lib/aiConnect";
+import { interviewBrainOf, pickBrain, readyAis, type AiStatus } from "../lib/aiConnect";
 import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING, OPENING_OPTIONS, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, mergeReply, type Turn } from "../lib/interview";
 import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, emptyProfile, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
 
@@ -89,13 +89,24 @@ function Stage({ f, step, title, body, children, primary, secondary, skip, back 
   // a new stage: the card's rim flares
   useEffect(() => { dispatchEvent(new Event("forge-stage")); }, [title]);
 
+  // the main button throws a few embers as it's pressed
+  const press = (btn: HTMLElement | null) => {
+    if (!primary || primary.disabled) return;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      f.world.burstAt(r.left + r.width / 2, r.top + r.height / 2, 16, .9);
+      btn.classList.remove("pressed"); void btn.offsetWidth; btn.classList.add("pressed");
+    }
+    primary.onClick();
+  };
+
   // Enter presses the main button (unless typing in a field)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Enter" || !primary || primary.disabled) return;
       if ((e.target as HTMLElement).tagName === "INPUT") return;
       e.preventDefault();
-      primary.onClick();
+      press(panelRef.current?.querySelector<HTMLElement>(".forge-btn.primary") ?? null);
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
@@ -118,7 +129,7 @@ function Stage({ f, step, title, body, children, primary, secondary, skip, back 
         <div className="mid">{skip ? <button type="button" className="forge-link" onClick={skip.onClick}>{skip.label}</button> : null}</div>
         <div className="right">
           {secondary ? <button type="button" className="forge-btn" onClick={secondary.onClick} disabled={secondary.disabled}>{secondary.label}</button> : null}
-          {primary ? <button type="button" className="forge-btn primary" onClick={primary.onClick} disabled={primary.disabled}>{primary.label}</button> : null}
+          {primary ? <button type="button" className="forge-btn primary" onClick={(e) => press(e.currentTarget)} disabled={primary.disabled}><span>{primary.label}</span></button> : null}
         </div>
       </div>
       {note ? <div className="forge-foot-note">{note}</div> : null}
@@ -158,7 +169,7 @@ export function ForgeOnboarding() {
   const rootRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const toastRef = useRef<HTMLDivElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const flashRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLCanvasElement>(null);
   const cardRef = useRef<GlassCard | null>(null);
   const [f, setF] = useState<Forge | null>(null);
@@ -185,7 +196,14 @@ export function ForgeOnboarding() {
     };
     const forge: Forge = {
       world, reduce, wait, toast,
-      go: (s) => useApp.getState().setAppSetting("firstRunStep", s),
+      // the old stage blurs away first, then the new one rises in
+      go: (s) => {
+        const panel = rootRef.current?.querySelector<HTMLElement>(".forge-panel");
+        if (reduce || !panel) { useApp.getState().setAppSetting("firstRunStep", s); return; }
+        if (panel.classList.contains("leaving")) return; // a double click
+        panel.classList.add("leaving");
+        window.setTimeout(() => useApp.getState().setAppSetting("firstRunStep", s), 260);
+      },
       absorb: (el) => {
         if (!el) return;
         const r = el.getBoundingClientRect();
@@ -265,21 +283,31 @@ export function ForgeOnboarding() {
     return () => { removeEventListener("keydown", onKey); un?.(); };
   }, []);
 
-  // finale: everything is drawn into the glass box, which opens into the app
+  // finale: the card's rim flares, it folds into a line of light, then a
+  // point, a flash, and the app opens behind it
   useEffect(() => {
     if (!finale || !f) return;
-    const q = f.reduce ? 0 : finale === "fast" ? .45 : 1;
+    const q = f.reduce ? 0 : finale === "fast" ? .5 : 1;
+    const card = cardRef.current;
     void (async () => {
+      card?.hold(true);
+      card?.pulse();
       f.world.collapse();
-      const box = boxRef.current!;
-      await sleep(700 * q);
-      box.style.opacity = "1";
       f.world.fadeSpark();
-      if (!f.reduce) box.querySelector<HTMLElement>(".cube")!.style.animation = `forge-spin ${2.2 * q}s cubic-bezier(.6,0,.3,1)`;
-      for (let p = 0; p <= 100; p += 10) { box.querySelectorAll<HTMLElement>(".f").forEach((x) => x.style.setProperty("--fill", `${p}%`)); await sleep(110 * q); }
-      box.style.transform = "scale(10)";
-      box.style.opacity = "0";
-      await sleep(450 * q);
+      await sleep(250 * q);
+      const T = 1100 * q, t0 = performance.now();
+      while (q && performance.now() - t0 < T) {
+        card?.setSqueeze((performance.now() - t0) / T);
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      card?.setSqueeze(1);
+      const c = card?.center() ?? { x: innerWidth / 2, y: innerHeight / 2 };
+      if (q) f.world.burstAt(c.x, c.y, 70, 1.3);
+      flashRef.current?.style.setProperty("--x", `${c.x}px`);
+      flashRef.current?.style.setProperty("--y", `${c.y}px`);
+      flashRef.current?.classList.add("on");
+      card?.hold(false);
+      await sleep(420 * q);
       setAppSetting("firstRunStep", "done");
       if (native()) await invoke("forge_window_done").catch(() => {});
     })();
@@ -293,9 +321,7 @@ export function ForgeOnboarding() {
       <canvas ref={logoRef} className="forge-logo" />
       <div ref={labelsRef} className="forge-labels" aria-hidden />
       <div className="forge-ui">{f && ready && !finale ? <Scene step={step} f={f} /> : null}</div>
-      <div ref={boxRef} className="forge-box" aria-hidden>
-        <div className="cube">{[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className={`f f${i}`} />)}</div>
-      </div>
+      <div ref={flashRef} className="forge-flash" aria-hidden />
       {!finale ? (
         <div className="forge-hud">
           <b>Grill Me</b><span>Setup</span>
@@ -450,47 +476,70 @@ function Setup({ f, step }: SceneProps) {
   };
   const next = (brain: string) => { setAppSetting("interviewBrain", brain); f.go(nextStep(step)); };
 
+  // one plain line: what to do now
+  const checking = native() && checks === null;
+  const nextHint = checking || rows === null ? "One moment, checking this Mac…"
+    : missing.length ? `Install ${missing.map((c) => c.label).join(" and ")} above, or continue and do it later.`
+    : waiting ? "Finish signing in, in your browser. This page updates by itself."
+    : ready.length ? `All set. Continue and ${BRAIN_NAMES[chosen] ?? "your AI"} will ask you a few questions.`
+    : installed.length ? "Sign in to one of your AIs above, or continue with quick questions."
+    : "Continue: you'll answer a few quick questions instead.";
+
   return (
     <Stage f={f} step={step}
       title="Get set up"
-      body="Grill Me runs your AI coding agents on this Mac. First a quick check that the basics are here, then pick the AI I'll use to ask you a few questions."
-      primary={{ label: ready.length ? `Continue with ${BRAIN_NAMES[chosen] ?? "your AI"}` : "Continue", onClick: () => next(ready.length ? (chosen || ready[0].id) : "form") }}
+      body="Two quick checks: the tools Grill Me needs on this Mac, and which AI will ask you a few questions."
+      primary={{ label: ready.length ? `Continue with ${BRAIN_NAMES[chosen] ?? "your AI"}` : "Continue", onClick: () => next(ready.length ? (chosen || ready[0].id) : "form"), disabled: checking }}
       skip={ready.length ? { label: "Use quick questions instead", onClick: () => next("form") } : undefined}>
-      <div className="forge-section">
-        <div className="forge-label">This Mac</div>
-        {checks === null && native() ? <div className="forge-dim">Checking…</div> : null}
-        {!native() ? <div className="forge-dim">The check runs in the desktop app.</div> : null}
-        <div className="forge-checks">
-          {required.map((c) => (
-            <div key={c.id} className={`forge-check ${c.ok ? "ok" : "missing"}`}>
-              <span className="mark">{c.ok ? "✓" : "!"}</span>
-              <b>{c.label}</b>
-              <small>{c.ok ? "Ready" : c.why}</small>
-              {!c.ok ? <button type="button" className="forge-btn small primary" disabled={!!busy} onClick={() => void install(c)}>{busy === c.id ? "Installing…" : "Install"}</button> : null}
-            </div>
-          ))}
+      <div className="forge-part">
+        <div className="forge-parthead">
+          <span className="num">1</span><b>This Mac</b>
+          <span className={`forge-chip ${checking ? "wait" : !native() ? "" : missing.length ? "warn" : "ok"}`}>
+            {checking ? "Checking…" : !native() ? "Runs in the app" : missing.length ? `${missing.length} to install` : "Ready"}
+          </span>
         </div>
-        {missing.length ? <div className="forge-dim">Sessions won't start until these are installed. You can still continue.</div> : null}
+        {native() && checks !== null && !missing.length
+          ? <div className="forge-dim">{required.map((c) => c.label).join(", ")} are installed.</div>
+          : (
+            <div className="forge-checks">
+              {required.filter((c) => !c.ok).map((c) => (
+                <div key={c.id} className="forge-check missing">
+                  <span className="mark">!</span>
+                  <b>{c.label}</b>
+                  <small>{c.why}</small>
+                  <button type="button" className="forge-btn small primary" disabled={!!busy} onClick={() => void install(c)}>{busy === c.id ? "Installing…" : "Install"}</button>
+                </div>
+              ))}
+            </div>
+          )}
       </div>
-      <div className="forge-section">
-        <div className="forge-label">Your AI {ready.length ? <em>· choose one</em> : null}</div>
-        {rows === null ? <div className="forge-dim">Looking for AI tools…</div> : installed.length === 0 ? <div className="forge-dim">No AI coding tools found. No problem: I'll ask a few quick questions instead.</div> : (
+      <div className="forge-part">
+        <div className="forge-parthead">
+          <span className="num">2</span><b>Your AI</b>
+          <span className={`forge-chip ${rows === null ? "wait" : ready.length ? "ok" : installed.length ? "warn" : ""}`}>
+            {rows === null ? "Looking…" : ready.length ? `${ready.length} ready` : installed.length ? "Sign in needed" : "None found"}
+          </span>
+        </div>
+        {rows !== null && installed.length === 0 ? <div className="forge-dim">No AI coding tools found. That's fine: you'll answer a few quick questions instead.</div> : null}
+        {installed.length ? (
           <div className="forge-ais">
             {installed.map((r) => {
               const lit = r.signedIn === true;
               const on = lit && chosen === r.id;
+              const wait = waiting === r.id;
               return (
-                <button type="button" key={r.id} className={`forge-ai ${lit ? "lit" : ""} ${on ? "on" : ""}`} onClick={() => (lit ? setChosen(r.id) : void signIn(r))} disabled={waiting === r.id}>
+                <button type="button" key={r.id} className={`forge-ai ${lit ? "lit" : ""} ${on ? "on" : ""} ${wait ? "wait" : ""}`} onClick={() => (lit ? setChosen(r.id) : void signIn(r))} disabled={wait}>
                   <span className="orb" />
                   <b>{r.name}</b>
-                  <small>{waiting === r.id ? "Finish signing in, in your browser…" : lit ? (on ? "Selected" : "Ready") : `${statusLabel(r)} · Sign in`}</small>
+                  <span className={`state ${on ? "on" : lit ? "ok" : wait ? "wait" : "act"}`}>{on ? "✓ Using this" : lit ? "Ready · choose" : wait ? "Waiting for browser…" : "Sign in →"}</span>
                 </button>
               );
             })}
           </div>
-        )}
-        <div className="forge-dim">Questions run on your own plan, about as much as one short chat.</div>
+        ) : null}
+        {installed.length ? <div className="forge-dim">Questions run on your own plan, about as much as one short chat.</div> : null}
       </div>
+      <div className={`forge-next ${missing.length || (!ready.length && installed.length) ? "act" : ""}`}><span className="dot" />{nextHint}</div>
     </Stage>
   );
 }

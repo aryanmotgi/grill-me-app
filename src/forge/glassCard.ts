@@ -119,6 +119,8 @@ export class GlassCard {
   private box = { x: 0, y: 0, w: 0, h: 0 };
   private alpha = 0;
   private flare = 0;
+  private held = false;
+  private squeeze = 0;
   private embers: Ember[] = [];
   private t0 = performance.now();
   private last = performance.now();
@@ -137,7 +139,19 @@ export class GlassCard {
   }
 
   /** The visible part of the stage (or null when there's no stage). */
-  setRect(r: { left: number; top: number; width: number; height: number } | null) { this.target = r && r.width ? r : null; }
+  setRect(r: { left: number; top: number; width: number; height: number } | null) {
+    if (this.held && !r) return;
+    this.target = r && r.width ? r : null;
+  }
+
+  /** Keep the card where it is even when the stage goes (the finale). */
+  hold(on: boolean) { this.held = on; if (!on) this.target = null; }
+
+  /** The finale: 0 → 1 folds the card into a line of light, then a point. */
+  setSqueeze(k: number) { this.squeeze = k; if (k > 0 && !this.reduce) this.flare = 1; }
+
+  /** The card's centre, in page px. */
+  center() { return { x: this.box.x + this.box.w / 2, y: this.box.y + this.box.h / 2 }; }
 
   /** Where the card is, for click-through (the card itself, no margin). */
   rect(): [number, number, number, number] | null {
@@ -170,9 +184,17 @@ export class GlassCard {
 
     // size the canvas to the card plus its margin
     const dpr = Math.min(devicePixelRatio || 1, 2);
-    const W = this.box.w + PAD_X * 2, H = this.box.h + PAD_Y * 2;
+    let W = this.box.w + PAD_X * 2, H = this.box.h + PAD_Y * 2;
+    if (this.squeeze > 0) {
+      // first flatten to a bright line, then pull the line into a point
+      const io = (x: number) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+      const a = io(Math.min(1, this.squeeze * 1.8)), b = io(Math.max(0, (this.squeeze - .45) / .55));
+      H = H + (3 - H) * a;
+      W = W * (1 - .08 * a) + (2 - W * (1 - .08 * a)) * b;
+    }
+    const cx = this.box.x + this.box.w / 2, cy = this.box.y + this.box.h / 2;
     const cw = W + MARGIN * 2, ch = H + MARGIN * 2;
-    Object.assign(this.canvas.style, { left: `${this.box.x - PAD_X - MARGIN}px`, top: `${this.box.y - PAD_Y - MARGIN}px`, width: `${cw}px`, height: `${ch}px` });
+    Object.assign(this.canvas.style, { left: `${cx - cw / 2}px`, top: `${cy - ch / 2}px`, width: `${cw}px`, height: `${ch}px` });
     const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
     if (this.canvas.width !== pw || this.canvas.height !== ph) { this.canvas.width = pw; this.canvas.height = ph; }
     gl.viewport(0, 0, pw, ph);
