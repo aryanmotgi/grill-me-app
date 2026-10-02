@@ -224,7 +224,7 @@ pub(crate) fn brain_search_answer(query: String) -> Result<String, String> {
 // ---- drift alarm ----------------------------------------------------------------------
 
 const DRIFT_PROMPT: &str = "You watch several AI coding sessions building one hackathon project in parallel. \
-The input JSON has the goal, decisions, each active session on this Mac (last asks, tools, changed files, branch) and teammates' sessions (one-line status). \
+The input JSON has the goal, decisions, each active session on this Mac (last asks, tools, changed files, branch) and teammates' sessions on other Macs (one-line status, branch, changed files). \
 Find pairs working in CONTRADICTING directions: competing versions of the same thing (one builds email login while another builds Google login), \
 the same module edited with incompatible approaches, or one undoing another's work. Different features in parallel are NOT conflicts, \
 and touching the same files isn't one either unless the approaches clash. \
@@ -266,8 +266,52 @@ pub(crate) fn brain_drift() -> Result<Value, String> {
         .flat_map(|k| parsed[*k].as_array().cloned().unwrap_or_default())
         .filter_map(|s| s["name"].as_str().map(str::to_owned))
         .collect();
-    let r = extract_json(&claude_quick(&input, DRIFT_PROMPT, "sonnet")?).ok_or("drift check returned no JSON")?;
-    Ok(json!({ "conflicts": parse_drift(&r, &names) }))
+    // haiku: every teammate's Grill Me runs this on its own Claude plan
+    let r = extract_json(&claude_quick(&input, DRIFT_PROMPT, "haiku")?).ok_or("drift check returned no JSON")?;
+    let conflicts = parse_drift(&r, &names);
+    // tell the agents too, not just the person: catch_up feeds new alerts
+    // into every session's next prompt
+    let _ = record_alerts(&super::project_dir().join(ALERTS_FILE), &conflicts, now_ms());
+    Ok(json!({ "conflicts": conflicts }))
+}
+
+/// Same name as mcp::brain::ALERTS_FILE (the reader side).
+const ALERTS_FILE: &str = "alerts.json";
+const ALERTS_CAP: usize = 50;
+/// The same pair isn't re-announced to agents within this window.
+const ALERT_REPEAT_MS: u64 = 2 * 3_600_000;
+
+/// "a ⇄ b" with names sorted, so A-vs-B and B-vs-A are one pair.
+fn pair_key(c: &Value) -> String {
+    let mut p = [c["a"].as_str().unwrap_or("").to_lowercase(), c["b"].as_str().unwrap_or("").to_lowercase()];
+    p.sort();
+    p.join(" ⇄ ")
+}
+
+/// Append drift conflicts as agent-facing alerts; skips pairs already
+/// announced recently. Returns how many were added.
+pub(crate) fn record_alerts(path: &Path, conflicts: &[Value], now: u64) -> Result<usize, String> {
+    let mut list: Vec<Value> = read_json(&path.to_path_buf()).and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    let mut added = 0;
+    for c in conflicts {
+        let key = pair_key(c);
+        let recent = list.iter().any(|a| a["key"] == json!(key) && now.saturating_sub(a["ts"].as_u64().unwrap_or(0)) < ALERT_REPEAT_MS);
+        if recent {
+            continue;
+        }
+        let tip = c["suggestion"].as_str().filter(|s| !s.is_empty()).map(|s| format!(" Suggestion: {s}")).unwrap_or_default();
+        let text = format!("{} and {} may be building in contradicting directions: {}{tip}", c["a"].as_str().unwrap_or(""), c["b"].as_str().unwrap_or(""), c["why"].as_str().unwrap_or(""));
+        list.push(json!({ "id": format!("drift-{now}-{added}"), "ts": now, "key": key, "text": text }));
+        added += 1;
+    }
+    if added == 0 {
+        return Ok(0);
+    }
+    let start = list.len().saturating_sub(ALERTS_CAP);
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&list[start..]).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    Ok(added)
 }
 
 // ---- starter kits ---------------------------------------------------------------------
@@ -506,6 +550,24 @@ mod tests {
         let list = v["decisionProposals"].as_array().unwrap();
         assert_eq!(list.len(), PROPOSAL_CAP);
         assert!(list.iter().all(|p| p["status"] == "pending"));
+    }
+
+    #[test]
+    fn drift_alerts_reach_agents_once_per_pair() {
+        let dir = std::env::temp_dir().join(format!("grillme-alerts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("alerts.json");
+        let c = json!({ "a": "Auth", "b": "Maya's Login", "why": "email vs Google login", "suggestion": "pick one in the plan" });
+        assert_eq!(record_alerts(&path, &[c.clone()], 1_000).unwrap(), 1);
+        // same pair, reversed, an hour later: not repeated
+        let flipped = json!({ "a": "Maya's Login", "b": "Auth", "why": "still clashing", "suggestion": "" });
+        assert_eq!(record_alerts(&path, &[flipped.clone()], 1_000 + 3_600_000).unwrap(), 0);
+        // after the quiet window it can come back
+        assert_eq!(record_alerts(&path, &[flipped], 1_000 + 3 * 3_600_000).unwrap(), 1);
+        let saved: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved.len(), 2);
+        assert!(saved[0]["text"].as_str().unwrap().contains("Auth and Maya's Login may be building in contradicting directions: email vs Google login Suggestion: pick one in the plan"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

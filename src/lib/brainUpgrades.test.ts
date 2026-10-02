@@ -38,6 +38,10 @@ describe("drift throttle + dismiss memory", () => {
     expect(driftDue({ a: now - 60_000, b: now - 31 * 60_000 }, now, undefined)).toBe(false);
     expect(driftDue({ a: now - 60_000, b: now - 29 * 60_000 }, now, undefined)).toBe(true);
     expect(driftDue({ a: now, b: now }, now, now - DRIFT_EVERY_MS + 1)).toBe(false);
+    // one session per person: my one finished turn + an active teammate is enough
+    expect(driftDue({ a: now - 60_000 }, now, undefined, 1)).toBe(true);
+    expect(driftDue({}, now, undefined, 3)).toBe(false); // nothing of mine to compare
+    expect(driftDue({ a: now - 60_000 }, now, now - 60_000, 1)).toBe(false); // still throttled
     expect(driftDue({ a: now, b: now }, now, now - DRIFT_EVERY_MS)).toBe(true);
   });
   it("treats A⇄B and B⇄A as one pair and remembers rephrased reasons for 2h", () => {

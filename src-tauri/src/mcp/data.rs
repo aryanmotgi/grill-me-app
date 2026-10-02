@@ -122,6 +122,13 @@ pub fn read_text(path: &Path) -> Option<String> {
 /// `git -C repo …` → trimmed stdout, "" on failure, timeout (8 s), or
 /// output over execFileSync's 1 MB maxBuffer.
 pub fn git(repo: &str, args: &[&str]) -> String {
+    js::trim(&git_raw(repo, args)).to_string()
+}
+
+/// `git` without trimming: `status --porcelain` lines start with a space
+/// (" M file"), and trimming the whole output ate the first file's first
+/// letter ("rc/auth.ts").
+fn git_raw(repo: &str, args: &[&str]) -> String {
     use std::io::Read as _;
     use std::process::{Command, Stdio};
     let Ok(mut child) = Command::new("git")
@@ -158,7 +165,7 @@ pub fn git(repo: &str, args: &[&str]) -> String {
     if timed_out || !read_ok || !status.is_some_and(|s| s.success()) || out.len() > 1024 * 1024 {
         return String::new();
     }
-    js::trim(&String::from_utf8_lossy(&out)).to_string()
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 // Files Grill Me itself installs into every worktree (hooks, /ship,
@@ -180,7 +187,7 @@ fn untracked(repo: &str) -> Vec<String> {
 
 /// Changed + new files, minus Grill Me's own.
 pub fn changed_files(repo: &str) -> Vec<String> {
-    git(repo, &["status", "--porcelain"])
+    git_raw(repo, &["status", "--porcelain"])
         .split('\n')
         .filter(|l| !l.is_empty())
         .filter(|l| !(l.starts_with("??") && is_managed(js::trim(slice_from(l, 3)))))
