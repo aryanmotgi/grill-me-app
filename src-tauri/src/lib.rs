@@ -1011,8 +1011,7 @@ fn pty_record(id: String, on: bool) -> Result<Option<String>, String> {
     let mut map = lock_or_recover(ptys());
     let s = map.get_mut(&id).ok_or("no session")?;
     if on {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        let dir = PathBuf::from(home).join(".grillme").join("recordings");
+        let dir = grillme_root().join("recordings");
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1058,8 +1057,12 @@ fn valid_project_id(id: &str) -> bool {
 }
 
 fn grillme_root() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let dir = PathBuf::from(home).join(".grillme");
+    // GRILLME_HOME: a separate data folder (the `forge` test launcher uses a
+    // fresh one, so the app starts exactly like a first install)
+    let dir = match std::env::var("GRILLME_HOME") {
+        Ok(d) if !d.trim().is_empty() => PathBuf::from(d),
+        _ => PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".grillme"),
+    };
     if !dir.exists() {
         use std::os::unix::fs::PermissionsExt;
         if std::fs::create_dir_all(&dir).is_ok() {
