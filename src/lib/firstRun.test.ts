@@ -10,6 +10,8 @@ describe("first run", () => {
   });
   it("walks forward and back in order", () => {
     expect(nextStep("welcome")).toBe("check");
+    expect(nextStep("project")).toBe("scan");
+    expect(nextStep("scan")).toBe("consent");
     expect(nextStep("consent")).toBe("team");
     expect(nextStep("team")).toBe("done");
     expect(prevStep("check")).toBe("welcome");
@@ -23,6 +25,6 @@ describe("first run", () => {
   });
   it("numbers steps for the progress label", () => {
     expect(stepNumber("welcome")).toBe(1);
-    expect(stepNumber("team")).toBe(5);
+    expect(stepNumber("team")).toBe(6);
   });
 });

@@ -832,7 +832,10 @@ pub fn room_host_stop() -> Result<(), String> {
 /// (which carries {"error": ...} on non-200 — the caller inspects it).
 // async: a relay round trip can take seconds and must never block the UI thread
 #[tauri::command(async)]
-pub fn room_client(host_addr: String, path: String, body_json: String) -> Result<String, String> {
+pub fn room_client(host_addr: String, path: String, body_json: Option<String>) -> Result<String, String> {
+    // the webview sends `null` for GETs (/room/state); a plain String
+    // parameter rejected that, so every state poll failed
+    let body_json = body_json.unwrap_or_default();
     use std::net::ToSocketAddrs;
     if !path.starts_with("/room/") {
         return Err("room_client only proxies /room/* paths".into());

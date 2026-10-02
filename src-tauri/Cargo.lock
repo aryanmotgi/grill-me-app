@@ -1458,6 +1458,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-shell",
+ "toml 0.8.2",
  "ureq",
  "window-vibrancy",
 ]

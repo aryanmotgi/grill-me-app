@@ -35,6 +35,8 @@ window-vibrancy = "0.6"
 base64 = "0.22"
 # HTTPS to the team relay (rustls, no OpenSSL)
 ureq = { version = "2", default-features = false, features = ["tls"] }
+# reads Codex/Cargo/pyproject TOML for the workflow scan
+toml = "0.8"
 
 
 [profile.dev]
