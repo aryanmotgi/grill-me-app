@@ -1,0 +1,16 @@
+/Users/aryanmotgi/Terminal/grill-me/src-tauri/target-agents-catalog/debug/deps/unic_char_property-afb2c51ad0fbb0ae.d: /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/lib.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/pkg_info.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/property.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/range_types.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/macros.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/tables.rs
+
+/Users/aryanmotgi/Terminal/grill-me/src-tauri/target-agents-catalog/debug/deps/libunic_char_property-afb2c51ad0fbb0ae.rlib: /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/lib.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/pkg_info.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/property.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/range_types.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/macros.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/tables.rs
+
+/Users/aryanmotgi/Terminal/grill-me/src-tauri/target-agents-catalog/debug/deps/libunic_char_property-afb2c51ad0fbb0ae.rmeta: /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/lib.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/pkg_info.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/property.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/range_types.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/macros.rs /Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/tables.rs
+
+/Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/lib.rs:
+/Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/pkg_info.rs:
+/Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/property.rs:
+/Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/range_types.rs:
+/Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/macros.rs:
+/Users/aryanmotgi/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unic-char-property-0.9.0/src/tables.rs:
+
+# env-dep:CARGO_PKG_DESCRIPTION=UNIC — Unicode Character Tools — Character Property taxonomy, contracts and build macros
+# env-dep:CARGO_PKG_NAME=unic-char-property
+# env-dep:CARGO_PKG_VERSION=0.9.0

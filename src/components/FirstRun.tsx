@@ -5,6 +5,7 @@ import { GrillFlame } from "./GrillMark";
 import { Toasts } from "./Chrome";
 import { runDoctor, type DoctorCheck } from "./DoctorTab";
 import { CONSENT_ITEMS } from "./InstallConsent";
+import { SCAN_SOURCES, scanSummary, type ScanResult } from "../lib/scan";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 
@@ -274,7 +275,100 @@ function Project({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 4. What we'll add ---------------------------------------------------------
+// -- 4. Scan your setup ----------------------------------------------------------
+
+function Scan({ go }: { go: (s: FirstRunStep) => void }) {
+  const toast = useApp((s) => s.toast);
+  const projectPath = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.path);
+  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(SCAN_SOURCES.map((x) => [x.id, x.defaultOn])));
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ScanResult | null>(null);
+  const [showChecked, setShowChecked] = useState(false);
+
+  const scan = async () => {
+    setBusy(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const sources = SCAN_SOURCES.filter((x) => on[x.id]).map((x) => x.id);
+      setResult(await invoke<ScanResult>("workflow_scan", { project: projectPath ?? null, sources }));
+    } catch (e) {
+      toast(`Scan failed: ${e}`, "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const forget = async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("workflow_scan_delete").catch(() => {});
+    setResult(null);
+    toast("Scan deleted");
+  };
+
+  if (result) {
+    const lines = scanSummary(result);
+    return (
+      <Frame step="scan" title="Here's what we found"
+        lead="Grill Me will use this to skip questions it can already answer and to suggest better ways to work. It stays on this computer."
+        footer={<>
+          <BackButton step="scan" go={go} />
+          <span className="flex-1" />
+          <button className="btn" onClick={() => setResult(null)}>Scan again</button>
+          <button className="btn primary" autoFocus onClick={() => go(nextStep("scan"))}>Looks right</button>
+        </>}
+      >
+        <div className="hairline rounded-lg bg-panel/60 divide-y divide-line">
+          {lines.length === 0 ? <p className="px-4 py-3 text-[13px] text-faint">Nothing found in the sources you picked.</p> : null}
+          {lines.map((l) => (
+            <div key={l.label} className="px-4 py-2.5 flex gap-3 text-[13px]">
+              <span className="w-[130px] flex-none text-dim">{l.label}</span>
+              <span className="text-ink min-w-0">{l.value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2">
+          <button className="text-[12px] text-dim hover:text-ink text-left cursor-pointer w-fit" aria-expanded={showChecked} onClick={() => setShowChecked(!showChecked)}>
+            {showChecked ? "▾" : "▸"} What we looked at ({result.checked.length})
+          </button>
+          {showChecked ? (
+            <ul className="text-[11.5px] text-faint font-mono flex flex-col gap-0.5 pl-4 max-h-[180px] overflow-y-auto select-text">
+              {result.checked.map((c, i) => <li key={i}>{c.item}</li>)}
+            </ul>
+          ) : null}
+          <button className="text-[12px] text-faint hover:text-ink text-left cursor-pointer w-fit" onClick={() => void forget()}>Delete this scan</button>
+        </div>
+      </Frame>
+    );
+  }
+
+  return (
+    <Frame step="scan" title="Can Grill Me look at your setup?"
+      lead="A quick look at this computer tells Grill Me which AI tools you use, so it can skip questions and suggest better ways to work. It takes a few seconds, and nothing leaves this computer."
+      footer={<>
+        <BackButton step="scan" go={go} />
+        <span className="flex-1" />
+        <button className="btn" onClick={() => go(nextStep("scan"))}>Skip</button>
+        <button className="btn primary" disabled={busy || !native() || !Object.values(on).some(Boolean)} onClick={() => void scan()}>
+          {busy ? <span className="spinner" /> : null} Scan
+        </button>
+      </>}
+    >
+      <div className="flex flex-col gap-2">
+        {SCAN_SOURCES.map((x) => (
+          <label key={x.id} className="hairline rounded-lg px-4 py-2.5 bg-panel/60 flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" className="mt-1 accent-(--accent)" checked={on[x.id]} onChange={(e) => setOn({ ...on, [x.id]: e.target.checked })} />
+            <span className="flex-1">
+              <span className="block text-[13.5px] text-ink">{x.label}{x.defaultOn ? null : <span className="ml-2 text-[11px] text-faint">optional</span>}</span>
+              <span className="block text-[12px] text-dim mt-0.5">{x.detail}</span>
+            </span>
+          </label>
+        ))}
+        {!native() ? <p className="text-[12px] text-faint">The scan runs in the desktop app.</p> : null}
+      </div>
+    </Frame>
+  );
+}
+
+// -- 5. What we'll add ---------------------------------------------------------
 
 function Consent({ go }: { go: (s: FirstRunStep) => void }) {
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "your project");
@@ -309,7 +403,7 @@ function Consent({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 5. Working with others? ---------------------------------------------------
+// -- 6. Working with others? ---------------------------------------------------
 
 function Team({ go }: { go: (s: FirstRunStep) => void }) {
   const joining = useApp((s) => s.appSettings.firstRunJoining === true);
@@ -353,6 +447,7 @@ export function FirstRun() {
       {step === "welcome" ? <Welcome go={go} /> : null}
       {step === "check" ? <Check go={go} /> : null}
       {step === "project" ? <Project go={go} /> : null}
+      {step === "scan" ? <Scan go={go} /> : null}
       {step === "consent" ? <Consent go={go} /> : null}
       {step === "team" ? <Team go={go} /> : null}
       <Toasts />
