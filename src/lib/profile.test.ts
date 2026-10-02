@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import builtinDoc from "../data/catalog.json";
 import { parseCatalog } from "./catalog";
 import type { ScanResult } from "./scan";
-import { agentsFromScan, buildingFromScan, detectionsFromScan, emptyProfile, profileFacts, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type WorkflowProfile } from "./profile";
+import { agentsFromScan, buildingFromScan, levelFromScan, detectionsFromScan, emptyProfile, profileFacts, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type WorkflowProfile } from "./profile";
 
 const catalog = parseCatalog(builtinDoc)!;
 const scan = (over: Partial<ScanResult> = {}): ScanResult => ({ ts: 1, sources: [], checked: [], ...over });
@@ -138,5 +138,29 @@ describe("workflow and upgrades", () => {
     for (const u of backend) expect(catalog.entries.find((e) => e.id === u.id)?.solves.includes("browser") ?? false).toBe(false);
     const docs = suggestUpgrades(profile({ pains: ["docs"], mentions: ["vercel"] }), catalog, toolsYouHave(catalog, s), s);
     expect(docs[0].id.startsWith("vercel")).toBe(false);
+  });
+  it("suggests a database tool for a Postgres project, even one on Supabase", () => {
+    const s = scan({ agents: { bins: ["claude"], apps: [] }, git: { usesPullRequests: true }, stack: { languages: ["Go", "SQL"], dependencies: ["pgx"] }, instructions: [{ file: "CLAUDE.md", scope: "project", bytes: 900, headings: [] }] });
+    const ups = suggestUpgrades(profile({ building: "backend", pains: ["database"] }), catalog, toolsYouHave(catalog, s), s);
+    expect(["postgres-mcp", "squawk", "atlas", "dbhub-mcp"]).toContain(ups[0].id);
+    const supa = scan({ agents: { bins: ["claude"], apps: [] }, history: [{ cmd: "supabase", count: 9 }], stack: { dependencies: ["@supabase/supabase-js"] } });
+    const ids = suggestUpgrades(profile({ pains: ["database"] }), catalog, toolsYouHave(catalog, supa), supa).map((u) => u.id);
+    expect(ids.some((id) => ["postgres-mcp", "squawk", "atlas", "dbhub-mcp", "supabase-mcp"].includes(id))).toBe(true);
+  });
+  it("only suggests a Postgres-only tool when there's Postgres", () => {
+    const s = scan({ agents: { bins: ["claude"], apps: [] }, stack: { languages: ["Python"], dependencies: ["pymongo"] } });
+    const ids = suggestUpgrades(profile({ pains: ["database"] }), catalog, toolsYouHave(catalog, s), s).map((u) => u.id);
+    expect(ids).not.toContain("postgres-mcp");
+    expect(ids).not.toContain("squawk");
+  });
+  it("guesses experience from the scan", () => {
+    expect(levelFromScan(scan({ git: { commits30d: 140, conventionalCommits: 100, usesPullRequests: true } }))).toBe("senior");
+    expect(levelFromScan(scan({ git: { commits30d: 9 } }))).toBe("new");
+    expect(levelFromScan(null)).toBeUndefined();
+  });
+  it("never suggests a JavaScript tool for a Go project, or a bare utility", () => {
+    const s = scan({ agents: { bins: ["claude"], apps: [] }, stack: { languages: ["Go", "TypeScript", "SQL"], frameworks: ["React"], dependencies: ["pgx"] } });
+    const ids = suggestUpgrades(profile({ building: "backend", pains: ["testing", "debugging", "review"] }), catalog, toolsYouHave(catalog, s), s).map((u) => u.id);
+    for (const js of ["vitest", "jest", "bun", "jq"]) expect(ids).not.toContain(js);
   });
 });

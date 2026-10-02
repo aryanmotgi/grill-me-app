@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_ANSWERS, REPLY_SCHEMA, buildPrompt, knownFromScan, localSummary, mergeReply, openingFor, painsFromText, styleFromText, teamFromText } from "./interview";
+import { MAX_ANSWERS, MAX_TIPS, REPLY_SCHEMA, buildPrompt, knownFromScan, localSummary, mergeReply, openingFor, painsFromText, styleFromText, teamFromText } from "./interview";
 import type { WorkflowProfile } from "./profile";
 
 const empty = (): WorkflowProfile => ({ pains: [], agents: ["claude"], source: "form", updated: 0 });
@@ -62,15 +62,17 @@ describe("interview", () => {
     expect(buildPrompt(turns.slice(0, 2), empty())).not.toContain("last turn");
   });
   it("a correction asks for a new summary and ends", () => {
-    const p = buildPrompt([], { ...empty(), summary: "You test a lot." }, null, "it's migrations, not tests");
+    const p = buildPrompt([], { ...empty(), summary: "You test a lot." }, null, { correction: "it's migrations, not tests" });
     expect(p).toContain("it's migrations, not tests");
     expect(p).toContain("done=true");
   });
   it("caps very long answers in the prompt", () => {
-    const p = buildPrompt([{ who: "you", text: "x".repeat(5000) }], empty());
-    expect(p.length).toBeLessThan(1400);
+    const long = buildPrompt([{ who: "you", text: "x".repeat(5000) }], empty());
+    const short = buildPrompt([{ who: "you", text: "x" }], empty());
+    expect(long.length - short.length).toBeLessThan(1000);
   });
   it("keeps a few short answer options, none once it's done", () => {
+    expect(mergeReply(empty(), { say: "?", options: ["[]", " - ", "Yes"] }).options).toEqual(["Yes"]);
     const r = mergeReply(empty(), { say: "How do you plan?", options: ["Plan first", "", 42, "x".repeat(80), "a", "b", "c", "d"], done: false });
     expect(r.options).toHaveLength(5);
     expect(r.options[0]).toBe("Plan first");
@@ -89,5 +91,37 @@ describe("interview", () => {
   it("writes a read-back without an AI", () => {
     expect(localSummary({ ...empty(), team: "solo", style: "plan-first", pains: ["testing", "deploy"] }))
       .toBe("You're building on your own, planning first and then letting AI code. Most of your time goes to testing and deploying.");
+  });
+  it("shows a tip only when it fits a real pain, never twice, at most two", () => {
+    const base = { ...empty(), pains: ["deploy" as const] };
+    const a = mergeReply(base, { say: "Which errors?", tip: "env-example", done: false });
+    expect(a.tip?.id).toBe("env-example");
+    expect(a.profile.tips).toEqual(["env-example"]);
+    expect(mergeReply(a.profile, { say: "?", tip: "env-example" }).tip).toBeUndefined();
+    expect(mergeReply(a.profile, { say: "?", tip: "flaky-loop" }).tip).toBeUndefined(); // no testing pain
+    expect(mergeReply(a.profile, { say: "?", tip: "made-up" }).tip).toBeUndefined();
+    const b = mergeReply(a.profile, { say: "?", tip: "build-locally" });
+    expect(b.profile.tips).toHaveLength(MAX_TIPS);
+    expect(mergeReply(b.profile, { say: "?", tip: "pin-runtime" }).tip).toBeUndefined();
+  });
+  it("a tip fits a pain they only described in a note", () => {
+    const r = mergeReply(empty(), { say: "?", notes: [{ text: "my flaky tests", about: "testing" }], tip: "flaky-loop" });
+    expect(r.tip?.id).toBe("flaky-loop");
+  });
+  it("keeps the level, and a challenge only while chatting", () => {
+    expect(mergeReply(empty(), { say: "?", level: "senior", challenge: true }).profile.level).toBe("senior");
+    expect(mergeReply(empty(), { say: "?", level: "wizard" }).profile.level).toBeUndefined();
+    expect(mergeReply(empty(), { say: "?", challenge: true }).challenge).toBe(true);
+    expect(mergeReply(empty(), { say: "Thanks", challenge: true, done: true }).challenge).toBe(false);
+  });
+  it("tells the AI its level guess, the tips left, and when not to challenge", () => {
+    const p = buildPrompt([{ who: "you", text: "hi" }], empty(), scan as never);
+    expect(p).toContain("Tip menu:");
+    expect(p).toMatch(/Their level so far: \w+ \(a guess from the scan\)/);
+    expect(buildPrompt([], empty(), null, { gentle: true })).toContain("go easy");
+    expect(buildPrompt([], empty(), null, { challenged: true })).toContain("no more challenges");
+    const full = buildPrompt([], { ...empty(), tips: ["a", "b"] }, null);
+    expect(full).toContain("No more tips");
+    expect(full).not.toContain("Tip menu:");
   });
 });

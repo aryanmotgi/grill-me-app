@@ -15,8 +15,9 @@ import { builtinCatalog, loadCatalog } from "../lib/catalogLoad";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 import { interviewBrainOf, pickBrain, readyAis, type AiStatus } from "../lib/aiConnect";
-import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING_OPTIONS, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, localSummary, mergeReply, openingFor, painsFromText, styleFromText, teamFromText, type Turn } from "../lib/interview";
-import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, buildingFromScan, emptyProfile, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
+import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING_OPTIONS, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, localSummary, mergeReply, openingFor, painsFromText, styleFromText, teamFromText, type PromptOpts, type Turn } from "../lib/interview";
+import { TIPS, tipById, type Tip } from "../lib/tips";
+import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, buildingFromScan, emptyProfile, levelFromScan, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
 
 // ---------------------------------------------------------------------------
 // First run, floating over the user's own apps (no background). Everything
@@ -708,7 +709,10 @@ function Workflow({ f, step }: SceneProps) {
   const save = (p: WorkflowProfile) => { const saved = { ...p, updated: Date.now() }; setProfile(saved); setAppSetting("workflowProfile", saved); return saved; };
   // the interview ends on a read-back they can correct (skipping it goes straight on)
   const done = (p: WorkflowProfile, skipped = false) => {
-    save({ ...p, summary: p.summary || localSummary(p) });
+    // no AI to pick a tip or judge experience: the top pain's first tip, the scan's guess
+    const level = p.level ?? (p.style === "new" ? "new" : levelFromScan(scan));
+    const tips = p.tips?.length ? p.tips : TIPS.filter((t) => t.pain === p.pains[0]).slice(0, 1).map((t) => t.id);
+    save({ ...p, level, tips, summary: p.summary || localSummary(p) });
     setPhase(skipped ? "path" : "readback");
   };
   if (phase === "interview") return <Interview f={f} step={step} brain={brain} scan={scan} start={profile} onDone={done} />;
@@ -717,8 +721,8 @@ function Workflow({ f, step }: SceneProps) {
 }
 
 /** One AI turn. Errors that start "UPDATE:" mean the CLI is too old. */
-async function aiTurn(brain: string, turns: Turn[], profile: WorkflowProfile, scan: ScanResult | null, correction?: string) {
-  const raw = await invoke<unknown>("interview_turn", { brain, system: SYSTEM_PROMPT, prompt: buildPrompt(turns, profile, scan, correction), schema: JSON.stringify(REPLY_SCHEMA) });
+async function aiTurn(brain: string, turns: Turn[], profile: WorkflowProfile, scan: ScanResult | null, opts: PromptOpts = {}) {
+  const raw = await invoke<unknown>("interview_turn", { brain, system: SYSTEM_PROMPT, prompt: buildPrompt(turns, profile, scan, opts), schema: JSON.stringify(REPLY_SCHEMA) });
   return mergeReply(profile, raw);
 }
 const errorText = (e: unknown) => `${e}`.replace(/^UPDATE: /, "");
@@ -734,7 +738,10 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; old: boolean } | null>(null);
-  const state = useRef({ turns: [{ who: "ai", text: QUICK[0].text }] as Turn[], profile: { ...start }, i: 0, ai });
+  const [tip, setTip] = useState<Tip | undefined>();
+  const [pushing, setPushing] = useState(false);
+  const [gentle, setGentle] = useState(false);
+  const state = useRef({ turns: [{ who: "ai", text: QUICK[0].text }] as Turn[], profile: { ...start }, i: 0, ai, challenged: false });
   const optsRef = useRef<HTMLDivElement>(null);
   const lastAnswer = useRef("");
   const total = state.current.ai ? MAX_ANSWERS : QUICK.length;
@@ -765,12 +772,15 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
     }
     lastAnswer.current = text;
     s.turns = [...s.turns, { who: "you", text: text.slice(0, MAX_ANSWER_CHARS) }];
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setTip(undefined); setPushing(false);
     try {
-      const r = await aiTurn(brain, s.turns, s.profile, scan);
+      const r = await aiTurn(brain, s.turns, s.profile, scan, { challenged: s.challenged, gentle });
       s.profile = r.profile;
       s.turns = [...s.turns, { who: "ai", text: r.say }];
+      if (r.challenge) s.challenged = true;
       setBusy(false);
+      setTip(r.tip);
+      setPushing(r.challenge && !gentle);
       if (r.done || s.turns.filter((t) => t.who === "you").length >= MAX_ANSWERS) { onDone(r.profile); return; }
       ask({ key: "pains", text: r.say, options: r.options });
     } catch (e) {
@@ -793,6 +803,10 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
         <div className="forge-said"><span className="who">You</span><p>{lastAnswer.current}</p><span className="dots" aria-label="Thinking"><i /><i /><i /></span></div>
       ) : !error ? (
         <>
+          {pushing ? <div className="forge-push">Pushing back a little</div> : null}
+          {tip ? (
+            <div className="forge-tip"><span className="forge-label">Quick tip</span><p>{s4level(tip, state.current.profile.level)}</p></div>
+          ) : null}
           {q.options.length ? (
             <div ref={optsRef} className="forge-opts">
               {q.options.map((o) => {
@@ -815,11 +829,19 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
                 void answer(multi ? [...picks, typed.trim()].join(", ") : typed.trim(), multi ? [...picks, typed.trim()] : []);
               }} />
           </div>
+          {state.current.ai ? (
+            <button type="button" className={`forge-link forge-gentle ${gentle ? "on" : ""}`} aria-pressed={gentle} onClick={() => { setGentle(!gentle); setPushing(false); }}>
+              {gentle ? "Going easy on you · grill me after all" : "Go easy on me"}
+            </button>
+          ) : null}
         </>
       ) : null}
     </Stage>
   );
 }
+
+/** A tip in the words that fit them: plain for people new to coding. */
+const s4level = (t: Tip, level?: string) => (level === "new" ? t.simple : t.text);
 
 /** "Here's how you work": the read-back, which they can correct. */
 function Readback({ f, step, brain, scan, profile, onDone }: SceneProps & { brain: string; scan: ScanResult | null; profile: WorkflowProfile; onDone: (p: WorkflowProfile) => void }) {
@@ -836,7 +858,7 @@ function Readback({ f, step, brain, scan, profile, onDone }: SceneProps & { brai
     if (!ai) { setP({ ...p, summary: text }); setFixing(false); setTyped(""); return; }
     setBusy(true); setError("");
     try {
-      const r = await aiTurn(brain, [{ who: "ai", text: p.summary ?? "" }, { who: "you", text }], p, scan, text);
+      const r = await aiTurn(brain, [{ who: "ai", text: p.summary ?? "" }, { who: "you", text }], p, scan, { correction: text });
       setP({ ...r.profile, summary: r.summary || text });
       setFixing(false); setTyped("");
     } catch (e) {
@@ -861,6 +883,11 @@ function Readback({ f, step, brain, scan, profile, onDone }: SceneProps & { brai
       ) : (
         <div className="forge-heard">
           {pains.length ? <div><span className="forge-label">Slows you down</span><div className="forge-tags">{pains.map((x) => <span key={x} className="forge-tag">{x}</span>)}</div></div> : null}
+          {(p.tips ?? []).length ? (
+            <div><span className="forge-label">Tips from our chat</span>
+              <ul className="forge-quotes tips">{(p.tips ?? []).map((id) => tipById(id)).filter((t): t is Tip => !!t).map((t) => <li key={t.id}>{s4level(t, p.level)}</li>)}</ul>
+            </div>
+          ) : null}
           {(p.notes ?? []).length ? (
             <div><span className="forge-label">What I heard</span>
               <ul className="forge-quotes">{(p.notes ?? []).slice(0, 4).map((n) => <li key={n.text}>“{n.text}”</li>)}</ul>

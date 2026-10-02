@@ -1,6 +1,6 @@
 {
-  "version": "2026.10.1",
-  "updated": "2026-10-01",
+  "version": "2026.10.2",
+  "updated": "2026-10-02",
   "entries": [
     {
       "id": "claude-code",
@@ -3094,6 +3094,213 @@
       "source": "https://github.com/jqlang/jq",
       "verified": true,
       "updated": "2026-10-01"
+    },
+    {
+      "id": "dbhub-mcp",
+      "name": "DBHub",
+      "kind": "mcp",
+      "what": "Lets agents query and inspect your database (Postgres, MySQL, SQL Server, MariaDB, SQLite) through one MCP server.",
+      "solves": [
+        "database",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "dbhub",
+          "@bytebase/dbhub"
+        ]
+      },
+      "install": {
+        "command": "claude mcp add --transport stdio db -- npx -y @bytebase/dbhub --dsn \"postgresql://user:pass@localhost:5432/dbname\"",
+        "docs": "https://github.com/bytebase/dbhub"
+      },
+      "source": "https://github.com/bytebase/dbhub",
+      "verified": true,
+      "updated": "2026-10-02"
+    },
+    {
+      "id": "postgres-mcp",
+      "name": "Postgres MCP Pro",
+      "kind": "mcp",
+      "what": "Gives agents Postgres explain plans, index tuning, health checks and safe SQL execution.",
+      "solves": [
+        "database",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "mcp": [
+          "postgres-mcp",
+          "crystaldba/postgres-mcp"
+        ],
+        "pip": [
+          "postgres-mcp"
+        ]
+      },
+      "install": {
+        "command": "pipx install postgres-mcp",
+        "docs": "https://github.com/crystaldba/postgres-mcp"
+      },
+      "source": "https://github.com/crystaldba/postgres-mcp",
+      "verified": true,
+      "updated": "2026-10-02"
+    },
+    {
+      "id": "squawk",
+      "name": "Squawk",
+      "kind": "cli",
+      "what": "Lints Postgres migrations for changes that lock tables or break running code, before they ship.",
+      "solves": [
+        "database",
+        "review"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "squawk"
+        ],
+        "npm": [
+          "squawk-cli"
+        ],
+        "pip": [
+          "squawk-cli"
+        ],
+        "deps": [
+          "squawk-cli"
+        ]
+      },
+      "install": {
+        "command": "npm install -g squawk-cli",
+        "docs": "https://squawkhq.com/docs/"
+      },
+      "source": "https://github.com/sbdchd/squawk",
+      "verified": true,
+      "updated": "2026-10-02"
+    },
+    {
+      "id": "atlas",
+      "name": "Atlas",
+      "kind": "cli",
+      "what": "Manages database schemas as code and reviews migration files with 50+ checks before they reach production.",
+      "solves": [
+        "database",
+        "review",
+        "ci"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "atlas"
+        ],
+        "brew": [
+          "atlas",
+          "ariga/tap/atlas"
+        ]
+      },
+      "install": {
+        "command": "brew install ariga/tap/atlas",
+        "docs": "https://atlasgo.io/getting-started"
+      },
+      "source": "https://github.com/ariga/atlas",
+      "verified": true,
+      "updated": "2026-10-02"
+    },
+    {
+      "id": "act",
+      "name": "act",
+      "kind": "cli",
+      "what": "Runs your GitHub Actions workflows locally, so CI failures show up before you push.",
+      "solves": [
+        "ci",
+        "debugging"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "act"
+        ],
+        "brew": [
+          "act"
+        ]
+      },
+      "install": {
+        "command": "brew install act",
+        "docs": "https://nektosact.com"
+      },
+      "source": "https://github.com/nektos/act",
+      "verified": true,
+      "updated": "2026-10-02"
+    },
+    {
+      "id": "semgrep",
+      "name": "Semgrep",
+      "kind": "cli",
+      "what": "Scans code for bugs, security issues and anti-patterns with readable rules; agents can run it on every change.",
+      "solves": [
+        "security",
+        "review",
+        "code-quality"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "semgrep"
+        ],
+        "brew": [
+          "semgrep"
+        ],
+        "pip": [
+          "semgrep"
+        ]
+      },
+      "install": {
+        "command": "brew install semgrep",
+        "docs": "https://semgrep.dev/docs/getting-started/quickstart"
+      },
+      "source": "https://github.com/semgrep/semgrep",
+      "verified": true,
+      "updated": "2026-10-02"
+    },
+    {
+      "id": "gitleaks",
+      "name": "Gitleaks",
+      "kind": "cli",
+      "what": "Finds API keys and other secrets committed to git, in history or before you push.",
+      "solves": [
+        "security",
+        "git"
+      ],
+      "agents": [
+        "any"
+      ],
+      "detect": {
+        "bins": [
+          "gitleaks"
+        ],
+        "brew": [
+          "gitleaks"
+        ]
+      },
+      "install": {
+        "command": "brew install gitleaks",
+        "docs": "https://github.com/gitleaks/gitleaks"
+      },
+      "source": "https://github.com/gitleaks/gitleaks",
+      "verified": true,
+      "updated": "2026-10-02"
     }
   ]
 }

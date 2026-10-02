@@ -13,6 +13,9 @@ import type { ScanResult } from "./scan";
 export type Building = "web" | "mobile" | "backend" | "cli" | "data" | "other";
 export type TeamSize = "solo" | "small" | "large";
 export type AiStyle = "plan-first" | "as-i-go" | "agents" | "new";
+/** How experienced they seem: sets how the interview talks. */
+export type Level = "new" | "mid" | "senior";
+export const LEVELS: Level[] = ["new", "mid", "senior"];
 
 export interface WorkflowProfile {
   building?: Building;
@@ -28,6 +31,9 @@ export interface WorkflowProfile {
   mentions?: string[];
   /** the read-back: how they work, in two sentences they've confirmed */
   summary?: string;
+  level?: Level;
+  /** tips the interview gave (ids from lib/tips) */
+  tips?: string[];
   source: "form" | "interview";
   updated: number;
 }
@@ -93,6 +99,8 @@ export function profileOf(v: unknown): WorkflowProfile | null {
     notes: notesOf(o.notes),
     mentions: mentionsOf(o.mentions),
     summary: typeof o.summary === "string" && o.summary.trim() ? o.summary.trim().slice(0, 500) : undefined,
+    level: LEVELS.includes(o.level as Level) ? (o.level as Level) : undefined,
+    tips: strs(o.tips).slice(0, 4),
     source: o.source === "interview" ? "interview" : "form",
     updated: typeof o.updated === "number" ? o.updated : 0,
   };
@@ -117,6 +125,18 @@ export function mentionsOf(v: unknown): string[] {
   const words = v.filter((x): x is string => typeof x === "string")
     .map((x) => x.toLowerCase().replace(/[^a-z0-9.+-]/g, "").slice(0, 32)).filter((x) => x.length > 1);
   return [...new Set(words)].slice(0, MAX_MENTIONS);
+}
+
+/** A first guess at experience from the scan (the interview refines it). */
+export function levelFromScan(scan?: ScanResult | null): Level | undefined {
+  if (!scan) return undefined;
+  const commits = scan.git?.commits30d ?? 0;
+  const addons = (scan.extensions?.mcp.length ?? 0) + (scan.extensions?.plugins.length ?? 0) + (scan.extensions?.skills.length ?? 0);
+  const rules = (scan.instructions ?? []).some((i) => i.bytes > 0);
+  const signals = (commits >= 80 ? 1 : 0) + (addons >= 3 ? 1 : 0) + (rules ? 1 : 0) + ((scan.git?.conventionalCommits ?? 0) > 10 ? 1 : 0) + (scan.git?.usesPullRequests ? 1 : 0);
+  if (signals >= 3) return "senior";
+  if (signals === 0 && commits < 20) return "new";
+  return "mid";
 }
 
 /** What they're building, worked out from the code (so we don't ask). */
@@ -253,7 +273,7 @@ const KIND_BONUS: Record<string, number> = { mcp: 2, plugin: 2, skill: 2, cli: 1
 function evidence(scan?: ScanResult | null, mentions: string[] = []): Set<string> {
   const d = detectionsFromScan(scan);
   const words = new Set<string>();
-  for (const list of [...Object.values(d), mentions]) {
+  for (const list of [...Object.values(d), scan?.stack?.languages ?? [], scan?.stack?.frameworks ?? [], mentions]) {
     for (const raw of list ?? []) {
       for (const w of raw.toLowerCase().split(/[^a-z0-9]+/)) if (w.length > 2) words.add(w);
     }
@@ -269,7 +289,34 @@ const vendorOf = (e: CatalogEntry) => e.id.split("-")[0];
 /** Vendors nearly everyone has, so their tools need no evidence. */
 const EVERYONE_HAS = new Set(["github", "gh", "docker"]);
 
+/** Vendor-neutral tools for vendor-style needs: they need evidence of the
+ *  technology, not of a vendor ([] = anyone with the need). */
+const PG = ["postgres", "postgresql", "pg", "pgx", "psycopg", "psycopg2", "asyncpg", "supabase", "neon", "neondatabase", "sqlx", "prisma", "drizzle"];
+const NEUTRAL: Record<string, string[]> = {
+  "dbhub-mcp": [],
+  "postgres-mcp": PG,
+  squawk: PG,
+  atlas: [...PG, "sql", "mysql", "mysql2", "sqlite", "sqlite3", "mariadb", "gorm", "sqlalchemy", "typeorm", "knex"],
+};
+const isNeutral = (e: CatalogEntry) => e.id in NEUTRAL;
+
+/** Tools for one language: only for projects that use it. */
+const JS = ["typescript", "javascript", "node", "react", "next.js", "vue", "svelte"];
+const LANG_ONLY: Record<string, string[]> = {
+  vitest: JS, jest: JS, bun: JS, eslint: JS, prettier: JS, biome: JS, pnpm: JS,
+  ruff: ["python"], uv: ["python"],
+};
+/** Handy utilities that are never the answer to a pain on their own. */
+const UTILITIES = new Set(["jq"]);
+function langOk(e: CatalogEntry, scan?: ScanResult | null): boolean {
+  const need = LANG_ONLY[e.id];
+  // the main language decides: a Go API with a small React admin isn't a JS project
+  const main = (scan?.stack?.languages?.[0] ?? scan?.stack?.frameworks?.[0])?.toLowerCase();
+  return !need || !main || need.includes(main);
+}
+
 function vendorOk(e: CatalogEntry, words: Set<string>): boolean {
+  if (isNeutral(e)) return NEUTRAL[e.id].length === 0 || NEUTRAL[e.id].some((w) => words.has(w));
   if (!e.solves.some((t) => VENDOR_TAGS.includes(t))) return true;
   const vendor = e.id.split("-")[0];
   return EVERYONE_HAS.has(vendor) || words.has(vendor);
@@ -288,10 +335,11 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
   // per one-vendor need, the vendors they already use
   const usedFor = new Map<SolveTag, Set<string>>();
   for (const e of have) {
-    if (e.kind === "agent") continue;
+    if (e.kind === "agent" || isNeutral(e)) continue;
     for (const t of e.solves) if (ONE_VENDOR.includes(t)) usedFor.set(t, (usedFor.get(t) ?? new Set()).add(vendorOf(e)));
   }
-  const rival = (e: CatalogEntry, t: SolveTag) => !!usedFor.get(t)?.size && !usedFor.get(t)!.has(vendorOf(e));
+  // neutral tools (a database client, a migration linter) work alongside any vendor
+  const rival = (e: CatalogEntry, t: SolveTag) => !isNeutral(e) && !!usedFor.get(t)?.size && !usedFor.get(t)!.has(vendorOf(e));
   const stages = workflowStages(have, scan, p);
   const say = (t: SolveTag) => PAINS.find((c) => c.id === t)?.say ?? t;
 
@@ -315,7 +363,7 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
   const agents = new Set(p.agents);
   const fits = (e: CatalogEntry) => agents.size === 0 || e.agents.some((a) => a === "any" || agents.has(a));
   const pool = catalog.entries.filter((e) =>
-    !haveIds.has(e.id) && e.kind !== "agent" && e.kind !== "app" && fits(e) && vendorOk(e, words) && (e.install?.command || e.install?.mcp));
+    !haveIds.has(e.id) && e.kind !== "agent" && e.kind !== "app" && fits(e) && vendorOk(e, words) && langOk(e, scan) && !UTILITIES.has(e.id) && (e.install?.command || e.install?.mcp));
 
   const out: Upgrade[] = [];
   const met = new Set<SolveTag>();
