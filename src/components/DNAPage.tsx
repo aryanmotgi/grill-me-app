@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
+import { SparkPanel } from "./SparkPanel";
 import { EvolutionsView } from "./EvolutionsView";
 import { useDNA } from "../lib/dnaStore";
 import { agentsOf, blockFor, changeOf, currentBlock, targetsFor, withBlock, type Change, type Target } from "../lib/dnaSync";
@@ -92,6 +93,8 @@ export function DNAPage() {
             Nothing yet. Finish setup's questions, or <button className="text-accent underline" onClick={() => setPastOpen(true)}>build it from your past</button>, and it fills in as you work.
           </div>
         ) : null}
+
+        <SparkPanel dna={dna} go={(to) => setStrand(to)} />
 
         <div className="flex gap-1.5 flex-wrap" role="tablist">
           {STRANDS.map((s) => (
