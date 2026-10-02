@@ -94,10 +94,29 @@ export async function waitForPtyReady(
 export async function deliverBriefWhenReady(ptyId: string, brief: string): Promise<boolean> {
   if (!(await waitForPtyReady(ptyId))) return false;
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("pty_write", { id: ptyId, data: brief });
+    await submitToAgent(ptyId, brief);
     return true;
   } catch {
     return false;
   }
+}
+
+/** What to write so an agent's prompt gets `text` and submits it. A real
+ *  Enter is "\r": Claude Code treats "\n" as a new line inside the message,
+ *  so a trailing "\n" left messages sitting unsent in its input box.
+ *  Multi-line text goes in as one bracketed paste, so its line breaks stay
+ *  line breaks instead of submitting early. */
+export function submitParts(text: string): [string, string] {
+  const body = text.replace(/[\r\n]+$/, "");
+  return [body.includes("\n") ? `\x1b[200~${body}\x1b[201~` : body, "\r"];
+}
+
+/** Type `text` into an agent session and press Enter (after a beat, so the
+ *  TUI has taken the text in first). */
+export async function submitToAgent(ptyId: string, text: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const [body, enter] = submitParts(text);
+  await invoke("pty_write", { id: ptyId, data: body });
+  await new Promise((r) => setTimeout(r, 120));
+  await invoke("pty_write", { id: ptyId, data: enter });
 }

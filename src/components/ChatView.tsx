@@ -1,3 +1,4 @@
+import { unseen, usePendingChat } from "../lib/pendingChat";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp, ptyIdFor } from "../store";
 import type { Teammate } from "../types";
@@ -59,7 +60,10 @@ const MAX_LINES = 4000;
 
 interface Chunk { path: string; offset: number; reset: boolean; lines: string[] }
 
-function useTranscript(repoPath: string | undefined) {
+function useTranscript(repoPath: string | undefined, fast = false) {
+  // poll faster while a reply is on its way
+  const fastRef = useRef(fast);
+  fastRef.current = fast;
   const [lines, setLines] = useState<string[]>([]);
   const [state, setState] = useState<"loading" | "ok" | "none">("loading");
   const cursor = useRef<{ path: string | null; offset: number }>({ path: null, offset: 0 });
@@ -91,9 +95,10 @@ function useTranscript(repoPath: string | undefined) {
         if (alive) setState("none");
       }
     };
-    void tick();
-    const t = setInterval(tick, POLL_MS);
-    return () => { alive = false; clearInterval(t); };
+    let t = 0;
+    const loop = async () => { await tick(); if (alive) t = window.setTimeout(loop, fastRef.current ? 400 : POLL_MS); };
+    void loop();
+    return () => { alive = false; clearTimeout(t); };
   }, [repoPath]);
 
   return { lines, state };
@@ -213,8 +218,13 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
   repoPath: string | undefined;
   onOpenTerminal: () => void;
 }) {
-  const { lines, state } = useTranscript(repoPath);
+  const pendingAll = usePendingChat((s) => s.byMate[mate.id]);
+  const { lines, state } = useTranscript(repoPath, !!pendingAll?.length || mate.status === "working");
   const items = useMemo(() => parseTranscript(lines), [lines]);
+  // what you sent that the transcript doesn't show yet
+  const seen = useMemo(() => items.filter((i) => i.kind === "user").map((i) => ({ text: (i as { text: string }).text, ts: i.ts })), [items]);
+  const pending = useMemo(() => unseen(pendingAll ?? [], seen), [pendingAll, seen]);
+  useEffect(() => { usePendingChat.getState().settle(mate.id, seen); }, [seen, mate.id]);
   const rows = useMemo(() => toRows(items, mate.status === "working"), [items, mate.status]);
   const lastUserTs = useMemo(() => [...items].reverse().find((i) => i.kind === "user")?.ts, [items]);
   const lastModel = useMemo(() => modelLabel([...items].reverse().find((i) => i.model)?.model), [items]);
@@ -257,7 +267,7 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
           </p>
         ) : state === "loading" ? (
           <p className="text-faint text-[12px] text-center py-16">Loading conversation…</p>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !pending.length ? (
           <div className="text-center py-16 flex flex-col items-center gap-2">
             <AgentLogo agent="claude" size={22} />
             <p className="text-dim text-[13px]">No messages yet</p>
@@ -266,8 +276,13 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
         ) : (
           <ChatRows rows={rows} />
         )}
+        {pending.map((p) => (
+          <div key={p.at} className="flex justify-end pt-2">
+            <div className="chat-bubble max-w-[78%] whitespace-pre-wrap break-words opacity-80">{p.text}</div>
+          </div>
+        ))}
 
-        {mate.status === "working" ? <Working since={lastUserTs} model={lastModel} /> : null}
+        {mate.status === "working" || pending.length ? <Working since={pending.length ? pending[0].at : lastUserTs} model={lastModel} /> : null}
         {mate.trustPrompt ? (
           <TrustCard mate={mate} folder={member?.repoPath} onOpenTerminal={onOpenTerminal} />
         ) : mate.status === "needs-input" ? (

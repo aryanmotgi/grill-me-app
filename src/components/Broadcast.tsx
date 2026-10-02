@@ -4,7 +4,7 @@ import { ptyIdFor, useApp } from "../store";
 import { Icon } from "./Icon";
 import { isTauri } from "../data/sources/git";
 import { classifyBroadcastTargets } from "../lib/broadcast";
-import { deliverBriefWhenReady } from "../lib/ptyReady";
+import { submitToAgent, deliverBriefWhenReady } from "../lib/ptyReady";
 
 type Outcome = "delivered" | "failed" | "skipped";
 interface Result {
@@ -69,9 +69,8 @@ export function Broadcast() {
     }
     setBusy(true);
     setResults(null);
-    const { invoke } = await import("@tauri-apps/api/core");
-    // one trailing newline so the line is submitted at the prompt
-    const data = text.endsWith("\n") ? text : text + "\n";
+    // submitToAgent presses a real Enter after the text
+    const data = text;
     const out: Result[] = selectedSkipped.map((t) => ({
       id: t.id,
       name: t.name,
@@ -90,7 +89,7 @@ export function Broadcast() {
               : { id: t.id, name: t.name, outcome: "failed", detail: "never became ready" },
           );
         } else {
-          await invoke("pty_write", { id: ptyId, data });
+          await submitToAgent(ptyId, data);
           out.push({ id: t.id, name: t.name, outcome: "delivered" });
         }
       } catch (e) {

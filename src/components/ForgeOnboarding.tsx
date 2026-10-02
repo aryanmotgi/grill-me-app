@@ -229,6 +229,7 @@ export function ForgeOnboarding() {
     world.onLite = () => toast("Using fewer effects: this computer is busy right now");
     // the embers start with the logo (after its heavy setup), or at once
     let started = false;
+    let alive = true;
     const startWorld = () => {
       if (started) return;
       started = true;
@@ -260,8 +261,9 @@ export function ForgeOnboarding() {
       if (first && logoRef.current) {
         rootRef.current?.classList.add("arriving");
         // the letters burn into embers that stream to one point; the Spark ignites there
-        const at = await playLogo3D(logoRef.current, LOGO_TEXT, reduce, (pts, to) => world.gatherInto(pts, to.x, to.y), startWorld)
+        const at = await playLogo3D(logoRef.current, LOGO_TEXT, reduce, (pts, to) => { if (alive) world.gatherInto(pts, to.x, to.y); }, () => { if (alive) startWorld(); })
           .catch(() => ({ x: innerWidth / 2, y: innerHeight * .3 }));
+        if (!alive) return; // setup closed meanwhile
         startWorld();
         rootRef.current?.classList.remove("arriving");
         world.ignite(at.x, at.y);
@@ -275,7 +277,7 @@ export function ForgeOnboarding() {
       } else { startWorld(); world.sparkBorn(innerWidth / 2, innerHeight * .2); }
       setReady(true);
     })();
-    return () => { clearInterval(hitTimer); stopBlur(); world.stop(); document.documentElement.classList.remove("forge-on"); };
+    return () => { alive = false; clearInterval(hitTimer); stopBlur(); world.stop(); document.documentElement.classList.remove("forge-on"); };
   }, []);
 
   // the stage's card: wavy glass under the diagrams (so they stay bright),
@@ -707,15 +709,28 @@ function Tools({ f, step }: SceneProps) {
   const [showList, setShowList] = useState(false);
   const [showAll, setShowAll] = useState(false);
   useEffect(() => () => { f.world.clearStars(); }, []);
+  const [scanned, setScanned] = useState(0);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [found, setFound] = useState<number | null>(null);
   const look = async () => {
     setPhase("looking");
-    await f.wait(300);
+    setScanned(0); setFound(null);
     const scouts = f.world.scoutOut();
-    const sources = SCAN_SOURCES.filter((x) => on[x.id]).map((x) => x.id);
-    const [res] = await Promise.all([
-      native() ? invoke<ScanResult>("workflow_scan", { project: projectPath ?? null, sources }).catch((e) => { f.toast(`Scan failed: ${e}`); return null; }) : Promise.resolve(SAMPLE_SCAN),
-      f.wait(1300),
-    ]);
+    const picked = SCAN_SOURCES.filter((x) => on[x.id]);
+    const sources = picked.map((x) => x.id);
+    // the scan runs while each place it checks ticks off, ~6 s at least; the
+    // last one keeps "scanning" until the real scan is done
+    const scan = (native() ? invoke<ScanResult>("workflow_scan", { project: projectPath ?? null, sources }).catch((e) => { f.toast(`Scan failed: ${e}`); return null; }) : Promise.resolve(SAMPLE_SCAN));
+    const per = f.reduce ? 80 : Math.max(650, 5400 / picked.length);
+    for (let i = 0; i < picked.length - 1; i++) { await f.wait(per); setScanned(i + 1); }
+    await f.wait(per);
+    const res = await scan;
+    setScanResult(res);
+    setScanned(picked.length);
+    // count up to what was found
+    const total = toolCount(res);
+    for (let k = 1; k <= 12; k++) { setFound(Math.round((total * k) / 12)); await f.wait(f.reduce ? 0 : 55); }
+    await f.wait(f.reduce ? 0 : 1500);
     setResult(res);
     setPhase("done");
     await f.wait(60); // let the picture area exist before stars arrive
@@ -724,17 +739,59 @@ function Tools({ f, step }: SceneProps) {
     f.world.scoutBack(scouts);
     await f.world.revealStars(f.wait);
   };
+  if (phase === "looking") {
+    const picked = SCAN_SOURCES.filter((x) => on[x.id]);
+    const blips = BLIPS.slice(0, Math.min(BLIPS.length, scanned * 3 + (found ? 6 : 0)));
+    return (
+      <Stage f={f} step={step} instant back={false}
+        title="Scanning your setup"
+        body="Looking at what you build with. Names only, never keys or code, and nothing leaves this Mac.">
+        <div className="forge-scan2">
+          <div className="scope" aria-hidden>
+            <i className="glow" />
+            <svg className="rings" viewBox="0 0 200 200">
+              <g className="spin-slow">
+                <circle cx="100" cy="100" r="97" className="outer" />
+                {Array.from({ length: 72 }, (_, i) => {
+                  const a = (i / 72) * Math.PI * 2, long = i % 6 === 0;
+                  return <line key={i} x1={100 + Math.cos(a) * (long ? 86 : 90)} y1={100 + Math.sin(a) * (long ? 86 : 90)} x2={100 + Math.cos(a) * 95} y2={100 + Math.sin(a) * 95} className={long ? "tick long" : "tick"} />;
+                })}
+              </g>
+              <g className="spin-back"><circle cx="100" cy="100" r="66" className="dash" /></g>
+              <circle cx="100" cy="100" r="40" className="inner" />
+            </svg>
+            <i className="beam" />
+            {blips.map((b, i) => <i key={i} className="blip" style={{ left: `${b[0]}%`, top: `${b[1]}%`, animationDelay: `${(i % 3) * 0.12}s` }} />)}
+            <div className="core">
+              <b>{found ?? "…"}</b>
+              <span>{found === null ? "scanning" : "tools found"}</span>
+            </div>
+          </div>
+          <ul className="steps" aria-live="polite">
+            {picked.map((x, i) => (
+              <li key={x.id} className={i < scanned ? "done" : i === scanned ? "now" : ""}>
+                <span className="mark" aria-hidden>{i < scanned ? "✓" : ""}</span>
+                <span className="name">{x.label}</span>
+                <span className="what">{i === scanned ? <i className="shimmer" /> : scanResult && i < scanned ? scanSays(x.id, scanResult) : ""}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="bar" aria-hidden><i style={{ width: `${Math.round((100 * Math.min(scanned, picked.length)) / Math.max(1, picked.length))}%` }} /></div>
+        </div>
+      </Stage>
+    );
+  }
   if (phase !== "done") {
     return (
       <Stage f={f} step={step}
         title="See your tools"
         body="With your OK, I'll look at which AI tools, plugins and MCP servers you use. Names only, never keys or code. Nothing leaves this Mac."
-        primary={{ label: phase === "looking" ? "Looking…" : "Scan my setup", onClick: () => void look(), disabled: phase === "looking" || !Object.values(on).some(Boolean) }}
+        primary={{ label: "Scan my setup", onClick: () => void look(), disabled: !Object.values(on).some(Boolean) }}
         skip={{ label: "Skip this step", onClick: () => f.go(nextStep(step)) }}>
         <div className="forge-checkgrid">
           {SCAN_SOURCES.map((x) => (
             <label key={x.id} className={`forge-tick ${on[x.id] ? "on" : ""}`}>
-              <input type="checkbox" checked={on[x.id]} onChange={() => setOn({ ...on, [x.id]: !on[x.id] })} disabled={phase === "looking"} />
+              <input type="checkbox" checked={on[x.id]} onChange={() => setOn({ ...on, [x.id]: !on[x.id] })} />
               <span className="box" aria-hidden />
               <span><b>{x.label}</b>{x.defaultOn ? null : <em>optional</em>}</span>
             </label>
@@ -767,6 +824,24 @@ function Tools({ f, step }: SceneProps) {
       {showList && result ? <ul className="forge-read">{result.checked.map((c, i) => <li key={i}>{c.item}</li>)}</ul> : null}
     </Stage>
   );
+}
+
+/** Fixed blip spots on the scanner (percent of its box), revealed as it goes. */
+const BLIPS: [number, number][] = [[72, 28], [24, 34], [63, 74], [35, 70], [82, 55], [18, 55], [50, 14], [44, 86], [80, 78], [28, 18], [88, 38], [12, 72], [58, 40], [40, 58], [66, 60], [30, 44], [74, 16], [20, 84], [86, 64], [52, 92], [10, 40]];
+
+/** What a scan source turned up, in a few words. */
+function scanSays(id: string, r: ScanResult): string {
+  const n = (x: number, one: string, many: string) => `${x} ${x === 1 ? one : many}`;
+  switch (id) {
+    case "agents": return n(new Set([...(r.agents?.bins ?? []), ...(r.agents?.apps ?? [])]).size, "AI tool", "AI tools");
+    case "extensions": return n(toolCount(r), "tool", "tools");
+    case "instructions": { const k = (r.instructions ?? []).filter((i) => i.bytes > 0).length; return k ? n(k, "file", "files") : "none yet"; }
+    case "stack": return [...(r.stack?.frameworks ?? []), ...(r.stack?.languages ?? [])].slice(0, 2).join(", ") || "nothing found";
+    case "git": return r.git?.commits30d !== undefined ? `${r.git.commits30d} commits / month` : "no history";
+    case "packages": return n((r.packages?.brew.length ?? 0) + (r.packages?.brewCasks.length ?? 0) + (r.packages?.npmGlobal.length ?? 0), "package", "packages");
+    case "history": return n(r.history?.length ?? 0, "command", "commands");
+    default: return "";
+  }
 }
 
 // =================================================================== 5. workflow
