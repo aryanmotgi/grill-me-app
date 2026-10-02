@@ -35,6 +35,7 @@ import { fmtClock } from "./lib/format";
 import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type PtyStatus } from "./lib/ptyReady";
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 import type { AppMode } from "./lib/soloVisibility";
+import { uiLayoutOf } from "./lib/uiLayout";
 
 export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "preview";
 
@@ -1045,6 +1046,8 @@ let firedBudgetLevel: BudgetLevel = 0;
   if (!isTauri()) {
     // browser dev: fake data, no feeds
     useApp.setState({ activeProject: "default" });
+    // pin the layout choice up front, same as the native boot below
+    if (useApp.getState().appSettings.uiLayout == null) useApp.getState().setAppSetting("uiLayout", uiLayoutOf(useApp.getState().appSettings));
     // …including a live team room with chat, so Team Chat is browsable. The
     // sample room is already set up, so picking "team" skips the setup flow.
     void import("./data/fakeTeamChat").then((f) => {
@@ -1057,6 +1060,7 @@ let firedBudgetLevel: BudgetLevel = 0;
   const { invoke } = await import("@tauri-apps/api/core");
   const raw = await invoke<string>("shared_read", { name: "settings.json" }).catch(() => "");
   let appSettings: Record<string, unknown> = {};
+  let settingsCorrupt = false;
   if (raw?.trim()) {
     // a corrupt settings.json must degrade to defaults, not silently kill
     // this boot IIFE (which would leave every feed dead with no error)
@@ -1071,6 +1075,7 @@ let firedBudgetLevel: BudgetLevel = 0;
     } catch (e) {
       console.error("settings.json unreadable — using defaults", e);
       appSettings = {};
+      settingsCorrupt = true;
     }
   }
   const vs = appSettings.viewState as { activeId?: string; railTab?: RailTab; splitId?: string | null } | undefined;
@@ -1082,6 +1087,10 @@ let firedBudgetLevel: BudgetLevel = 0;
     });
   }
   restoreReady = true;
+  // first launch with the layout toggle: pin the choice now, so a new user who
+  // then picks a mode/project doesn't get flipped to classic mid-session
+  // (never on a corrupt file: writing would clobber what's left of it)
+  if (appSettings.uiLayout == null && !settingsCorrupt) useApp.getState().setAppSetting("uiLayout", uiLayoutOf(appSettings));
   // team mode: install the room poller. It no-ops until TeamStart sets
   // roomSelf (create/join), so this is only live when a room actually exists.
   if (appSettings.appMode === "team") startRoomFeed(useApp);

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
+import { uiLayoutOf } from "../lib/uiLayout";
 import { useApp, ptyIdFor } from "../store";
 import { isHelpPending } from "../lib/help";
 import { FEATURE_GROUPS } from "../data/features";
@@ -65,6 +66,7 @@ export function QuickSwitcher() {
   const coreActions: Action[] = useMemo(() => [
     { label: "ship active session", hint: "runs /ship — tests before push", run: () => shipSession(activeId) },
     { label: "switch project", hint: "open the project picker", run: () => setPickerOpen(true) },
+    { label: "switch layout", hint: "simple ⇄ classic", run: () => { const st = useApp.getState(); st.setAppSetting("uiLayout", uiLayoutOf(st.appSettings) === "simple" ? "classic" : "simple"); } },
     { label: "open settings", hint: "team, terminal, safety, sounds", run: () => setSettingsOpen(true) },
     { label: "toggle theme", hint: "ember / paperwhite", run: () => setTheme(themeName === "ember" ? "paperwhite" : "ember") },
     { label: "toggle dense mode", hint: "compact layout", run: toggleDense },

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { DoctorTab } from "./DoctorTab";
 import { Icon } from "./Icon";
 import { useModalA11y } from "../hooks/useModalA11y";
+import { uiLayoutOf } from "../lib/uiLayout";
 import { useApp } from "../store";
 import { themes, ember } from "../theme/themes";
 import { TERM_FONTS, TERM_PALETTES, hexWithOpacity } from "../theme/termPalettes";
@@ -34,7 +35,7 @@ const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
 const SEARCH_INDEX: Record<Tab, string[]> = {
   setup: ["setup", "doctor", "install", "missing", "node", "claude", "git", "gh", "github", "tailscale", "health"],
   team: ["team", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
-  appearance: ["theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "backup", "restore", "export", "import"],
+  appearance: ["layout", "simple", "classic", "theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "backup", "restore", "export", "import"],
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
   notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat", "budget", "token", "rate", "limit", "cap"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
@@ -302,6 +303,16 @@ export function SettingsModal() {
 
               {tab === "appearance" ? (
                 <>
+                  <Row label="Layout" hint="Simple: sessions · chat · changes/plan/team. Classic: the original nav rail and panels. Switch back any time.">
+                    <div className="flex gap-1">
+                      {(["simple", "classic"] as const).map((l) => (
+                        <button key={l} className={`btn ${uiLayoutOf(appSettings) === l ? "active" : ""}`}
+                          aria-pressed={uiLayoutOf(appSettings) === l} onClick={() => setAppSetting("uiLayout", l)}>
+                          {l === "simple" ? "Simple" : "Classic"}
+                        </button>
+                      ))}
+                    </div>
+                  </Row>
                   <Row label="App theme" hint="Every color in the app follows this">
                     <select className="btn" value={themeName}
                       onChange={(e) => { setTheme(e.target.value); setAppSetting("theme", e.target.value); }}>
