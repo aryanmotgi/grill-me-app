@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
+import { EvolutionsView } from "./EvolutionsView";
 import { useDNA } from "../lib/dnaStore";
 import { agentsOf, blockFor, changeOf, currentBlock, targetsFor, withBlock, type Change, type Target } from "../lib/dnaSync";
 import {
@@ -32,7 +33,7 @@ const ago = (ms: number) => {
 export function DNAPage() {
   const { dna, load, update, replace, learnNow, forget, learning, lastLearned } = useDNA();
   const toast = useApp((s) => s.toast);
-  const [strand, setStrand] = useState<Strand>("flow");
+  const [strand, setStrand] = useState<Strand | "evolutions">("flow");
   const [pastOpen, setPastOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
@@ -100,8 +101,13 @@ export function DNAPage() {
               {s.name} <span className="num text-faint">{counts[s.id] || ""}</span>
             </button>
           ))}
+          <button role="tab" aria-selected={strand === "evolutions"}
+            className={`px-3 h-8 rounded-full text-[12.5px] border flex items-center gap-1.5 ${strand === "evolutions" ? "border-accent/70 text-ink bg-accent/10" : "border-accent/30 text-accent hover:text-ink"}`}
+            onClick={() => setStrand("evolutions")}>
+            <Icon name="spark" size={11} /> Evolutions
+          </button>
         </div>
-        <StrandList dna={dna} strand={strand} update={update} />
+        {strand === "evolutions" ? <EvolutionsView dna={dna} /> : <StrandList dna={dna} strand={strand} update={update} />}
 
         <div className="flex items-center gap-2 flex-wrap border-t border-line pt-4 text-[12px]">
           <button className="composer-btn" onClick={() => void exportDNA()}><Icon name="download" size={11} /> Export</button>

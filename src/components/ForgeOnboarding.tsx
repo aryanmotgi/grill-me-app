@@ -16,10 +16,11 @@ import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 import { interviewBrainOf, pickBrain, readyAis, type AiStatus } from "../lib/aiConnect";
 import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING_OPTIONS, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, localSummary, mergeReply, openingFor, painsFromText, styleFromText, teamFromText, type PromptOpts, type Turn } from "../lib/interview";
+import { CATEGORY_NAMES, evolve, type EvolutionPick, type Evolutions } from "../lib/evolutions";
 import { useDNA } from "../lib/dnaStore";
 import { fromProfile, fromScan, logEvolutions } from "../lib/dna";
 import { TIPS, tipById, type Tip } from "../lib/tips";
-import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, buildingFromScan, emptyProfile, levelFromScan, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
+import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, buildingFromScan, emptyProfile, levelFromScan, profileOf, toolsYouHave, workflowStages, type WorkflowProfile } from "../lib/profile";
 
 // ---------------------------------------------------------------------------
 // First run, floating over the user's own apps (no background). Everything
@@ -994,12 +995,15 @@ interface NodeView { id: string; name: string; lit: boolean; tools: string[] }
 function Forged({ f, step, scan, catalog, profile, phase, setPhase }: SceneProps & { scan: ScanResult | null; catalog: Catalog; profile: WorkflowProfile; phase: string; setPhase: (p: "interview" | "readback" | "path" | "upgrades" | "card") => void }) {
   const have = useMemo(() => toolsYouHave(catalog, scan), [catalog, scan]);
   const stages = useMemo(() => workflowStages(have, scan, profile), [have, scan, profile]);
-  const upgrades = useMemo(() => suggestUpgrades(profile, catalog, have, scan), [profile, catalog, have, scan]);
+  const dna = useDNA((d) => d.dna);
+  const ev = useMemo(() => evolve(profile, catalog, have, scan, dna), [profile, catalog, have, scan, dna === null]);
+  const upgrades = ev.top;
+  const [exploring, setExploring] = useState(false);
   // your toolkit, and what was suggested, go into your Coding DNA (as Evolutions)
   useEffect(() => { useDNA.getState().update((d) => logEvolutions(fromScan(d, scan, have), upgrades)); }, [upgrades]);
   const [nodes, setNodes] = useState<NodeView[]>(() => stages.map((st) => ({ id: st.id, name: st.name, lit: st.covered, tools: st.tools })));
-  const [placed, setPlaced] = useState<(Upgrade & { at: number })[]>([]);
-  const [focus, setFocus] = useState<(Upgrade & { at: number }) | null>(null);
+  const [placed, setPlaced] = useState<(EvolutionPick & { at: number })[]>([]);
+  const [focus, setFocus] = useState<(EvolutionPick & { at: number }) | null>(null);
   const [target, setTarget] = useState(-1);
 
   useEffect(() => {
@@ -1009,7 +1013,7 @@ function Forged({ f, step, scan, catalog, profile, phase, setPhase }: SceneProps
   useEffect(() => { f.world.pulseStage(target); }, [target]);
   useEffect(() => () => { f.world.clearStages(); }, []);
 
-  const light = (u: Upgrade) => {
+  const light = (u: EvolutionPick) => {
     const at = STAGES.findIndex((s) => s.id === u.stage);
     if (placed.some((p) => p.id === u.id) || at < 0) return;
     setNodes(nodes.map((n, i) => (i === at ? { ...n, lit: true, tools: [u.name, ...n.tools] } : n)));
@@ -1024,20 +1028,22 @@ function Forged({ f, step, scan, catalog, profile, phase, setPhase }: SceneProps
       <Stage f={f} step={step} viewHeight={230}
         title="Your workflow"
         body={dark.length ? `Here's how your tools cover each stage, from planning to shipping. ${dark.join(", ")} ${dark.length === 1 ? "has" : "have"} nothing helping yet.` : "Here's how your tools cover each stage, from planning to shipping. Every stage has help."}
-        primary={{ label: upgrades.length ? "See suggestions" : "Continue", onClick: () => setPhase(upgrades.length ? "upgrades" : "card") }} />
+        primary={{ label: upgrades.length ? "See your Evolutions" : "Continue", onClick: () => setPhase(upgrades.length ? "upgrades" : "card") }} />
     );
   }
   if (phase === "upgrades") {
     const left = upgrades.filter((u) => !placed.some((p) => p.id === u.id));
     return (
-      <Stage f={f} step={step} viewHeight={200}
-        title="Fill the gaps"
-        body="Picked for how you work. Drag one onto its stage, or press Add. Nothing installs by itself: you copy the command when you're ready."
-        primary={{ label: "Continue", onClick: () => setPhase("card") }}
-        skip={!placed.length ? { label: "Maybe later", onClick: () => setPhase("card") } : undefined}>
-        {focus ? (
+      <Stage f={f} step={step} viewHeight={exploring ? 0 : 200}
+        title={exploring ? "Explore more Evolutions" : "Your first Evolutions"}
+        body={exploring ? `Everything else that fits how you work, by kind. ${ev.explore.length} in all.` : "Three upgrades picked for how you work, each a different kind. Drag one onto its stage, or press Add. Nothing installs by itself: you copy the command when you're ready."}
+        primary={{ label: exploring ? "Back to your top 3" : "Continue", onClick: () => (exploring ? setExploring(false) : setPhase("card")) }}
+        secondary={!exploring && ev.explore.length ? { label: "Explore more", onClick: () => { setFocus(null); setExploring(true); } } : undefined}
+        skip={!placed.length && !exploring ? { label: "Maybe later", onClick: () => setPhase("card") } : undefined}>
+        {exploring ? <ForgeExplore ev={ev} /> : focus ? (
           <div className="forge-placed">
             <div className="head"><span className="gem" />{focus.name} added to {STAGES[focus.at].name}</div>
+            <div className="change"><span className="b">Before</span>{focus.change.before}<span className="a">After</span>{focus.change.after}</div>
             <p>{focus.what}</p>
             {focus.command ? <code>{focus.command}</code> : null}
             <div className="acts">
@@ -1061,7 +1067,7 @@ function Forged({ f, step, scan, catalog, profile, phase, setPhase }: SceneProps
   return <ShareCard f={f} step={step} nodes={nodes} scan={scan} profile={profile} />;
 }
 
-function UpgradeCard({ u, index, reduce, stagePos, onTarget, onPlace, onMiss }: { u: Upgrade; index: number; reduce: boolean; stagePos: () => { x: number; y: number; at: number }; onTarget: (i: number) => void; onPlace: () => void; onMiss: (stage: string) => void }) {
+function UpgradeCard({ u, index, reduce, stagePos, onTarget, onPlace, onMiss }: { u: EvolutionPick; index: number; reduce: boolean; stagePos: () => { x: number; y: number; at: number }; onTarget: (i: number) => void; onPlace: () => void; onMiss: (stage: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef({ sx: 0, sy: 0, on: false });
   const stage = STAGES.find((s) => s.id === u.stage)?.name ?? "";
@@ -1089,9 +1095,33 @@ function UpgradeCard({ u, index, reduce, stagePos, onTarget, onPlace, onMiss }: 
         if (near(e.clientX, e.clientY)) onPlace();
         else { e.currentTarget.style.translate = "0 0"; if (Math.hypot(e.clientX - drag.current.sx, e.clientY - drag.current.sy) > 12) onMiss(stage); }
       }}>
-      <div className="top"><span className="gem" /><b>{u.name}</b><em>{u.kind === "tip" ? "tip" : u.kind}</em></div>
+      <div className="top"><span className="gem" /><b>{u.name}</b><em>{u.category ? CATEGORY_NAMES[u.category] : u.kind === "tip" ? "tip" : u.kind}</em></div>
       <div className="why">{u.why}</div>
-      <div className="foot"><span>For <b>{stage}</b></span><button type="button" onClick={onPlace}>Add</button></div>
+      <div className="fits">{u.fits}</div>
+      <div className="foot"><span>Changes <b>{stage}</b></span><button type="button" onClick={onPlace}>Add</button></div>
+    </div>
+  );
+}
+
+/** Explore more, inside setup: by kind, with why and setup time. */
+function ForgeExplore({ ev }: { ev: Evolutions }) {
+  const cats = [...new Set(ev.explore.map((x) => x.category ?? "other"))];
+  const [cat, setCat] = useState(cats[0]);
+  const list = ev.explore.filter((x) => (x.category ?? "other") === cat);
+  return (
+    <div className="forge-explore">
+      <div className="forge-tags">{cats.map((c) => <button type="button" key={c} className={`forge-tag ${c === cat ? "on" : ""}`} onClick={() => setCat(c)}>{CATEGORY_NAMES[c as keyof typeof CATEGORY_NAMES] ?? c}</button>)}</div>
+      {ev.bundles.length ? <div className="forge-bundles">{ev.bundles.map((b) => <div key={b.id} className="bundle"><b>{b.name}</b><span>{b.members.map((m) => m.name + (m.have ? " ✓" : "")).join(" + ")}</span><small>{b.why}</small></div>)}</div> : null}
+      <ul className="forge-explore-list">
+        {list.slice(0, 12).map((x) => (
+          <li key={x.id}>
+            <div><b>{x.name}</b><em>{x.fits}</em></div>
+            <p>{x.why}</p>
+            <small>{x.change.stageName}: {x.change.after}</small>
+            {x.command ? <button type="button" className="forge-link" onClick={() => void navigator.clipboard.writeText(x.command!)}>Copy command</button> : null}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
