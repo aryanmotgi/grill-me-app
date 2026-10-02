@@ -64,14 +64,12 @@ pub fn enter(win: &WebviewWindow) {
         let mut through: Option<bool> = None;
         while OVERLAY.load(Ordering::SeqCst) {
             let inside = (|| {
-                let cur = w.cursor_position().ok()?;
-                let pos = w.inner_position().ok()?;
-                let scale = w.scale_factor().ok()?;
-                let (x, y) = ((cur.x - pos.x as f64) / scale, (cur.y - pos.y as f64) / scale);
+                let (x, y) = cursor_in_window(&w)?;
                 let rects = HIT.lock().ok()?;
                 Some(hits(&rects, x, y))
             })()
             .unwrap_or(true);
+            hit_log(&w, inside);
             if through != Some(!inside) {
                 let _ = w.set_ignore_cursor_events(!inside);
                 through = Some(!inside);
@@ -80,6 +78,64 @@ pub fn enter(win: &WebviewWindow) {
         }
         let _ = w.set_ignore_cursor_events(false);
     });
+}
+
+/// The cursor in the window's own CSS pixels (= macOS points from its
+/// top-left). Both the cursor and the window are read in global points: the
+/// generic cursor position is scaled by the *main* display, so on a Retina
+/// laptop plus a 1x external screen it lands ~2x off and every click falls
+/// through.
+fn cursor_in_window(w: &WebviewWindow) -> Option<(f64, f64)> {
+    let scale = w.scale_factor().ok()?;
+    let pos = w.inner_position().ok()?.to_logical::<f64>(scale);
+    let (cx, cy) = cursor_points().or_else(|| {
+        let c = w.cursor_position().ok()?;
+        Some((c.x / scale, c.y / scale))
+    })?;
+    Some((cx - pos.x, cy - pos.y))
+}
+
+/// The cursor in global points, origin top-left of the main display.
+#[cfg(target_os = "macos")]
+fn cursor_points() -> Option<(f64, f64)> {
+    #[repr(C)]
+    struct CGPoint { x: f64, y: f64 }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+        fn CGEventGetLocation(event: *mut std::ffi::c_void) -> CGPoint;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(cf: *const std::ffi::c_void);
+    }
+    // a null-source event just carries the current cursor location
+    unsafe {
+        let ev = CGEventCreate(std::ptr::null());
+        if ev.is_null() { return None; }
+        let p = CGEventGetLocation(ev);
+        CFRelease(ev);
+        Some((p.x, p.y))
+    }
+}
+#[cfg(not(target_os = "macos"))]
+fn cursor_points() -> Option<(f64, f64)> { None }
+
+/// GRILLME_HITLOG=1: once a second, where the cursor is and what the page
+/// says is clickable (to debug clicks falling through).
+fn hit_log(w: &WebviewWindow, inside: bool) {
+    use std::sync::atomic::AtomicU64;
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    if std::env::var("GRILLME_HITLOG").is_err() { return; }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if LAST.swap(now, Ordering::SeqCst) == now { return; }
+    let rel = cursor_in_window(w);
+    let pts = cursor_points();
+    let rects = HIT.lock().map(|h| h.clone()).unwrap_or_default();
+    let line = format!("{now} cursor_pts={:?} in_window={:?} inside={inside} rects={} first={:?}\n",
+        pts.map(|(x, y)| (x.round(), y.round())), rel.map(|(x, y)| (x.round(), y.round())), rects.len(), rects.first());
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/grillme-hit.log") { let _ = f.write_all(line.as_bytes()); }
 }
 
 /// "Press Esc anytime to leave" must hold even when another app has the

@@ -585,8 +585,7 @@ pub fn workflow_scan(project: Option<String>, sources: Vec<String>) -> Result<Va
     }
     out.insert("checked".into(), Value::Array(std::mem::take(&mut s.checked)));
     let v = Value::Object(out);
-    let dir = s.home.join(".grillme");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = crate::grillme_root();
     let tmp = dir.join("scan.json.tmp");
     std::fs::write(&tmp, serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, dir.join("scan.json")).map_err(|e| e.to_string())?;
@@ -596,14 +595,14 @@ pub fn workflow_scan(project: Option<String>, sources: Vec<String>) -> Result<Va
 /// The last saved scan, if any (the workflow step reads it after a reload).
 #[tauri::command]
 pub fn workflow_scan_read() -> Option<Value> {
-    let text = std::fs::read_to_string(home().join(".grillme/scan.json")).ok()?;
+    let text = std::fs::read_to_string(crate::grillme_root().join("scan.json")).ok()?;
     serde_json::from_str(&text).ok()
 }
 
 /// Forget the scan (the "Delete" button next to "What we looked at").
 #[tauri::command]
 pub fn workflow_scan_delete() -> Result<(), String> {
-    match std::fs::remove_file(home().join(".grillme/scan.json")) {
+    match std::fs::remove_file(crate::grillme_root().join("scan.json")) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
         _ => Ok(()),
     }
