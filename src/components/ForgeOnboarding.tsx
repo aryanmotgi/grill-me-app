@@ -15,8 +15,8 @@ import { builtinCatalog, loadCatalog } from "../lib/catalogLoad";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 import { interviewBrainOf, pickBrain, readyAis, type AiStatus } from "../lib/aiConnect";
-import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING, OPENING_OPTIONS, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, mergeReply, type Turn } from "../lib/interview";
-import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, emptyProfile, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
+import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING_OPTIONS, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, localSummary, mergeReply, openingFor, painsFromText, styleFromText, teamFromText, type Turn } from "../lib/interview";
+import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, buildingFromScan, emptyProfile, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
 
 // ---------------------------------------------------------------------------
 // First run, floating over the user's own apps (no background). Everything
@@ -63,13 +63,15 @@ async function openExternal(url: string) {
 interface Action { label: string; onClick: () => void; disabled?: boolean }
 
 /** The one layout every step uses. */
-function Stage({ f, step, title, body, children, primary, secondary, skip, back = true, viewHeight = 0, note }: {
+function Stage({ f, step, title, body, children, primary, secondary, skip, back = true, viewHeight = 0, note, instant = false }: {
   f: Forge; step: FirstRunStep; title: string; body: string; children?: React.ReactNode;
   primary?: Action; secondary?: Action; skip?: Action; back?: boolean; viewHeight?: number; note?: React.ReactNode;
+  /** show the body at once (a chat reply shouldn't type out after a wait) */
+  instant?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
-  const typed = useTyped(f, body);
+  const typed = useTyped(f, body, instant);
   const n = stepNumber(step);
 
   // the Spark sits just above the stage; diagrams live in the view area
@@ -138,10 +140,10 @@ function Stage({ f, step, title, body, children, primary, secondary, skip, back 
 }
 
 /** Types `text` out while the Spark pulses; instant with Reduce Motion. */
-function useTyped(f: Forge, text: string): { text: string; done: boolean } {
-  const [n, setN] = useState(f.reduce ? text.length : 0);
+function useTyped(f: Forge, text: string, instant = false): { text: string; done: boolean } {
+  const [n, setN] = useState(f.reduce || instant ? text.length : 0);
   useEffect(() => {
-    if (f.reduce) { setN(text.length); return; }
+    if (f.reduce || instant) { setN(text.length); return; }
     let live = true;
     setN(0);
     f.world.spark.speaking = true;
@@ -677,10 +679,10 @@ function Tools({ f, step }: SceneProps) {
 // =================================================================== 5. workflow
 
 interface Q { key: "team" | "style" | "pains"; text: string; options: string[]; multi?: boolean }
-const QUICK: Q[] = [
-  { key: "team", text: OPENING, options: OPENING_OPTIONS },
+const quickQuestions = (scan: ScanResult | null): Q[] => [
+  { key: "team", text: openingFor(scan), options: OPENING_OPTIONS },
   { key: "style", text: "How do you work with AI when you code?", options: STYLE.map((s) => s.label) },
-  { key: "pains", text: `What slows you down most? Choose up to ${MAX_PAINS}.`, options: PAINS.map((p) => p.label), multi: true },
+  { key: "pains", text: `What slows you down most? Choose up to ${MAX_PAINS}, or say it in your own words.`, options: PAINS.map((p) => p.label), multi: true },
 ];
 const idOf = <T extends string>(list: { id: T; label: string }[], label: string) => list.find((x) => x.label === label)?.id;
 
@@ -691,33 +693,48 @@ function Workflow({ f, step }: SceneProps) {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [catalog, setCatalog] = useState<Catalog>(builtinCatalog);
   const [loaded, setLoaded] = useState(false);
-  const [phase, setPhase] = useState<"interview" | "path" | "upgrades" | "card">("interview");
+  const [phase, setPhase] = useState<"interview" | "readback" | "path" | "upgrades" | "card">("interview");
   const [profile, setProfile] = useState<WorkflowProfile | null>(null);
   useEffect(() => {
     void (async () => {
       const [s, c] = await Promise.all([loadScan(), loadCatalog().catch(() => builtinCatalog())]);
       setScan(s); setCatalog(c);
       const p = profileOf(savedProfile);
-      if (p && p.updated) { setProfile(p); setPhase("path"); } else setProfile(emptyProfile(s));
+      if (p && p.updated) { setProfile(p); setPhase("path"); } else setProfile({ ...emptyProfile(s), building: buildingFromScan(s) });
       setLoaded(true);
     })();
   }, []);
   if (!loaded || !profile) return null;
-  const done = (p: WorkflowProfile) => { const saved = { ...p, updated: Date.now() }; setProfile(saved); setAppSetting("workflowProfile", saved); setPhase("path"); };
+  const save = (p: WorkflowProfile) => { const saved = { ...p, updated: Date.now() }; setProfile(saved); setAppSetting("workflowProfile", saved); return saved; };
+  // the interview ends on a read-back they can correct (skipping it goes straight on)
+  const done = (p: WorkflowProfile, skipped = false) => {
+    save({ ...p, summary: p.summary || localSummary(p) });
+    setPhase(skipped ? "path" : "readback");
+  };
   if (phase === "interview") return <Interview f={f} step={step} brain={brain} scan={scan} start={profile} onDone={done} />;
+  if (phase === "readback") return <Readback f={f} step={step} brain={brain} scan={scan} profile={profile} onDone={(p) => { save(p); setPhase("path"); }} />;
   return <Forged f={f} step={step} scan={scan} catalog={catalog} profile={profile} phase={phase} setPhase={setPhase} />;
 }
 
-function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain: string; scan: ScanResult | null; start: WorkflowProfile; onDone: (p: WorkflowProfile) => void }) {
+/** One AI turn. Errors that start "UPDATE:" mean the CLI is too old. */
+async function aiTurn(brain: string, turns: Turn[], profile: WorkflowProfile, scan: ScanResult | null, correction?: string) {
+  const raw = await invoke<unknown>("interview_turn", { brain, system: SYSTEM_PROMPT, prompt: buildPrompt(turns, profile, scan, correction), schema: JSON.stringify(REPLY_SCHEMA) });
+  return mergeReply(profile, raw);
+}
+const errorText = (e: unknown) => `${e}`.replace(/^UPDATE: /, "");
+const isTooOld = (e: unknown) => `${e}`.startsWith("UPDATE: ");
+
+function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain: string; scan: ScanResult | null; start: WorkflowProfile; onDone: (p: WorkflowProfile, skipped?: boolean) => void }) {
   const ai = brain !== "form" && native();
   const name = BRAIN_NAMES[brain] ?? "your AI";
+  const QUICK = useMemo(() => quickQuestions(scan), [scan]);
   const [q, setQ] = useState<Q>(QUICK[0]);
   const [count, setCount] = useState(1);
   const [picks, setPicks] = useState<string[]>([]);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const state = useRef({ turns: [{ who: "ai", text: OPENING }] as Turn[], profile: { ...start }, i: 0, ai });
+  const [error, setError] = useState<{ text: string; old: boolean } | null>(null);
+  const state = useRef({ turns: [{ who: "ai", text: QUICK[0].text }] as Turn[], profile: { ...start }, i: 0, ai });
   const optsRef = useRef<HTMLDivElement>(null);
   const lastAnswer = useRef("");
   const total = state.current.ai ? MAX_ANSWERS : QUICK.length;
@@ -729,10 +746,17 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
     if (busy) return;
     optsRef.current?.querySelectorAll(".forge-opt.on").forEach((el) => f.absorb(el));
     if (!s.ai) {
+      // no AI: taps map straight to fields, and typed words count too
       const p = { ...s.profile };
-      if (q.key === "team") p.team = idOf(TEAM, text) ?? p.team;
-      if (q.key === "style") p.style = idOf(STYLE, text) ?? p.style;
-      if (q.key === "pains") p.pains = chosen.map((c) => idOf(PAINS, c)).filter((x): x is NonNullable<typeof x> => !!x).slice(0, MAX_PAINS);
+      const own = chosen.length === 0 || chosen.every((c) => !q.options.includes(c));
+      if (q.key === "team") p.team = idOf(TEAM, text) ?? teamFromText(text) ?? p.team;
+      if (q.key === "style") p.style = idOf(STYLE, text) ?? styleFromText(text) ?? p.style;
+      if (q.key === "pains") {
+        const tapped = chosen.map((c) => idOf(PAINS, c)).filter((x): x is NonNullable<typeof x> => !!x);
+        p.pains = [...new Set([...tapped, ...(own ? painsFromText(text) : [])])].slice(0, MAX_PAINS);
+      }
+      // their own words about what slows them down are worth quoting back
+      if (own && q.key === "pains" && text.trim()) p.notes = [...(p.notes ?? []), { text: text.trim().slice(0, 160), about: painsFromText(text)[0] }].slice(-8);
       s.profile = p;
       await f.wait(350);
       s.i++;
@@ -741,10 +765,9 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
     }
     lastAnswer.current = text;
     s.turns = [...s.turns, { who: "you", text: text.slice(0, MAX_ANSWER_CHARS) }];
-    setBusy(true); setError("");
+    setBusy(true); setError(null);
     try {
-      const raw = await invoke<unknown>("interview_turn", { brain, system: SYSTEM_PROMPT, prompt: buildPrompt(s.turns, s.profile, scan), schema: JSON.stringify(REPLY_SCHEMA) });
-      const r = mergeReply(s.profile, raw);
+      const r = await aiTurn(brain, s.turns, s.profile, scan);
       s.profile = r.profile;
       s.turns = [...s.turns, { who: "ai", text: r.say }];
       setBusy(false);
@@ -753,36 +776,44 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
     } catch (e) {
       setBusy(false);
       s.turns = s.turns.slice(0, -1);
-      setError(`${name} couldn't answer: ${e}`);
+      setError({ text: `${name} couldn't answer: ${errorText(e)}`, old: isTooOld(e) });
     }
   };
-  const quick = () => { state.current.ai = false; state.current.i = 0; setError(""); setCount(0); ask(QUICK[0]); };
+  const quick = () => { state.current.ai = false; state.current.i = 0; setError(null); setCount(0); ask(QUICK[0]); };
   const multi = !!q.multi && !state.current.ai;
   return (
-    <Stage f={f} step={step}
+    <Stage f={f} step={step} instant={state.current.ai && count > 1}
       title={`A few quick questions · ${Math.min(count, total)} of ${state.current.ai ? `up to ${total}` : total}`}
-      body={busy ? `${name} is thinking…` : error || q.text}
-      primary={error ? { label: "Try again", onClick: () => { setError(""); void answer(lastAnswer.current); } }
-        : multi ? { label: "Done", onClick: () => void answer(picks.join(", "), picks), disabled: picks.length === 0 }
+      body={busy ? `${name} is thinking…` : error?.text || q.text}
+      primary={error ? (error.old ? { label: "Use quick questions", onClick: quick } : { label: "Try again", onClick: () => { setError(null); void answer(lastAnswer.current); } })
+        : multi ? { label: "Done", onClick: () => void answer([...picks, typed.trim()].filter(Boolean).join(", "), picks), disabled: picks.length === 0 && !typed.trim() }
         : typed.trim() ? { label: "Send", onClick: () => void answer(typed.trim()) } : undefined}
-      skip={error ? { label: "Use quick questions", onClick: quick } : { label: "Skip the questions", onClick: () => onDone(state.current.profile) }}>
-      {!busy && !error ? (
+      skip={error && !error.old ? { label: "Use quick questions", onClick: quick } : !error ? { label: "Skip the questions", onClick: () => onDone(state.current.profile, true) } : undefined}>
+      {busy ? (
+        <div className="forge-said"><span className="who">You</span><p>{lastAnswer.current}</p><span className="dots" aria-label="Thinking"><i /><i /><i /></span></div>
+      ) : !error ? (
         <>
-          <div ref={optsRef} className="forge-opts">
-            {q.options.map((o) => {
-              const i = picks.indexOf(o);
-              return (
-                <button type="button" key={o} className={`forge-opt ${i >= 0 ? "on" : ""}`} onClick={(e) => {
-                  if (!multi) { e.currentTarget.classList.add("on"); void answer(o); return; }
-                  setPicks(i >= 0 ? picks.filter((x) => x !== o) : picks.length < MAX_PAINS ? [...picks, o] : picks);
-                }}>{multi && i >= 0 ? <span className="n">{i + 1}</span> : null}{o}</button>
-              );
-            })}
-          </div>
+          {q.options.length ? (
+            <div ref={optsRef} className="forge-opts">
+              {q.options.map((o) => {
+                const i = picks.indexOf(o);
+                return (
+                  <button type="button" key={o} className={`forge-opt ${i >= 0 ? "on" : ""}`} onClick={(e) => {
+                    if (!multi) { e.currentTarget.classList.add("on"); void answer(o, [o]); return; }
+                    setPicks(i >= 0 ? picks.filter((x) => x !== o) : picks.length < MAX_PAINS ? [...picks, o] : picks);
+                  }}>{multi && i >= 0 ? <span className="n">{i + 1}</span> : null}{o}</button>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="forge-type">
-            <input value={typed} placeholder="Or answer in your own words…" aria-label="Your answer" maxLength={MAX_ANSWER_CHARS}
+            <input value={typed} placeholder={q.options.length ? "Or answer in your own words…" : "Type your answer…"} aria-label="Your answer" maxLength={MAX_ANSWER_CHARS} autoFocus={!q.options.length}
               onChange={(e) => setTyped(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && typed.trim()) { f.absorb(e.currentTarget); void answer(typed.trim(), multi ? [typed.trim()] : []); } }} />
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || !typed.trim()) return;
+                f.absorb(e.currentTarget);
+                void answer(multi ? [...picks, typed.trim()].join(", ") : typed.trim(), multi ? [...picks, typed.trim()] : []);
+              }} />
           </div>
         </>
       ) : null}
@@ -790,9 +821,60 @@ function Interview({ f, step, brain, scan, start, onDone }: SceneProps & { brain
   );
 }
 
+/** "Here's how you work": the read-back, which they can correct. */
+function Readback({ f, step, brain, scan, profile, onDone }: SceneProps & { brain: string; scan: ScanResult | null; profile: WorkflowProfile; onDone: (p: WorkflowProfile) => void }) {
+  const ai = brain !== "form" && native();
+  const name = BRAIN_NAMES[brain] ?? "your AI";
+  const [p, setP] = useState(profile);
+  const [fixing, setFixing] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const fix = async () => {
+    const text = typed.trim();
+    if (!text) return;
+    if (!ai) { setP({ ...p, summary: text }); setFixing(false); setTyped(""); return; }
+    setBusy(true); setError("");
+    try {
+      const r = await aiTurn(brain, [{ who: "ai", text: p.summary ?? "" }, { who: "you", text }], p, scan, text);
+      setP({ ...r.profile, summary: r.summary || text });
+      setFixing(false); setTyped("");
+    } catch (e) {
+      // keep their words: it's their summary
+      setP({ ...p, summary: text }); setFixing(false); setTyped("");
+      setError(`${name} couldn't rewrite it, so I kept your words.`);
+    } finally { setBusy(false); }
+  };
+  const pains = p.pains.map((x) => PAINS.find((c) => c.id === x)?.label ?? x);
+  return (
+    <Stage f={f} step={step}
+      title="Here's how you work"
+      body={busy ? `${name} is updating it…` : p.summary ?? localSummary(p)}
+      primary={fixing ? { label: busy ? "Updating…" : "Update", onClick: () => void fix(), disabled: busy || !typed.trim() } : { label: "That's right", onClick: () => onDone(p) }}
+      secondary={fixing ? { label: "Cancel", onClick: () => setFixing(false), disabled: busy } : { label: "Fix something", onClick: () => setFixing(true) }}>
+      {error ? <div className="forge-dim">{error}</div> : null}
+      {fixing ? (
+        <div className="forge-type">
+          <input autoFocus value={typed} placeholder="What's off? e.g. “It's mostly migrations, not tests”" aria-label="Your correction" maxLength={MAX_ANSWER_CHARS}
+            onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void fix(); }} />
+        </div>
+      ) : (
+        <div className="forge-heard">
+          {pains.length ? <div><span className="forge-label">Slows you down</span><div className="forge-tags">{pains.map((x) => <span key={x} className="forge-tag">{x}</span>)}</div></div> : null}
+          {(p.notes ?? []).length ? (
+            <div><span className="forge-label">What I heard</span>
+              <ul className="forge-quotes">{(p.notes ?? []).slice(0, 4).map((n) => <li key={n.text}>“{n.text}”</li>)}</ul>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </Stage>
+  );
+}
+
 interface NodeView { id: string; name: string; lit: boolean; tools: string[] }
 
-function Forged({ f, step, scan, catalog, profile, phase, setPhase }: SceneProps & { scan: ScanResult | null; catalog: Catalog; profile: WorkflowProfile; phase: string; setPhase: (p: "path" | "upgrades" | "card") => void }) {
+function Forged({ f, step, scan, catalog, profile, phase, setPhase }: SceneProps & { scan: ScanResult | null; catalog: Catalog; profile: WorkflowProfile; phase: string; setPhase: (p: "interview" | "readback" | "path" | "upgrades" | "card") => void }) {
   const have = useMemo(() => toolsYouHave(catalog, scan), [catalog, scan]);
   const stages = useMemo(() => workflowStages(have, scan, profile), [have, scan, profile]);
   const upgrades = useMemo(() => suggestUpgrades(profile, catalog, have, scan), [profile, catalog, have, scan]);
@@ -971,7 +1053,9 @@ function Finish({ f, step }: SceneProps) {
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "your project");
   const joining = useApp((s) => s.appSettings.firstRunJoining === true);
   const [files, setFiles] = useState(true);
-  const [team, setTeam] = useState<"solo" | "team">(joining ? "team" : "solo");
+  // already answered in the interview: pre-picked here, not asked again
+  const said = useApp((s) => profileOf(s.appSettings.workflowProfile)?.team);
+  const [team, setTeam] = useState<"solo" | "team">(joining || said === "small" || said === "large" ? "team" : "solo");
   const [showFiles, setShowFiles] = useState(false);
   const open = () => {
     const st = useApp.getState();
@@ -996,7 +1080,7 @@ function Finish({ f, step }: SceneProps) {
         {showFiles ? <ul className="forge-read">{CONSENT_ITEMS.map((it) => <li key={it.file}>{it.file} · {it.title}</li>)}</ul> : null}
       </div>
       <div className="forge-section">
-        <div className="forge-label">Who's working on it?</div>
+        <div className="forge-label">Who's working on it? {said ? <em>· from your answer</em> : null}</div>
         <div className="forge-choice">
           <button type="button" className={`forge-row ${team === "solo" ? "on" : ""}`} onClick={() => setTeam("solo")}><b>Just me for now</b><small>You can invite people anytime</small></button>
           <button type="button" className={`forge-row ${team === "team" ? "on" : ""}`} onClick={() => setTeam("team")}><b>{joining ? "Join my team" : "Work with a team"}</b><small>{joining ? "You'll paste your invite link next" : "Everyone's agents share one plan and one chat"}</small></button>

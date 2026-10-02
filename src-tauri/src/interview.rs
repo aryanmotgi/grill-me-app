@@ -76,6 +76,12 @@ pub fn first_json_object(text: &str) -> Option<Value> {
     None
 }
 
+/// The CLI rejected a flag we pass: it's older than the interview needs.
+pub fn too_old(output: &str) -> bool {
+    let o = output.to_lowercase();
+    ["unknown option", "unexpected argument", "unrecognized option", "unknown flag", "unrecognized arguments"].iter().any(|k| o.contains(k))
+}
+
 /// A short, human error from a CLI's stderr: the API's "message", else the last ERROR line.
 pub fn friendly_error(stderr: &str) -> String {
     if let Some(i) = stderr.find("\"message\":\"") {
@@ -107,6 +113,9 @@ fn run(program: &str, args: &[String], cwd: &std::path::Path) -> Result<(bool, S
     let mut child = Command::new("/bin/zsh")
         .arg("-lc").arg("exec \"$@\"").arg("grillme-interview").arg(program).args(args)
         .current_dir(cwd)
+        // a one-line question needs no hidden thinking: measured, it cuts a
+        // reply from ~5–7 s (spikes to 28 s) to ~2 s
+        .env("MAX_THINKING_TOKENS", "0")
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .spawn().map_err(|e| e.to_string())?;
     let drain = |r: Option<Box<dyn Read + Send>>| std::thread::spawn(move || {
@@ -146,6 +155,10 @@ pub fn interview_turn(brain: String, system: String, prompt: String, schema: Str
     let (program, args) = argv(&brain, &system, &prompt, &schema, &schema_file.to_string_lossy(), &out_file.to_string_lossy())
         .ok_or_else(|| "That AI can't run the interview yet".to_string())?;
     let (ok, stdout, stderr) = run(program, &args, &dir)?;
+    if !ok && too_old(&format!("{stdout}\n{stderr}")) {
+        let update = if brain == "claude" { "claude update" } else if brain == "codex" { "npm i -g @openai/codex" } else { "its updater" };
+        return Err(format!("UPDATE: this version of {program} is too old for the interview. Update it ({update}), or use quick questions."));
+    }
     match brain.as_str() {
         "claude" => claude_reply(&stdout).map_err(|e| if ok { e } else { friendly_error(&format!("{stdout}\n{stderr}")) }),
         "codex" => {
@@ -189,6 +202,13 @@ mod tests {
         assert_eq!(claude_reply(text).unwrap()["say"], "yo");
         let err = r#"{"is_error":true,"result":"Credit balance is too low"}"#;
         assert_eq!(claude_reply(err).unwrap_err(), "Credit balance is too low");
+    }
+
+    #[test]
+    fn spots_an_old_cli() {
+        assert!(too_old("error: unknown option '--json-schema'"));
+        assert!(too_old("error: unexpected argument '--ignore-user-config' found"));
+        assert!(!too_old("Credit balance is too low"));
     }
 
     #[test]
