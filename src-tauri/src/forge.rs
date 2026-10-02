@@ -56,6 +56,7 @@ pub fn enter(win: &WebviewWindow) {
     let _ = win.show();
     let _ = win.set_focus();
     OVERLAY.store(true, Ordering::SeqCst);
+    escape_anywhere(win.app_handle(), true);
     let w = win.clone();
     std::thread::spawn(move || {
         let mut through: Option<bool> = None;
@@ -76,6 +77,26 @@ pub fn enter(win: &WebviewWindow) {
             std::thread::sleep(std::time::Duration::from_millis(30));
         }
         let _ = w.set_ignore_cursor_events(false);
+    });
+}
+
+/// "Press Esc anytime to leave" must hold even when another app has the
+/// keyboard (the forge floats over other apps, and clicks pass through to
+/// them). While the forge is up, Esc is a system-wide shortcut that tells the
+/// page to leave; it's released the moment the forge ends.
+fn escape_anywhere(app: &AppHandle, on: bool) {
+    use tauri::Emitter;
+    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
+    let esc = Shortcut::new(None, Code::Escape);
+    let gs = app.global_shortcut();
+    if !on {
+        let _ = gs.unregister(esc);
+        return;
+    }
+    let _ = gs.on_shortcut(esc, |app, _, ev| {
+        if ev.state() == ShortcutState::Pressed {
+            let _ = app.emit_to("main", "forge-escape", ());
+        }
     });
 }
 
@@ -112,6 +133,7 @@ fn restore(win: &WebviewWindow) {
 /// desktop blur the app uses.
 #[tauri::command(async)]
 pub fn forge_window_done(app: AppHandle) {
+    escape_anywhere(&app, false);
     let Some(main) = app.get_webview_window("main") else { return };
     OVERLAY.store(false, Ordering::SeqCst);
     std::thread::sleep(std::time::Duration::from_millis(60));

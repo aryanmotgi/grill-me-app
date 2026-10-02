@@ -37,6 +37,7 @@ base64 = "0.22"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 # reads Codex/Cargo/pyproject TOML for the workflow scan
 toml = "0.8"
+tauri-plugin-global-shortcut = "2"
 
 
 [profile.dev]

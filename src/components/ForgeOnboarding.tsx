@@ -195,11 +195,17 @@ export function ForgeOnboarding() {
     if (st.appMode === null) st.setAppMode("solo");
     f?.finish(true);
   };
+  const leaveRef = useRef(leave);
+  leaveRef.current = leave;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); leave(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); leaveRef.current(); } };
     addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  });
+    // Esc while another app has the keyboard (a system-wide shortcut, set up
+    // by the app while the forge is showing)
+    let un: (() => void) | undefined;
+    if (native()) void import("@tauri-apps/api/event").then(({ listen }) => listen("forge-escape", () => leaveRef.current())).then((u) => { un = u; });
+    return () => { removeEventListener("keydown", onKey); un?.(); };
+  }, []);
 
   // finale: everything is drawn into the glass box, which opens into the app
   useEffect(() => {
