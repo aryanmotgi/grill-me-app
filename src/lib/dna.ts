@@ -669,3 +669,10 @@ export function mergeDNA(a: CodingDNA, b: CodingDNA, now = Date.now()): CodingDN
     muted: [...new Set([...a.muted, ...b.muted])].slice(-300), past: { ...b.past, ...a.past },
   };
 }
+
+/** "Not for me": never suggested again (you can undo it from history). */
+export const dismissEvolution = (dna: CodingDNA, id: string, name: string, dismissed = true, now = Date.now()): CodingDNA => {
+  const has = dna.evolutions.some((e) => e.id === id);
+  const evolutions = has ? dna.evolutions.map((e) => (e.id === id ? { ...e, dismissed: dismissed || undefined } : e)) : [...dna.evolutions, { id, name, why: "", at: now, ...(dismissed ? { dismissed: true } : {}) }];
+  return { ...dna, evolutions, updated: now };
+};

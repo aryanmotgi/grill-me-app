@@ -254,6 +254,28 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 .forge-up em { font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #ffc79e; }
 .gem { flex: none; display: inline-block; width: 11px; height: 11px; border-radius: 3px; transform: rotate(45deg); background: radial-gradient(circle at 35% 30%, #fff2d6, #ffb347 35%, #ff6a2a 70%, #7a2410); box-shadow: 0 0 10px #ff8a3a; }
 .forge-up .why { font-size: 12.5px; color: var(--f-dim); margin-top: 6px; line-height: 1.45; }
+.forge-up .fits { font-size: 11.5px; color: var(--f-faint); margin-top: 6px; }
+/* before -> after, when an Evolution is added */
+.forge-placed .change { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin-top: 10px; font-size: 13px; align-items: baseline; }
+.forge-placed .change .b, .forge-placed .change .a { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.forge-placed .change .b { color: var(--f-faint); }
+.forge-placed .change .a { color: #ffc79e; }
+/* explore more */
+.forge-explore { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.forge-tag { all: unset; cursor: pointer; }
+.forge-tag.on { color: #1d0f06; background: linear-gradient(100deg, #ff7a3a, #f2b04e); border-color: transparent; }
+.forge-bundles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.forge-bundles .bundle { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 10px; border: 1px dashed rgba(255, 170, 120, .4); text-shadow: none; }
+.forge-bundles .bundle b { font-size: 13px; }
+.forge-bundles .bundle span { font-size: 12px; color: #ffc79e; }
+.forge-bundles .bundle small { font-size: 11.5px; color: var(--f-dim); }
+.forge-explore-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+.forge-explore-list li { padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); text-shadow: none; }
+.forge-explore-list li div { display: flex; align-items: baseline; gap: 10px; }
+.forge-explore-list li b { font-size: 13.5px; }
+.forge-explore-list li em { font-style: normal; font-size: 11.5px; color: var(--f-faint); }
+.forge-explore-list li p { margin: 4px 0 2px; font-size: 12.5px; color: var(--f-dim); }
+.forge-explore-list li small { display: block; font-size: 11.5px; color: #ffc79e; margin-bottom: 4px; }
 .forge-up .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: var(--f-faint); }
 .forge-up .foot b { color: #ffc79e; font-weight: 600; flex: none; }
 .forge-up .foot button { all: unset; cursor: pointer; font-size: 12.5px; font-weight: 600; color: #fff; padding: 4px 10px; border-radius: 7px; border: 1px solid rgba(255,255,255,.25); }

@@ -265,7 +265,7 @@ export function stageFor(need: SolveTag, e?: CatalogEntry): StageId {
 
 /** Tags where the right tool depends on the vendor you already use: only
  *  suggest a vendor's tool when the scan shows you use that vendor. */
-const VENDOR_TAGS: SolveTag[] = ["deploy", "database", "payments", "auth", "monitoring", "analytics"];
+const VENDOR_TAGS: SolveTag[] = ["deploy", "database", "payments", "auth", "monitoring", "analytics", "ci", "project-management"];
 const KIND_BONUS: Record<string, number> = { mcp: 2, plugin: 2, skill: 2, cli: 1, app: 0, agent: -99 };
 
 /** Words that name a vendor: from the scan (deps, commands, MCP names,
@@ -297,6 +297,8 @@ const NEUTRAL: Record<string, string[]> = {
   "postgres-mcp": PG,
   squawk: PG,
   atlas: [...PG, "sql", "mysql", "mysql2", "sqlite", "sqlite3", "mariadb", "gorm", "sqlalchemy", "typeorm", "knex"],
+  // CI helpers that work with any GitHub Actions setup
+  act: [], actionlint: [],
 };
 const isNeutral = (e: CatalogEntry) => e.id in NEUTRAL;
 
@@ -327,7 +329,26 @@ function vendorOk(e: CatalogEntry, words: Set<string>): boolean {
  * down, in their order, then (2) workflow stages nothing covers yet. Each
  * pick must cover a need no earlier pick covers, so the three are different.
  */
-export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: CatalogEntry[], scan?: ScanResult | null, max = 3): Upgrade[] {
+/** What the Coding DNA adds to the ranking (all optional). */
+export interface SuggestOpts {
+  /** extra weight per need: open pains, struggles the sessions show */
+  weights?: Partial<Record<SolveTag, number>>;
+  /** a sentence per need from the DNA (their words or a pattern), for the "why" */
+  evidence?: Partial<Record<SolveTag, string>>;
+  /** never suggest these ids (removed, dismissed, tried and didn't help) */
+  avoid?: Set<string>;
+  /** categories that didn't help before: ranked well down */
+  coolCategories?: Set<string>;
+  /** beginners: quick, free setups first */
+  level?: Level;
+  /** the top picks come from different categories */
+  diverse?: boolean;
+}
+
+export interface Ranked { e: CatalogEntry; covers: SolveTag[]; score: number; why: string }
+
+/** Everything the ranking needs, shared by the top picks and "Explore more". */
+function prepare(p: WorkflowProfile, catalog: Catalog, have: CatalogEntry[], scan: ScanResult | null | undefined, o: SuggestOpts) {
   const haveIds = new Set(have.map((e) => e.id));
   const mentions = p.mentions ?? [];
   const words = evidence(scan, mentions);
@@ -343,8 +364,10 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
   const stages = workflowStages(have, scan, p);
   const say = (t: SolveTag) => PAINS.find((c) => c.id === t)?.say ?? t;
 
-  // needs in priority order: your pains first (in your order), then gaps
+  // needs in priority order: your pains (your order), then what your DNA
+  // weighs most, then stages nothing covers
   const order: SolveTag[] = [...p.pains];
+  for (const [t] of Object.entries(o.weights ?? {}).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)) as [SolveTag, number][]) if (!order.includes(t)) order.push(t);
   const gapWhy = new Map<SolveTag, string>();
   for (const st of stages) {
     if (st.covered || order.includes(st.gap)) continue;
@@ -356,6 +379,8 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
     // their own words beat a paraphrase
     const note = (p.notes ?? []).find((n) => n.about && pains.includes(n.about));
     if (note) return `You said: "${note.text}"`;
+    const dna = covers.map((t) => o.evidence?.[t]).find(Boolean);
+    if (dna) return dna;
     if (pains.length) return `You said ${joinAnd(pains.map(say))} ${pains.length > 1 ? "slow" : "slows"} you down.`;
     return gapWhy.get(covers[0]) ?? "";
   };
@@ -363,15 +388,52 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
   const agents = new Set(p.agents);
   const fits = (e: CatalogEntry) => agents.size === 0 || e.agents.some((a) => a === "any" || agents.has(a));
   const pool = catalog.entries.filter((e) =>
-    !haveIds.has(e.id) && e.kind !== "agent" && e.kind !== "app" && fits(e) && vendorOk(e, words) && langOk(e, scan) && !UTILITIES.has(e.id) && (e.install?.command || e.install?.mcp));
+    !haveIds.has(e.id) && !o.avoid?.has(e.id) && e.kind !== "agent" && e.kind !== "app" && fits(e) && vendorOk(e, words) && langOk(e, scan) && !UTILITIES.has(e.id) && (e.install?.command || e.install?.mcp));
 
+  /** How well `e` fits, for the needs it covers. */
+  const score = (e: CatalogEntry, covers: SolveTag[]) => {
+    const rank = order.indexOf(covers[0]);
+    const vendorNamed = VENDOR_TAGS.includes(covers[0]) && (named.has(vendorOf(e)) || named.has(e.id));
+    return (order.length - rank) * 100
+      // a tool they named wins, but only where the vendor is the point
+      // (they said Vercel: a Vercel deploy tool, not Vercel for "docs")
+      + (vendorNamed ? 50 : 0)
+      + (e.solves[0] === covers[0] ? 8 : 0)
+      + (e.agents.some((a) => a !== "any" && agents.has(a)) ? 4 : 0)
+      + (KIND_BONUS[e.kind] ?? 0)
+      + (covers.length - 1) * 3
+      + (e.verified ? 1 : 0)
+      // a web app's bugs live in the browser: browser tools fit it
+      + (p.building === "web" && e.solves.includes("browser") ? 8 : 0)
+      - (p.building && p.building !== "web" && p.building !== "mobile" && e.solves.includes("browser") ? 40 : 0)
+      // free and quick first, especially for people new to this
+      - (e.cost === "paid" && !vendorNamed ? 10 : 0)
+      + (o.level === "new" && (e.setupMin ?? 30) <= 10 ? 6 : 0)
+      + (o.level === "new" && e.cost === "free" ? 3 : 0)
+      // a kind of tool that didn't help before
+      - (e.category && o.coolCategories?.has(e.category) ? 60 : 0);
+  };
+  return { pool, order, rival, score, whyFor, agents };
+}
+
+/** Every tool that would help, best first (for "Explore more"). */
+export function rankAll(p: WorkflowProfile, catalog: Catalog, have: CatalogEntry[], scan?: ScanResult | null, o: SuggestOpts = {}): Ranked[] {
+  const { pool, order, rival, score, whyFor } = prepare(p, catalog, have, scan, o);
+  return pool.flatMap((e) => {
+    const covers = order.filter((t) => e.solves.includes(t) && !rival(e, t));
+    return covers.length ? [{ e, covers, score: score(e, covers), why: whyFor(covers) }] : [];
+  }).sort((a, b) => b.score - a.score);
+}
+
+export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: CatalogEntry[], scan?: ScanResult | null, max = 3, o: SuggestOpts = {}): Upgrade[] {
+  const { pool, order, rival, score, whyFor, agents } = prepare(p, catalog, have, scan, o);
   const out: Upgrade[] = [];
   const met = new Set<SolveTag>();
 
   // a missing instruction file is the cheapest, biggest win for any agent.
   // CLAUDE.md only when Claude is the only agent; anything mixed (or a team)
   // gets AGENTS.md, the one file every agent reads
-  if (scan?.instructions && !hasInstructions(scan) && agents.size > 0) {
+  if (scan?.instructions && !hasInstructions(scan) && agents.size > 0 && !o.avoid?.has("instructions-file")) {
     const claudeOnly = agents.size === 1 && agents.has("claude") && p.team !== "small" && p.team !== "large";
     const team = p.team === "small" || p.team === "large";
     out.push({
@@ -381,6 +443,7 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
       docs: claudeOnly ? "https://code.claude.com/docs/en/memory" : "https://agents.md",
     });
   }
+  const catOf = (id: string) => pool.find((e) => e.id === id)?.category;
 
   // two passes: first each pick must cover a need no earlier pick covers;
   // then (if there's room) the next best for needs already touched, so a
@@ -392,25 +455,12 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
         if (out.some((u) => u.id === e.id)) continue;
         const covers = order.filter((t) => (!strict || !met.has(t)) && e.solves.includes(t) && !rival(e, t));
         if (!covers.length) continue;
-        const rank = order.indexOf(covers[0]);
-        // the top need decides; ties go to tools they named, focused tools
-        // (it's their main job), tools made for their AI, the right kind,
-        // and ones that also cover more
-        const score = (order.length - rank) * 100
-          // a tool they named wins, but only where the vendor is the point
-          // (they said Vercel: a Vercel deploy tool, not Vercel for "docs")
-          + (VENDOR_TAGS.includes(covers[0]) && (named.has(vendorOf(e)) || named.has(e.id)) ? 50 : 0)
-          + (e.solves[0] === covers[0] ? 8 : 0)
-          + (e.agents.some((a) => a !== "any" && agents.has(a)) ? 4 : 0)
-          + (KIND_BONUS[e.kind] ?? 0)
-          + (covers.length - 1) * 3
-          + (e.verified ? 1 : 0)
-          // a web app's bugs live in the browser: browser tools fit it
-          + (p.building === "web" && e.solves.includes("browser") ? 8 : 0)
-          - (p.building && p.building !== "web" && p.building !== "mobile" && e.solves.includes("browser") ? 40 : 0)
+        const sc = score(e, covers)
           // second pass: don't stack two tools on the same need
-          - (strict ? 0 : out.filter((u) => u.need === covers[0]).length * 150);
-        if (!best || score > best.score) best = { e, score, covers };
+          - (strict ? 0 : out.filter((u) => u.need === covers[0]).length * 150)
+          // variety up front: two of the same kind of tool is a waste of a slot
+          - (o.diverse && e.category && out.some((u) => catOf(u.id) === e.category) ? 120 : 0);
+        if (!best || sc > best.score) best = { e, score: sc, covers };
       }
       if (!best) break;
       for (const t of best.covers) met.add(t);
