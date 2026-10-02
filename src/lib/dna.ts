@@ -571,10 +571,10 @@ export function removeItem(dna: CodingDNA, w: Where): CodingDNA {
 }
 
 /** Add something yourself. */
-export function addItem(dna: CodingDNA, strand: "flow" | "habits" | "pains" | "rules" | "wins", text: string, opts: { stage?: FlowStage; scope?: Rule["scope"]; project?: string } = {}, now = Date.now()): CodingDNA {
+export function addItem(dna: CodingDNA, strand: "flow" | "habits" | "pains" | "rules" | "wins", text: string, opts: { stage?: FlowStage; scope?: Rule["scope"]; project?: string; source?: Source } = {}, now = Date.now()): CodingDNA {
   const t = text.trim().slice(0, 300);
   if (!t) return dna;
-  const base = { id: idOf(strand, t), text: t, source: "you" as const, at: now, edited: true };
+  const base = { id: idOf(strand, t), text: t, source: opts.source ?? ("you" as Source), at: now, edited: true };
   const d = { ...dna, updated: now };
   if (strand === "flow") d.flow = { ...d.flow, [opts.stage ?? "build"]: upsert(d.flow[opts.stage ?? "build"], base, MAX.items) };
   if (strand === "habits") d.habits = upsert(d.habits, base, MAX.items * 2);

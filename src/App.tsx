@@ -1,3 +1,4 @@
+import { SparkPill } from "./components/SparkPanel";
 import { useDNALearning } from "./lib/dnaStore";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "./store";
@@ -301,7 +302,7 @@ export default function App() {
     );
   }
 
-  if (uiLayout === "simple") return <><SimpleShell active={active} split={split} /><FinishSetupPill /></>;
+  if (uiLayout === "simple") return <><SimpleShell active={active} split={split} /><FinishSetupPill /><SparkPill /></>;
 
   return (
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
@@ -337,6 +338,7 @@ export default function App() {
       </div>
       <Overlays />
       <FinishSetupPill />
+      <SparkPill />
     </div>
   );
 }
