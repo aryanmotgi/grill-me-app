@@ -19,6 +19,7 @@ mod boot;
 mod blur;
 mod catalog;
 mod learn;
+mod past;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4661,10 +4662,19 @@ pub fn run() {
             forge::forge_hit_rects,
             forge::forge_window_enter,
             learn::learn_sessions,
-            learn::memory_load,
-            learn::memory_save,
-            learn::memory_forget,
-            learn::memory_reveal,
+            learn::dna_load,
+            learn::dna_save,
+            learn::dna_forget,
+            learn::dna_reveal,
+            learn::dna_export,
+            learn::dna_import_read,
+            past::past_claude,
+            past::past_codex,
+            past::past_find_repos,
+            past::past_git,
+            past::past_rules,
+            past::past_tools,
+            past::past_terminal,
             blur::forge_blur_mask,
             forge::perf_enabled,
             forge::perf_report,

@@ -95,22 +95,22 @@ fn text_of(content: &Value) -> String {
     }
 }
 
-fn has(re: &regex::Regex, s: &str) -> bool {
+pub(crate) fn has(re: &regex::Regex, s: &str) -> bool {
     re.is_match(s)
 }
 
-struct Rx {
-    plan: regex::Regex,
-    frustrated: regex::Regex,
-    file_ref: regex::Regex,
-    slash: regex::Regex,
-    test: regex::Regex,
-    build: regex::Regex,
-    undo: regex::Regex,
-    fail: regex::Regex,
+pub(crate) struct Rx {
+    pub(crate) plan: regex::Regex,
+    pub(crate) frustrated: regex::Regex,
+    pub(crate) file_ref: regex::Regex,
+    pub(crate) slash: regex::Regex,
+    pub(crate) test: regex::Regex,
+    pub(crate) build: regex::Regex,
+    pub(crate) undo: regex::Regex,
+    pub(crate) fail: regex::Regex,
 }
 
-fn rx() -> &'static Rx {
+pub(crate) fn rx() -> &'static Rx {
     static RX: std::sync::OnceLock<Rx> = std::sync::OnceLock::new();
     RX.get_or_init(|| Rx {
         plan: regex::Regex::new(r"(?i)\bplan\b|step[- ]by[- ]step|\bspec\b|design doc|outline|before (you|coding|writing)|don'?t (code|write|change) (anything )?yet|first,? .{0,80}\bthen\b").unwrap(),
@@ -127,21 +127,21 @@ fn rx() -> &'static Rx {
 }
 
 /// "npx vitest run src/x.test.ts" -> "vitest"; "go test ./..." -> "go test".
-fn runner(cmd: &str) -> String {
+pub(crate) fn runner(cmd: &str) -> String {
     let m = rx().test.find(cmd).map(|m| m.as_str().to_lowercase()).unwrap_or_default();
     m.replace("npx ", "").replace(" run", "").trim().to_string()
 }
 
 /// One session's running tallies (for moments).
 #[derive(Default)]
-struct Sess {
-    first: u64,
-    last: u64,
-    fails_by_runner: HashMap<String, u32>,
-    cmd_seen: HashMap<String, u32>,
-    undos: u32,
-    frustrated: u32,
-    project: String,
+pub(crate) struct Sess {
+    pub(crate) first: u64,
+    pub(crate) last: u64,
+    pub(crate) fails_by_runner: HashMap<String, u32>,
+    pub(crate) cmd_seen: HashMap<String, u32>,
+    pub(crate) undos: u32,
+    pub(crate) frustrated: u32,
+    pub(crate) project: String,
 }
 
 fn ts(v: &Value) -> u64 {
@@ -149,7 +149,7 @@ fn ts(v: &Value) -> u64 {
 }
 
 /// Fold one log line into the batch.
-fn take_line(line: &str, b: &mut Batch, sessions: &mut HashMap<String, Sess>, pending: &mut HashMap<String, String>, project: &str) {
+pub(crate) fn take_line(line: &str, b: &mut Batch, sessions: &mut HashMap<String, Sess>, pending: &mut HashMap<String, String>, project: &str) {
     let Ok(v) = serde_json::from_str::<Value>(line) else { return };
     let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
     if kind != "user" && kind != "assistant" {
@@ -189,18 +189,7 @@ fn take_line(line: &str, b: &mut Batch, sessions: &mut HashMap<String, Sess>, pe
             if name == "Bash" {
                 let cmd = input.get("command").and_then(Value::as_str).unwrap_or("");
                 let id = part.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-                if has(&r.undo, cmd) && !cmd.contains("restore --staged") { b.undos += 1; s.undos += 1; }
-                let is_test = has(&r.test, cmd);
-                if is_test || has(&r.build, cmd) {
-                    let norm = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
-                    let n = s.cmd_seen.entry(norm).or_default();
-                    if *n > 0 { b.retries += 1; }
-                    *n += 1;
-                }
-                if is_test {
-                    b.test_runs += 1;
-                    if !id.is_empty() { pending.insert(id, runner(cmd)); }
-                }
+                if let Some(run) = count_command(cmd, b, s) { if !id.is_empty() { pending.insert(id, run); } }
             }
         }
         return;
@@ -228,6 +217,12 @@ fn take_line(line: &str, b: &mut Batch, sessions: &mut HashMap<String, Sess>, pe
         *b.slash.entry(c[1].to_string()).or_default() += 1;
         return;
     }
+    count_prompt(&text, b, s);
+}
+
+/** One typed prompt: counted and classified, never kept. */
+pub(crate) fn count_prompt(text: &str, b: &mut Batch, s: &mut Sess) {
+    let r = rx();
     let trimmed = text.trim();
     if trimmed.is_empty() || trimmed.starts_with('<') || trimmed.starts_with("[Request interrupted") || trimmed.starts_with("Caveat:") { return; }
     let words = trimmed.split_whitespace().count() as u32;
@@ -240,8 +235,23 @@ fn take_line(line: &str, b: &mut Batch, sessions: &mut HashMap<String, Sess>, pe
     if has(&r.frustrated, trimmed) { b.frustrated_prompts += 1; s.frustrated += 1; }
 }
 
+/** A shell command an agent ran: tests, builds, retries, undos. Returns the
+ *  test runner's name when it's a test run (to match its result later). */
+pub(crate) fn count_command(cmd: &str, b: &mut Batch, s: &mut Sess) -> Option<String> {
+    let r = rx();
+    if has(&r.undo, cmd) && !cmd.contains("restore --staged") { b.undos += 1; s.undos += 1; }
+    let is_test = has(&r.test, cmd);
+    if is_test || has(&r.build, cmd) {
+        let norm = cmd.split_whitespace().collect::<Vec<_>>().join(" ");
+        let n = s.cmd_seen.entry(norm).or_default();
+        if *n > 0 { b.retries += 1; }
+        *n += 1;
+    }
+    if is_test { b.test_runs += 1; Some(runner(cmd)) } else { None }
+}
+
 /// Turn finished sessions' tallies into a few labelled moments.
-fn moments_of(sessions: &HashMap<String, Sess>, b: &mut Batch) {
+pub(crate) fn moments_of(sessions: &HashMap<String, Sess>, b: &mut Batch) {
     for s in sessions.values() {
         for (run, n) in &s.fails_by_runner {
             if *n >= 3 {
@@ -268,7 +278,7 @@ fn moments_of(sessions: &HashMap<String, Sess>, b: &mut Batch) {
 }
 
 /// Read what's new in one log file (complete lines only), from `offset`.
-fn read_new(path: &Path, offset: u64, budget: &mut u64) -> Option<(String, u64)> {
+pub(crate) fn read_new(path: &Path, offset: u64, budget: &mut u64) -> Option<(String, u64)> {
     let mut f = std::fs::File::open(path).ok()?;
     let len = f.metadata().ok()?.len();
     let start = if offset > len { 0 } else { offset }; // rewritten: start over
@@ -327,34 +337,34 @@ pub fn learn_sessions(repos: Vec<String>) -> Result<Batch, String> {
     Ok(b)
 }
 
-// -- the memory file ----------------------------------------------------------
+// -- the Coding DNA file ---------------------------------------------------------
 
-fn memory_path() -> PathBuf {
-    crate::grillme_root().join("workflow-memory.json")
+fn dna_path() -> PathBuf {
+    crate::grillme_root().join("coding-dna.json")
 }
 
-/// The saved workflow memory (JSON), or null when there's none yet.
+/// Your Coding DNA (JSON), or null when there's none yet.
 #[tauri::command]
-pub fn memory_load() -> Option<Value> {
-    std::fs::read_to_string(memory_path()).ok().and_then(|t| serde_json::from_str(&t).ok())
+pub fn dna_load() -> Option<Value> {
+    std::fs::read_to_string(dna_path()).ok().and_then(|t| serde_json::from_str(&t).ok())
 }
 
-/// Save the memory (JSON, the source of truth) and its readable Markdown copy.
+/// Save it (JSON, the source of truth) and its readable Markdown copy.
 #[tauri::command]
-pub fn memory_save(json: String, markdown: String) -> Result<(), String> {
-    if json.len() > 2_000_000 || markdown.len() > 2_000_000 { return Err("memory too large".into()); }
+pub fn dna_save(json: String, markdown: String) -> Result<(), String> {
+    if json.len() > 3_000_000 || markdown.len() > 3_000_000 { return Err("Coding DNA is too large".into()); }
     serde_json::from_str::<Value>(&json).map_err(|_| "not JSON".to_string())?;
-    let p = memory_path();
+    let p = dna_path();
     let tmp = p.with_extension("json.tmp");
     std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &p).map_err(|e| e.to_string())?;
     std::fs::write(p.with_extension("md"), markdown).map_err(|e| e.to_string())
 }
 
-/// Forget everything: the memory, its Markdown copy, and where learning was up to.
+/// Forget everything: the DNA, its Markdown copy, and where learning was up to.
 #[tauri::command]
-pub fn memory_forget() -> Result<(), String> {
-    for p in [memory_path(), memory_path().with_extension("md"), state_path()] {
+pub fn dna_forget() -> Result<(), String> {
+    for p in [dna_path(), dna_path().with_extension("md"), state_path()] {
         match std::fs::remove_file(&p) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -364,12 +374,29 @@ pub fn memory_forget() -> Result<(), String> {
     Ok(())
 }
 
-/// Show the memory's Markdown file in Finder.
+/// Show the readable copy in Finder.
 #[tauri::command]
-pub fn memory_reveal() -> Result<(), String> {
-    let p = memory_path().with_extension("md");
-    std::process::Command::new("open").arg("-R").arg(&p).status().map_err(|e| e.to_string())?;
+pub fn dna_reveal() -> Result<(), String> {
+    std::process::Command::new("open").arg("-R").arg(dna_path().with_extension("md")).status().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Export: write the DNA to a file you picked (a .json).
+#[tauri::command]
+pub fn dna_export(path: String, json: String) -> Result<(), String> {
+    if !path.ends_with(".json") || path.contains("..") { return Err("Choose a .json file".into()); }
+    serde_json::from_str::<Value>(&json).map_err(|_| "not JSON".to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+/// Import: read a DNA file you picked (validated by the app before use).
+#[tauri::command]
+pub fn dna_import_read(path: String) -> Result<Value, String> {
+    if !path.ends_with(".json") || path.contains("..") { return Err("Choose a .json file".into()); }
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > 3_000_000 { return Err("That file is too large to be Coding DNA".into()); }
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|_| "That file isn't valid JSON".to_string())
 }
 
 #[cfg(test)]
