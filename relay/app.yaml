@@ -1,0 +1,25 @@
+kind: wasmer.io/App.v0
+name: grillme-relay
+owner: carecompanioninc
+package: .
+capabilities:
+  database:
+    engine: postgres
+annotations:
+  anybuild.run/config:
+    asgi_application: src.main:app
+    commands:
+      start: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    name: out
+    python_cross_platform: wasix_wasm32
+    python_extra_index_url: https://python-registry.wasix.org/simple
+    python_framework: fastapi
+    python_install_inputs:
+    - pyproject.toml
+    python_main_file: src/main.py
+    python_server: uvicorn
+  anybuild.run/provider: python
+  anybuild.run/version: 0.32.0
+  wasmer.io/version: 7.5.0
+enableDatabase: true
+app_id: da_nVEIoteU9YAN

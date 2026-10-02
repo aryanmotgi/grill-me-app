@@ -37,6 +37,7 @@ import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 import type { AppMode } from "./lib/soloVisibility";
 import { uiLayoutOf } from "./lib/uiLayout";
 import { initialFirstRunStep } from "./lib/firstRun";
+import { isRelayAddr, savedRoomOf, seedRoom, type SavedRoom } from "./lib/teamRoom";
 
 export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "preview";
 
@@ -301,6 +302,11 @@ interface AppState {
   setRoom: (room: RoomState | null) => void;
   /** Host's LAN IPv4 (from room_host_start) — shown so teammates can join. */
   roomHostIp: string | null;
+  /** Relay rooms: the invite link anyone in the team can share. */
+  roomInvite: string | null;
+  /** Enter a relay room (after create/join): set identity, remember it for
+   *  restarts, start syncing. */
+  enterRoom: (r: SavedRoom) => void;
   /** true after 3 consecutive room polls failed — Lobby shows the
    *  host-offline banner; the next successful poll clears it. */
   roomOffline: boolean;
@@ -893,6 +899,12 @@ export const useApp = create<AppState>((set, get) => ({
   roomRole: null,
   roomSelf: null,
   roomHostIp: null,
+  roomInvite: null,
+  enterRoom: (r) => {
+    set({ roomRole: r.role, roomSelf: { memberId: r.memberId, hostAddr: r.hostAddr }, room: seedRoom(r.code), roomInvite: r.invite, roomOffline: false });
+    get().setAppSetting("teamRoom", r);
+    startRoomFeed(useApp);
+  },
   roomOffline: false,
   setRoom: (room) =>
     set((s) => {
@@ -916,6 +928,9 @@ export const useApp = create<AppState>((set, get) => ({
     // Leave the flow (App routes to TeamFlow only while teamFlowNeeded), but
     // KEEP room/roomSelf/roomRole so startRoomFeed keeps polling + syncing.
     set({ teamSetupDone: true, teamFlowNeeded: false, view: "home" });
+    // remember it, so a restart doesn't run the end-of-setup briefing twice
+    const saved = savedRoomOf(get().appSettings.teamRoom);
+    if (saved) get().setAppSetting("teamRoom", { ...saved, setupDone: true });
 
     const teamMembers = get().members;
     const boardTasks = roomTasksToAppTasks(room.tasks, room.members, teamMembers, room.code);
@@ -965,10 +980,12 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   leaveRoom: async () => {
-    const wasHost = get().roomRole === "host";
+    // a relay room has no listener on this Mac to stop
+    const wasHost = get().roomRole === "host" && !isRelayAddr(get().roomSelf?.hostAddr);
     // the leaver's own machine says so in the team chat (once, while it can still reach the room)
     await import("./components/teamChatActions").then(({ postLeaveLine }) => postLeaveLine()).catch(() => {});
-    set({ room: null, roomRole: null, roomSelf: null, roomOffline: false, teamSetupDone: false, roomPresence: {}, teamChatTyping: false });
+    set({ room: null, roomRole: null, roomSelf: null, roomInvite: null, roomOffline: false, teamSetupDone: false, roomPresence: {}, teamChatTyping: false });
+    get().setAppSetting("teamRoom", null);
     if (wasHost && isTauri()) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -1114,7 +1131,19 @@ let firedBudgetLevel: BudgetLevel = 0;
   else useApp.setState({ settingsLoaded: true });
   // team mode: install the room poller. It no-ops until TeamStart sets
   // roomSelf (create/join), so this is only live when a room actually exists.
-  if (appSettings.appMode === "team") startRoomFeed(useApp);
+  if (appSettings.appMode === "team") {
+    // rejoin the saved relay room (a restart used to drop you from the team)
+    const saved = savedRoomOf(appSettings.teamRoom);
+    if (saved) {
+      useApp.setState({
+        roomRole: saved.role, roomSelf: { memberId: saved.memberId, hostAddr: saved.hostAddr },
+        room: seedRoom(saved.code), roomInvite: saved.invite,
+        // mid-setup restart → back into the team screens; finished → workspace
+        teamSetupDone: saved.setupDone === true, teamFlowNeeded: saved.setupDone !== true,
+      });
+    }
+    startRoomFeed(useApp);
+  }
   const project = typeof appSettings.activeProject === "string" ? appSettings.activeProject : null;
   if (!project) return; // ProjectPicker shows; feeds start after selection reload
   await invoke("set_active_project", { id: project }).catch(() => {});

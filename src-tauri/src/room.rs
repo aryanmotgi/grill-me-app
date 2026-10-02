@@ -830,11 +830,16 @@ pub fn room_host_stop() -> Result<(), String> {
 /// `host_addr` like "192.168.1.7:4518"; GET when bodyJson is empty, POST
 /// otherwise. ~3s timeouts on connect/read/write. Returns the response body
 /// (which carries {"error": ...} on non-200 — the caller inspects it).
-#[tauri::command]
+// async: a relay round trip can take seconds and must never block the UI thread
+#[tauri::command(async)]
 pub fn room_client(host_addr: String, path: String, body_json: String) -> Result<String, String> {
     use std::net::ToSocketAddrs;
     if !path.starts_with("/room/") {
         return Err("room_client only proxies /room/* paths".into());
+    }
+    // hosted relay rooms: same paths and bodies, different transport
+    if host_addr.starts_with("relay:") {
+        return crate::relay::request(&host_addr, &path, &body_json);
     }
     let ok_addr = !host_addr.is_empty()
         && host_addr
