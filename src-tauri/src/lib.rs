@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod room;
+mod relay;
 mod bridge;
 mod claude_panel;
 mod automations;
@@ -4742,6 +4743,8 @@ pub fn run() {
             room::room_host_start,
             room::room_host_stop,
             room::room_client,
+            relay::room_relay_create,
+            relay::room_relay_join,
             room::room_brainstorm_reply,
             room::room_make_plan,
             room::room_make_tasks

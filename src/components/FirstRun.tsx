@@ -339,7 +339,7 @@ function Team({ go }: { go: (s: FirstRunStep) => void }) {
     >
       <div className="flex flex-col gap-2">
         <Option mode="team" primary={joining} title={joining ? "Join my team" : "Create or join a team"}
-          body={joining ? "Enter the details your teammate sent you." : "Start a team and invite people, or join one a teammate created."} />
+          body={joining ? "Paste the invite link your teammate sent you." : "Start a team and get an invite link, or join one with a link a teammate sent."} />
         <Option mode="solo" primary={!joining} title="Just me for now" body="Jump straight in. Invite teammates whenever you're ready." />
       </div>
     </Frame>

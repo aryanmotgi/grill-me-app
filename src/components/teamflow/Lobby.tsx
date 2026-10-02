@@ -17,6 +17,7 @@ export function Lobby() {
   const roomRole = useApp((s) => s.roomRole);
   const roomSelf = useApp((s) => s.roomSelf);
   const roomHostIp = useApp((s) => s.roomHostIp);
+  const invite = useApp((s) => s.roomInvite);
   const roomOffline = useApp((s) => s.roomOffline);
   const toast = useApp((s) => s.toast);
   const leaveRoom = useApp((s) => s.leaveRoom);
@@ -74,8 +75,20 @@ export function Lobby() {
           </button>
         </div>
 
-        {/* room code — big, copyable, read it aloud */}
-        <div className="bg-panel hairline rounded-md p-4 flex items-center gap-4">
+        {/* relay room: the invite link is all anyone needs */}
+        {invite ? (
+          <div className="bg-panel hairline rounded-md p-4 flex flex-col gap-2">
+            <div className="text-[13px] font-semibold text-ink">Invite your team</div>
+            <div className="text-[12px] text-dim">Send this link. Anyone with it can join, on any network.</div>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 min-w-0 truncate font-mono text-[11.5px] text-ink bg-raised hairline rounded px-2 py-1.5 select-all" title={invite}>{invite}</span>
+              <button className="btn primary flex-none" onClick={() => copy(invite)}>Copy link</button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* room code — big, copyable, read it aloud (same-Wi-Fi rooms) */}
+        {invite ? null : <div className="bg-panel hairline rounded-md p-4 flex items-center gap-4">
           <div className="flex-1 min-w-0">
             <div
               className="font-display text-[28px] font-semibold tracking-[0.3em] cursor-pointer"
@@ -116,13 +129,16 @@ export function Lobby() {
           <button className="btn" onClick={() => copy(`${room.code}${joinAddr ? ` @ ${joinAddr}` : ""}${tsAddr ? ` (anywhere: ${tsAddr})` : ""}`)}>
             copy
           </button>
-        </div>
+        </div>}
 
         {/* host offline — guests only; the list stays up, nothing crashes */}
-        {!isHost && roomOffline ? (
+        {!isHost && roomOffline && !invite ? (
           <div className="tag warn self-start">
             host offline — waiting for {host?.name ?? "the host"} to come back
           </div>
+        ) : null}
+        {roomOffline && invite ? (
+          <div className="tag warn self-start">can't reach the team relay — check your internet, retrying</div>
         ) : null}
 
         {/* members 1-4 */}

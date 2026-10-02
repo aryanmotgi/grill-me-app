@@ -33,6 +33,8 @@ function Footer() {
   const room = useApp((s) => s.room);
   const setAppMode = useApp((s) => s.setAppMode);
   const setSettingsOpen = useApp((s) => s.setSettingsOpen);
+  const invite = useApp((s) => s.roomInvite);
+  const toast = useApp((s) => s.toast);
   const members = room?.members ?? [];
   const now = Date.now();
   return (
@@ -49,6 +51,12 @@ function Footer() {
             );
           })}
         </div>
+      ) : null}
+      {appMode === "team" && invite ? (
+        <button className="btn" title="Copy the invite link for this team"
+          onClick={() => void navigator.clipboard.writeText(invite).then(() => toast("Invite link copied — send it to a teammate"))}>
+          <Icon name="team" size={12} /> Invite
+        </button>
       ) : null}
       {appMode !== "team" ? (
         <button className="btn" title="Work with teammates: create or join a team" onClick={() => setAppMode("team")}>
