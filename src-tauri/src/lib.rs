@@ -21,6 +21,7 @@ mod catalog;
 mod learn;
 mod past;
 mod dnasync;
+mod savepoint;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4768,6 +4769,9 @@ pub fn run() {
             git_commit_only,
             commit_message_ai,
             checkpoint_commit,
+            savepoint::savepoint_create,
+            savepoint::savepoint_list,
+            savepoint::savepoint_restore,
             git_revert_file,
             usage_stats,
             transcript_tail,
