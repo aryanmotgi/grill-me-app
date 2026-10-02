@@ -86,6 +86,9 @@ function Stage({ f, step, title, body, children, primary, secondary, skip, back 
     return () => { clearInterval(t); removeEventListener("resize", place); };
   });
 
+  // a new stage: the card's rim flares
+  useEffect(() => { dispatchEvent(new Event("forge-stage")); }, [title]);
+
   // Enter presses the main button (unless typing in a field)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -99,9 +102,9 @@ function Stage({ f, step, title, body, children, primary, secondary, skip, back 
   }, [primary]);
 
   return (
-    <div ref={panelRef} className="forge-panel">
+    <div ref={panelRef} key={title} className="forge-panel">
       <div className="forge-eyebrow">
-        <span className="dots" aria-hidden>{FIRST_RUN_STEPS.map((s, i) => <i key={s} className={i < n ? "on" : ""} />)}</span>
+        <span className="dots" aria-hidden>{FIRST_RUN_STEPS.map((s, i) => <i key={s} className={i < n - 1 ? "on" : i === n - 1 ? "on now" : ""} />)}</span>
         <span>Step {n} of {FIRST_RUN_STEPS.length} · {STEP_NAMES[step]}</span>
       </div>
       <h1 className="forge-title">{title}</h1>
@@ -236,11 +239,13 @@ export function ForgeOnboarding() {
     cardRef.current = card;
     let raf = 0;
     const follow = () => {
-      card.setRect(shownRect(rootRef.current));
+      card.setRect(rootRef.current?.querySelector<HTMLElement>(".forge-panel")?.getBoundingClientRect() ?? null);
       raf = requestAnimationFrame(follow);
     };
     raf = requestAnimationFrame(follow);
-    return () => { cancelAnimationFrame(raf); card.stop(); cardRef.current = null; };
+    const flare = () => card.pulse();
+    addEventListener("forge-stage", flare);
+    return () => { cancelAnimationFrame(raf); removeEventListener("forge-stage", flare); card.stop(); cardRef.current = null; };
   }, []);
 
   // Esc / "Leave": always works, from anywhere
@@ -303,18 +308,6 @@ export function ForgeOnboarding() {
   );
 }
 
-/** The part of the stage that's showing (it grows as the body types and content fades in). */
-function shownRect(root: HTMLElement | null) {
-  const panel = root?.querySelector<HTMLElement>(".forge-panel");
-  if (!panel) return null;
-  const rs = [...panel.querySelectorAll<HTMLElement>(".forge-eyebrow, .forge-title, .forge-body, .forge-stagebody.in, .forge-footer.in, .forge-foot-note")]
-    .map((k) => k.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
-  if (!rs.length) return null;
-  const p = panel.getBoundingClientRect();
-  const top = Math.min(...rs.map((r) => r.top)), bottom = Math.max(...rs.map((r) => r.bottom));
-  return { left: p.left, top, width: p.width, height: bottom - top };
-}
-
 // ---- the soft blur behind the stage -----------------------------------------------------
 // macOS vibrancy sits behind the whole (transparent) window, but a mask
 // limits it to the stage and the corner labels: soft, feathered blobs that
@@ -331,13 +324,9 @@ function startBlurMask(root: HTMLElement): () => void {
     const now = new Map<string, { r: [number, number, number, number]; pad: number }>();
     const panel = root.querySelector<HTMLElement>(".forge-panel");
     if (panel) {
-      // grow with what's actually shown (the body types out, content fades in)
-      const kids = [...panel.querySelectorAll<HTMLElement>(".forge-eyebrow, .forge-title, .forge-body, .forge-stagebody.in, .forge-footer.in, .forge-foot-note")];
-      const rs = kids.map((k) => k.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
-      if (rs.length) {
-        const x0 = Math.min(...rs.map((r) => r.left)), y0 = Math.min(...rs.map((r) => r.top)), x1 = Math.max(...rs.map((r) => r.right)), y1 = Math.max(...rs.map((r) => r.bottom));
-        now.set("panel", { r: [x0, y0, x1 - x0, y1 - y0], pad: 30 });
-      }
+      // the whole stage, from the first frame: the card sits there too
+      const r = panel.getBoundingClientRect();
+      if (r.width) now.set("panel", { r: [r.left, r.top, r.width, r.height], pad: 30 });
     }
     root.querySelectorAll(".forge-hud > *").forEach((el, i) => { const r = el.getBoundingClientRect(); if (r.width) now.set(`hud${i}`, { r: [r.left, r.top, r.width, r.height], pad: 12 }); });
     if (root.classList.contains("arriving")) now.set("logo", { r: [innerWidth * .25, innerHeight * .18, innerWidth * .5, innerHeight * .3], pad: 30 });

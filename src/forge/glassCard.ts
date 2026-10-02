@@ -1,32 +1,142 @@
-// The stage's card: a 65% see-through glass panel whose edges breathe in
-// slow waves, with a shiny ember rim that flows around it and a few sparks
-// drifting off the edge. Canvas2D, one small canvas around the stage, drawn
-// under the diagrams so they stay bright. Reduce Motion: still, no sparks.
+// The stage's card: a 65% see-through glass panel with a living ember rim.
+// WebGL, on one small canvas around the stage, drawn under the diagrams so
+// they stay bright.
+//
+//  - The card and its rim come from one shader: a signed distance to the
+//    card's rounded rect gives a crisp white-hot hairline, a soft heat glow,
+//    and flame tongues (noise) licking outward. Two bands of heat flow around
+//    the rim; colour follows temperature (deep red → orange → gold → white).
+//  - Embers: shed where the heat is, they rise, swirl, flicker and cool along
+//    the same colour ramp, each with a short motion trail. Additive light.
+//
+// Reduce Motion: a still card and rim, no embers.
 
-const MARGIN = 70;      // room around the card for the waves, glow and sparks
+const MARGIN = 90;      // room around the card for the flames and embers
 const PAD_X = 30, PAD_Y = 26;
 const RADIUS = 24;
-const SAMPLES = 220;    // points around the edge
-const MAX_SPARKS = 26;
+const MAX_EMBERS = 140;
+const TRAIL = 4;        // points per ember: the head and its trail
 
-interface Spark { u: number; d: number; v: number; life: number; age: number; size: number }
+const QUAD_VERT = `
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() { vUv = vec2(aPos.x * .5 + .5, .5 - aPos.y * .5); gl_Position = vec4(aPos, 0., 1.); }`;
+
+const CARD_FRAG = `
+precision highp float;
+varying vec2 vUv;
+uniform vec2 uRes;    // canvas, css px
+uniform vec2 uHalf;   // card half-size, css px
+uniform float uR, uT, uA, uPer, uHead, uPulse;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(hash(i), hash(i + vec2(1., 0.)), f.x), mix(hash(i + vec2(0., 1.)), hash(i + vec2(1., 1.)), f.x), f.y);
+}
+float fbm(vec2 p) { float v = 0., a = .5; for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + 17.1; a *= .5; } return v; }
+// temperature -> colour: deep red, orange, gold, white
+vec3 heat(float h) {
+  vec3 c = mix(vec3(.45, .04, .01), vec3(1., .36, .06), smoothstep(0., .4, h));
+  c = mix(c, vec3(1., .7, .26), smoothstep(.35, .75, h));
+  return mix(c, vec3(1., .96, .88), smoothstep(.75, 1.15, h));
+}
+float bandAt(float u) {
+  float b = 0.;
+  for (int k = 0; k < 2; k++) {
+    float h = fract(uHead + float(k) * .5);
+    float behind = fract(h - u), ahead = fract(u - h);
+    if (behind < .45) b = max(b, pow(1. - behind / .45, 2.2));
+    if (ahead < .03) b = max(b, 1. - ahead / .03);
+  }
+  return b;
+}
+void main() {
+  vec2 px = vUv * uRes, p = px - uRes * .5;
+  vec2 q = abs(p) - (uHalf - uR);
+  float d = length(max(q, 0.)) + min(max(q.x, q.y), 0.) - uR;   // > 0 outside
+  float u = atan(p.y / uHalf.y, p.x / uHalf.x) / 6.2831853 + .5;
+  float s = u * uPer;
+  float band = bandAt(u);
+  // a step change: a flare runs around the whole rim
+  float energy = min(1.25, .16 + .84 * band + uPulse * (.55 + .45 * sin(u * 25.1327 - uT * 9.)));
+
+  // glass: 65% see-through, ember-dark, a sheen at the top, warm light just inside the rim
+  float cover = clamp(.5 - d, 0., 1.);
+  vec2 g = px / uRes;
+  vec3 glass = mix(vec3(.17, .1, .08), vec3(.045, .036, .055), clamp(g.y * .75 + g.x * .35, 0., 1.));
+  glass += vec3(1., .8, .62) * .07 * (1. - smoothstep(0., uHalf.y * 1.1, p.y + uHalf.y));
+  glass += heat(.45) * exp(min(d, 0.) / 9.) * (.05 + .3 * band);
+  float ga = .65 * cover;
+  vec3 rgb = glass * ga; float a = ga;
+
+  // the rim: hairline, glow, and flame tongues outside
+  float o = max(d, 0.);
+  float core = exp(-d * d / 1.1);
+  float glow = (exp(-o / 6.) * .5 + exp(-o / 20.) * .22) * exp(min(d, 0.) / 2.5); // outside only (a thin bleed in)
+  float flow = fbm(vec2(s / 34., o / 12. - uT * 1.7)) + .55 * fbm(vec2(s / 95. + 7.3, uT * .4));
+  float flame = smoothstep(.55, 1.05, flow - o / 30.) * exp(-o / 24.) * step(-.5, d);
+  float h = core * (.55 + .7 * energy) + (glow * .8 + flame * 1.25) * energy;
+  float la = clamp(h, 0., 1.);
+  rgb += heat(clamp(h * (.6 + .6 * energy), 0., 1.2)) * la;
+  a = 1. - (1. - a) * (1. - la * .9);
+  gl_FragColor = vec4(rgb, a) * uA;
+}`;
+
+const EMBER_VERT = `
+attribute vec2 aPos;
+attribute float aSize;
+attribute vec4 aCol;
+uniform vec2 uRes;
+uniform float uDpr;
+varying vec4 vCol;
+void main() {
+  vCol = aCol;
+  gl_Position = vec4(aPos.x / uRes.x * 2. - 1., 1. - aPos.y / uRes.y * 2., 0., 1.);
+  gl_PointSize = aSize * uDpr;
+}`;
+
+const EMBER_FRAG = `
+precision highp float;
+varying vec4 vCol;
+void main() {
+  float r = length(gl_PointCoord - .5) * 2.;
+  float k = exp(-r * r * 9.) + exp(-r * r * 2.5) * .35;
+  gl_FragColor = vec4(vCol.rgb * k * vCol.a, 0.);
+}`;
+
+interface Ember { x: number; y: number; vx: number; vy: number; age: number; life: number; size: number; seed: number; hist: number[] }
 
 export class GlassCard {
-  private ctx: CanvasRenderingContext2D;
+  private gl: WebGLRenderingContext | null;
+  private card!: WebGLProgram;
+  private ember!: WebGLProgram;
+  private quad!: WebGLBuffer;
+  private ebuf!: WebGLBuffer;
+  private edata = new Float32Array(MAX_EMBERS * TRAIL * 7);
   private raf = 0;
   private target: { left: number; top: number; width: number; height: number } | null = null;
   private box = { x: 0, y: 0, w: 0, h: 0 };
   private alpha = 0;
-  private sparks: Spark[] = [];
+  private flare = 0;
+  private embers: Ember[] = [];
   private t0 = performance.now();
   private last = performance.now();
 
   constructor(private canvas: HTMLCanvasElement, private reduce: boolean) {
-    this.ctx = canvas.getContext("2d")!;
+    this.gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: false });
+    if (!this.gl) return;
+    const gl = this.gl;
+    this.card = program(gl, QUAD_VERT, CARD_FRAG);
+    this.ember = program(gl, EMBER_VERT, EMBER_FRAG);
+    this.quad = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    this.ebuf = gl.createBuffer()!;
     this.raf = requestAnimationFrame(this.tick);
   }
 
-  /** The stage's rect (or null when there's no stage). */
+  /** The visible part of the stage (or null when there's no stage). */
   setRect(r: { left: number; top: number; width: number; height: number } | null) { this.target = r && r.width ? r : null; }
 
   /** Where the card is, for click-through (the card itself, no margin). */
@@ -37,13 +147,17 @@ export class GlassCard {
 
   stop() { cancelAnimationFrame(this.raf); }
 
+  /** A new step: the rim flares and throws a burst of embers. */
+  pulse() { if (!this.reduce) this.flare = 1; }
+
   private tick = (now: number) => {
     this.raf = requestAnimationFrame(this.tick);
+    const gl = this.gl!;
     const dt = Math.min(.05, (now - this.last) / 1000);
     this.last = now;
     const t = this.reduce ? 0 : (now - this.t0) / 1000;
 
-    // follow the stage (eased, so a step change glides instead of jumping)
+    // follow the stage (eased, so it grows smoothly as text types out)
     const r = this.target;
     if (r) {
       const k = this.box.w === 0 || this.reduce ? 1 : 1 - Math.pow(.0005, dt);
@@ -51,140 +165,147 @@ export class GlassCard {
       this.box.w += (r.width - this.box.w) * k; this.box.h += (r.height - this.box.h) * k;
     }
     this.alpha += ((r ? 1 : 0) - this.alpha) * (this.reduce ? 1 : Math.min(1, dt * 5));
-    if (this.alpha < .003 && !r) { this.canvas.style.opacity = "0"; return; }
+    if (this.alpha < .003 && !r) { this.canvas.style.opacity = "0"; this.embers.length = 0; return; }
     this.canvas.style.opacity = "1";
 
     // size the canvas to the card plus its margin
     const dpr = Math.min(devicePixelRatio || 1, 2);
-    const cw = this.box.w + (PAD_X + MARGIN) * 2, ch = this.box.h + (PAD_Y + MARGIN) * 2;
-    const left = this.box.x - PAD_X - MARGIN, top = this.box.y - PAD_Y - MARGIN;
-    this.canvas.style.left = `${left}px`; this.canvas.style.top = `${top}px`;
-    this.canvas.style.width = `${cw}px`; this.canvas.style.height = `${ch}px`;
+    const W = this.box.w + PAD_X * 2, H = this.box.h + PAD_Y * 2;
+    const cw = W + MARGIN * 2, ch = H + MARGIN * 2;
+    Object.assign(this.canvas.style, { left: `${this.box.x - PAD_X - MARGIN}px`, top: `${this.box.y - PAD_Y - MARGIN}px`, width: `${cw}px`, height: `${ch}px` });
     const pw = Math.round(cw * dpr), ph = Math.round(ch * dpr);
     if (this.canvas.width !== pw || this.canvas.height !== ph) { this.canvas.width = pw; this.canvas.height = ph; }
-    const g = this.ctx;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, cw, ch);
-    g.globalAlpha = this.alpha;
+    gl.viewport(0, 0, pw, ph);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
 
-    // the card's edge: a clean rounded rect (the waves live outside it)
-    const W = this.box.w + PAD_X * 2, H = this.box.h + PAD_Y * 2;
+    this.flare = Math.max(0, this.flare - dt * 1.1);
     const per = perimeter(W, H);
-    const pts: { x: number; y: number; nx: number; ny: number; s: number }[] = [];
-    for (let i = 0; i < SAMPLES; i++) {
-      const s = i / SAMPLES * per, p = pointAt(s, W, H);
-      pts.push({ x: MARGIN + p.x, y: MARGIN + p.y, nx: p.nx, ny: p.ny, s });
-    }
-    const path = new Path2D();
-    pts.forEach((p, i) => (i ? path.lineTo(p.x, p.y) : path.moveTo(p.x, p.y)));
-    path.closePath();
+    const head = (t * .045) % 1;
 
-    // glass: a 65% see-through ember-dark gradient, with a soft top sheen
-    const fill = g.createLinearGradient(MARGIN, MARGIN, MARGIN + W * .6, MARGIN + H);
-    fill.addColorStop(0, "rgba(46, 27, 21, .65)");
-    fill.addColorStop(.55, "rgba(21, 15, 18, .65)");
-    fill.addColorStop(1, "rgba(11, 9, 13, .65)");
-    g.save();
-    g.shadowColor = "rgba(0, 0, 0, .35)"; g.shadowBlur = 50; g.shadowOffsetY = 18;
-    g.fillStyle = fill; g.fill(path);
-    g.restore();
-    const sheen = g.createLinearGradient(0, MARGIN, 0, MARGIN + H * .5);
-    sheen.addColorStop(0, "rgba(255, 210, 170, .07)");
-    sheen.addColorStop(1, "rgba(255, 210, 170, 0)");
-    g.fillStyle = sheen; g.fill(path);
+    // card + rim
+    gl.useProgram(this.card);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
+    const aPos = gl.getAttribLocation(this.card, "aPos");
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    const U = (n: string) => gl.getUniformLocation(this.card, n);
+    gl.uniform2f(U("uRes"), cw, ch);
+    gl.uniform2f(U("uHalf"), W / 2, H / 2);
+    gl.uniform1f(U("uR"), Math.min(RADIUS, W / 2, H / 2));
+    gl.uniform1f(U("uT"), t);
+    gl.uniform1f(U("uA"), this.alpha);
+    gl.uniform1f(U("uPer"), per);
+    gl.uniform1f(U("uHead"), head);
+    gl.uniform1f(U("uPulse"), this.flare * this.flare);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disableVertexAttribArray(aPos);
 
-    // the shiny rim: a crisp hairline, then thin ember ribbons rippling just
-    // outside it like heat shimmer, brightest where a band of light flows by
-    g.lineJoin = "round"; g.lineCap = "butt"; // butt: round caps overlap into beads
-    g.lineWidth = 1; g.strokeStyle = "rgba(255, 255, 255, .11)"; g.stroke(path);
-    const head = (t * .045) % 1, tail = .42;
-    const glow = (u: number) => {
-      let k = 0;
-      for (const h of [head, (head + .5) % 1]) {
-        const d = (h - u + 1) % 1;
-        if (d < tail) k = Math.max(k, Math.pow(1 - d / tail, 2));
-        const ahead = (u - h + 1) % 1; // a soft front edge, not a hard cut
-        if (ahead < .035) k = Math.max(k, 1 - ahead / .035);
-      }
-      return .12 + .88 * k; // a faint glow all the way round, bright in the bands
-    };
-    g.save();
-    g.globalCompositeOperation = "lighter";
-    const RIBBONS = [
-      { base: 1.5, amp: 1.6, len: 120, speed: .55, phase: 0, width: 1.4, a: .95 },
-      { base: 4.5, amp: 2.6, len: 170, speed: -.4, phase: 2.1, width: 1, a: .45 },
-      { base: 8, amp: 3.4, len: 230, speed: .3, phase: 4.2, width: .8, a: .22 },
-    ];
-    for (const rb of RIBBONS) {
-      const off = (s: number) => rb.base + rb.amp * (.5 + .5 * Math.sin(s / rb.len * Math.PI * 2 + t * rb.speed * 2 + rb.phase));
-      const at = (i: number) => { const p = pts[i % SAMPLES], o = off(p.s); return [p.x + p.nx * o, p.y + p.ny * o]; };
-      // soft glow pass, then the bright line
-      for (const [w, a] of [[rb.width * 6, rb.a * .08], [rb.width, rb.a]] as const) {
-        g.lineWidth = w;
-        for (let i = 0; i < SAMPLES; i++) {
-          const k = glow(i / SAMPLES);
-          if (k * a < .004) continue;
-          const [x0, y0] = at(i), [x1, y1] = at(i + 1);
-          g.strokeStyle = `rgba(255, ${Math.round(110 + 110 * k)}, ${Math.round(45 + 60 * k)}, ${a * k})`;
-          g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
-        }
+    if (this.reduce) return;
+
+    // embers: shed where the heat flows, most at the bright heads
+    const spawn = dt * (34 + 260 * this.flare * this.flare) * this.alpha;
+    for (let n = Math.floor(spawn) + (Math.random() < spawn % 1 ? 1 : 0); n > 0 && this.embers.length < MAX_EMBERS; n--) {
+      const hot = Math.random() < .85 - this.flare * .8; // a flare sheds all round
+      const h = Math.random() < .5 ? head : (head + .5) % 1;
+      const u = hot ? (h - Math.pow(Math.random(), 2) * .2 + 1) % 1 : Math.random();
+      const p = edgeAt(u, W, H);
+      const out = 18 + Math.random() * 46;
+      const tang = (Math.random() - .5) * 30;
+      this.embers.push({
+        x: MARGIN + p.x, y: MARGIN + p.y,
+        vx: p.nx * out - p.ny * tang, vy: p.ny * out + p.nx * tang - 10,
+        age: 0, life: (hot ? 1 : .7) * (.9 + Math.random() * 1.5), size: 2.2 + Math.random() * 3.2, seed: Math.random() * 100, hist: [],
+      });
+    }
+    let n = 0;
+    const d = this.edata;
+    this.embers = this.embers.filter((e) => (e.age += dt) < e.life);
+    for (const e of this.embers) {
+      // rise with the heat, swirl in the air, slow down
+      e.vx += Math.sin(e.y * .045 + t * 2.1 + e.seed) * 70 * dt;
+      e.vy += (Math.cos(e.x * .04 - t * 1.6 + e.seed) * 55 - 38) * dt;
+      const drag = 1 - 1.3 * dt;
+      e.vx *= drag; e.vy *= drag;
+      e.x += e.vx * dt; e.y += e.vy * dt;
+      e.hist.unshift(e.x, e.y);
+      if (e.hist.length > TRAIL * 8) e.hist.length = TRAIL * 8;
+      const life = e.age / e.life;
+      const temp = 1 - life;                                   // cools as it flies
+      const fade = Math.min(1, e.age * 8) * (1 - Math.pow(life, 3));
+      const flick = .75 + .25 * Math.sin(e.age * 31 + e.seed * 7);
+      const [cr, cg, cb] = heatRGB(.25 + temp * .95);
+      for (let k = 0; k < TRAIL; k++) {
+        const i = Math.min(k * 4, e.hist.length - 2);           // two frames apart
+        const tk = 1 - k / TRAIL;
+        const size = e.size * (.55 + .7 * temp) * (k ? .75 * tk : 1.25);
+        d.set([e.hist[i], e.hist[i + 1], size, cr, cg, cb, fade * flick * (k ? .45 * tk : 1)], n++ * 7);
       }
     }
-    g.restore();
-
-    // sparks: shed from the bright band, drifting outward and fading
-    if (!this.reduce) {
-      if (this.sparks.length < MAX_SPARKS && Math.random() < dt * 14) {
-        const h = Math.random() < .5 ? head : (head + .5) % 1;
-        this.sparks.push({ u: (h - Math.random() * .08 + 1) % 1, d: 0, v: 8 + Math.random() * 16, life: 1.2 + Math.random() * 1.6, age: 0, size: .8 + Math.random() * 1.5 });
-      }
-      g.save();
-      g.globalCompositeOperation = "lighter";
-      this.sparks = this.sparks.filter((s) => (s.age += dt) < s.life);
-      for (const s of this.sparks) {
-        s.d += s.v * dt; s.u = (s.u + dt * .004) % 1;
-        const p = pts[Math.floor(s.u * SAMPLES) % SAMPLES];
-        const x = p.x + p.nx * s.d, y = p.y + p.ny * s.d - s.age * 6;
-        const k = Math.sin(Math.PI * s.age / s.life);
-        const grd = g.createRadialGradient(x, y, 0, x, y, s.size * 4);
-        grd.addColorStop(0, `rgba(255, 220, 160, ${.9 * k})`);
-        grd.addColorStop(.35, `rgba(255, 130, 60, ${.5 * k})`);
-        grd.addColorStop(1, "rgba(255, 90, 30, 0)");
-        g.fillStyle = grd;
-        g.beginPath(); g.arc(x, y, s.size * 4, 0, Math.PI * 2); g.fill();
-      }
-      g.restore();
+    if (!n) return;
+    gl.useProgram(this.ember);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.ebuf);
+    gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, n * 7), gl.DYNAMIC_DRAW);
+    const attrs: [string, number, number][] = [["aPos", 2, 0], ["aSize", 1, 2], ["aCol", 4, 3]];
+    for (const [name, size, off] of attrs) {
+      const l = gl.getAttribLocation(this.ember, name);
+      gl.enableVertexAttribArray(l);
+      gl.vertexAttribPointer(l, size, gl.FLOAT, false, 28, off * 4);
     }
+    gl.uniform2f(gl.getUniformLocation(this.ember, "uRes"), cw, ch);
+    gl.uniform1f(gl.getUniformLocation(this.ember, "uDpr"), dpr);
+    gl.drawArrays(gl.POINTS, 0, n);
+    for (const [name] of attrs) gl.disableVertexAttribArray(gl.getAttribLocation(this.ember, name));
   };
 }
 
-// ---- rounded-rect perimeter, walked by distance -----------------------------------
+function program(gl: WebGLRenderingContext, vs: string, fs: string) {
+  const p = gl.createProgram()!;
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
+    const s = gl.createShader(type)!;
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) ?? "shader");
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? "link");
+  return p;
+}
+
+/** The same colour ramp as the shader's heat(). */
+function heatRGB(h: number): [number, number, number] {
+  const ss = (a: number, b: number, x: number) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+  const mix = (a: number[], b: number[], k: number) => a.map((v, i) => v + (b[i] - v) * k);
+  let c = mix([.45, .04, .01], [1, .36, .06], ss(0, .4, h));
+  c = mix(c, [1, .7, .26], ss(.35, .75, h));
+  c = mix(c, [1, .96, .88], ss(.75, 1.15, h));
+  return c as [number, number, number];
+}
+
+// ---- the card's edge, matched to the shader's perimeter coordinate --------------------
 function perimeter(w: number, h: number) {
   const r = Math.min(RADIUS, w / 2, h / 2);
   return 2 * (w - 2 * r) + 2 * (h - 2 * r) + 2 * Math.PI * r;
 }
 
-/** Point (and outward normal) at distance s along a rounded rect, clockwise from top-left. */
-function pointAt(s: number, w: number, h: number) {
-  const r = Math.min(RADIUS, w / 2, h / 2);
-  const sw = w - 2 * r, sh = h - 2 * r, arc = Math.PI * r / 2;
-  const segs: [number, (d: number) => { x: number; y: number; nx: number; ny: number }][] = [
-    [sw, (d) => ({ x: r + d, y: 0, nx: 0, ny: -1 })],
-    [arc, (d) => corner(w - r, r, -Math.PI / 2 + d / r)],
-    [sh, (d) => ({ x: w, y: r + d, nx: 1, ny: 0 })],
-    [arc, (d) => corner(w - r, h - r, d / r)],
-    [sw, (d) => ({ x: w - r - d, y: h, nx: 0, ny: 1 })],
-    [arc, (d) => corner(r, h - r, Math.PI / 2 + d / r)],
-    [sh, (d) => ({ x: 0, y: h - r - d, nx: -1, ny: 0 })],
-    [arc, (d) => corner(r, r, Math.PI + d / r)],
-  ];
-  for (const [len, f] of segs) {
-    if (s <= len) return f(s);
-    s -= len;
-  }
-  return { x: r, y: 0, nx: 0, ny: -1 };
-  function corner(cx: number, cy: number, a: number) {
-    const nx = Math.cos(a), ny = Math.sin(a);
-    return { x: cx + nx * r, y: cy + ny * r, nx, ny };
-  }
+/** Point and outward normal on the card's edge at the shader's u (an angle around the card). */
+function edgeAt(u: number, w: number, h: number) {
+  // the shader's u = atan(p.y / halfH, p.x / halfW): walk that ray out to the edge
+  const a = (u - .5) * Math.PI * 2;
+  const hw = w / 2, hh = h / 2, r = Math.min(RADIUS, hw, hh);
+  const dx = Math.cos(a) * hw, dy = Math.sin(a) * hh;
+  const sdf = (x: number, y: number) => {
+    const qx = Math.abs(x) - (hw - r), qy = Math.abs(y) - (hh - r);
+    return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+  };
+  let lo = 0, hi = 1.5;
+  for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (sdf(dx * m, dy * m) > 0) hi = m; else lo = m; }
+  const x = dx * lo, y = dy * lo, e = .5;
+  let nx = sdf(x + e, y) - sdf(x - e, y), ny = sdf(x, y + e) - sdf(x, y - e);
+  const len = Math.hypot(nx, ny) || 1; nx /= len; ny /= len;
+  return { x: x + hw, y: y + hh, nx, ny };
 }
