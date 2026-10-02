@@ -1,3 +1,4 @@
+import { submitToAgent } from "./lib/ptyReady";
 import { bootMates, bootStep, matesOnline } from "./lib/bootProgress";
 import { create } from "zustand";
 import {
@@ -771,7 +772,7 @@ export const useApp = create<AppState>((set, get) => ({
         get().toast(`Can't ship — no claude prompt visible in ${name}'s session. Open the pane and check it's idle.`, "warn");
         return;
       }
-      await invoke("pty_write", { id: ptyIdFor(id), data: "/ship\n" });
+      await submitToAgent(ptyIdFor(id), "/ship");
       get().toast(`Approved — ${name} is running /ship: tests, commit, push, then a PR`);
       // shipping completes this member's merge turn — rotate the queue
       if (get().mergeQueue[0] === id) get().advanceMergeQueue();

@@ -707,15 +707,26 @@ function Tools({ f, step }: SceneProps) {
   const [showList, setShowList] = useState(false);
   const [showAll, setShowAll] = useState(false);
   useEffect(() => () => { f.world.clearStars(); }, []);
+  const [scanned, setScanned] = useState(0);
+  const [found, setFound] = useState<number | null>(null);
   const look = async () => {
     setPhase("looking");
-    await f.wait(300);
+    setScanned(0); setFound(null);
     const scouts = f.world.scoutOut();
-    const sources = SCAN_SOURCES.filter((x) => on[x.id]).map((x) => x.id);
-    const [res] = await Promise.all([
-      native() ? invoke<ScanResult>("workflow_scan", { project: projectPath ?? null, sources }).catch((e) => { f.toast(`Scan failed: ${e}`); return null; }) : Promise.resolve(SAMPLE_SCAN),
-      f.wait(1300),
-    ]);
+    const picked = SCAN_SOURCES.filter((x) => on[x.id]);
+    const sources = picked.map((x) => x.id);
+    // the scan runs while each place it checks ticks off, ~6 s at least; the
+    // last one keeps "scanning" until the real scan is done
+    const scan = (native() ? invoke<ScanResult>("workflow_scan", { project: projectPath ?? null, sources }).catch((e) => { f.toast(`Scan failed: ${e}`); return null; }) : Promise.resolve(SAMPLE_SCAN));
+    const per = f.reduce ? 80 : Math.max(650, 5400 / picked.length);
+    for (let i = 0; i < picked.length - 1; i++) { await f.wait(per); setScanned(i + 1); }
+    await f.wait(per);
+    const res = await scan;
+    setScanned(picked.length);
+    // count up to what was found
+    const total = toolCount(res);
+    for (let k = 1; k <= 12; k++) { setFound(Math.round((total * k) / 12)); await f.wait(f.reduce ? 0 : 55); }
+    await f.wait(f.reduce ? 0 : 700);
     setResult(res);
     setPhase("done");
     await f.wait(60); // let the picture area exist before stars arrive
@@ -724,17 +735,37 @@ function Tools({ f, step }: SceneProps) {
     f.world.scoutBack(scouts);
     await f.world.revealStars(f.wait);
   };
+  if (phase === "looking") {
+    const picked = SCAN_SOURCES.filter((x) => on[x.id]);
+    return (
+      <Stage f={f} step={step} instant back={false}
+        title="Scanning your setup"
+        body="Looking at what you build with. Names only, never keys or code, and nothing leaves this Mac.">
+        <div className="forge-scan">
+          <div className="radar" aria-hidden><i className="sweep" /><i className="ring r1" /><i className="ring r2" /><i className="ring r3" /><b className="count">{found ?? ""}</b></div>
+          <ul className="steps" aria-live="polite">
+            {picked.map((x, i) => (
+              <li key={x.id} className={i < scanned ? "done" : i === scanned ? "now" : ""}>
+                <span className="mark" aria-hidden>{i < scanned ? "✓" : ""}</span>{x.label}
+              </li>
+            ))}
+          </ul>
+          <div className="found">{found !== null ? `Found ${found} tools` : "\u00a0"}</div>
+        </div>
+      </Stage>
+    );
+  }
   if (phase !== "done") {
     return (
       <Stage f={f} step={step}
         title="See your tools"
         body="With your OK, I'll look at which AI tools, plugins and MCP servers you use. Names only, never keys or code. Nothing leaves this Mac."
-        primary={{ label: phase === "looking" ? "Looking…" : "Scan my setup", onClick: () => void look(), disabled: phase === "looking" || !Object.values(on).some(Boolean) }}
+        primary={{ label: "Scan my setup", onClick: () => void look(), disabled: !Object.values(on).some(Boolean) }}
         skip={{ label: "Skip this step", onClick: () => f.go(nextStep(step)) }}>
         <div className="forge-checkgrid">
           {SCAN_SOURCES.map((x) => (
             <label key={x.id} className={`forge-tick ${on[x.id] ? "on" : ""}`}>
-              <input type="checkbox" checked={on[x.id]} onChange={() => setOn({ ...on, [x.id]: !on[x.id] })} disabled={phase === "looking"} />
+              <input type="checkbox" checked={on[x.id]} onChange={() => setOn({ ...on, [x.id]: !on[x.id] })} />
               <span className="box" aria-hidden />
               <span><b>{x.label}</b>{x.defaultOn ? null : <em>optional</em>}</span>
             </label>

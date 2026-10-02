@@ -1,3 +1,4 @@
+import { submitToAgent } from "../lib/ptyReady";
 import { useMemo, useRef, useState } from "react";
 import { useApp, ptyIdFor } from "../store";
 import { isTauri } from "../data/sources/git";
@@ -84,8 +85,7 @@ export function Composer({ mateId }: { mateId: string }) {
     if (!text || sending || viewOnly) return;
     setSending(true);
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("pty_write", { id: ptyIdFor(mateId), data: text + "\n" });
+      await submitToAgent(ptyIdFor(mateId), text);
       setDraft("");
       setCaret(0);
     } catch (e) {

@@ -27,3 +27,14 @@ describe("Claude's trust-this-folder screen", () => {
     expect(TRUST_ACCEPT_KEYS).toEqual(["\x1b[B", "\r"]);
   });
 });
+
+import { submitParts } from "./ptyReady";
+describe("submitting to an agent", () => {
+  it("presses a real Enter, not a newline", () => {
+    expect(submitParts("hi")).toEqual(["hi", "\r"]);
+    expect(submitParts("/ship\n")).toEqual(["/ship", "\r"]);
+  });
+  it("keeps line breaks inside one pasted message", () => {
+    expect(submitParts("line one\nline two\n")).toEqual(["\x1b[200~line one\nline two\x1b[201~", "\r"]);
+  });
+});

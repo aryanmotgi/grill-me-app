@@ -378,3 +378,24 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 .forge-alltools { display: flex; flex-direction: column; gap: 12px; width: 100%; max-height: 240px; overflow-y: auto; }
 .forge-alltools > div { display: flex; flex-direction: column; gap: 6px; }
 .forge-alltools .forge-tag { color: rgba(255,255,255,.88); background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.12); }
+
+/* the scan: a radar sweep while each place ticks off, then the count */
+.forge-scan { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; gap: 8px 26px; align-items: center; width: 100%; }
+.forge-scan .radar { grid-row: 1 / 3; position: relative; width: 150px; height: 150px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 140, 60, .12), rgba(255, 140, 60, .02) 60%, transparent 70%); }
+.forge-scan .ring { position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(255, 170, 110, .22); }
+.forge-scan .r2 { inset: 22%; } .forge-scan .r3 { inset: 44%; border-color: rgba(255, 190, 130, .45); }
+.forge-scan .sweep { position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 150, 70, .55), rgba(255, 150, 70, 0) 70deg, transparent 360deg); animation: forge-sweep 1.6s linear infinite; }
+@keyframes forge-sweep { to { transform: rotate(360deg); } }
+.forge-scan .count { position: absolute; inset: 0; display: grid; place-items: center; font: 700 30px "Chakra Petch", -apple-system, sans-serif; color: #fff; text-shadow: 0 0 18px rgba(255, 140, 60, .8); }
+.forge-scan .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; font-size: 13.5px; }
+.forge-scan .steps li { display: flex; align-items: center; gap: 9px; color: var(--f-faint); transition: color .3s; }
+.forge-scan .steps li.now { color: #fff; }
+.forge-scan .steps li.done { color: rgba(255,255,255,.82); }
+.forge-scan .mark { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; flex: none; border: 1px solid rgba(255,255,255,.2); }
+.forge-scan .steps li.done .mark { background: rgba(79, 207, 134, .2); color: #8fe7b2; border-color: transparent; }
+.forge-scan .steps li.now .mark { border-color: #ff9a52; border-top-color: transparent; animation: forge-spin-mark .8s linear infinite; }
+@keyframes forge-spin-mark { to { transform: rotate(360deg); } }
+.forge-scan .found { grid-column: 2; font-size: 14px; font-weight: 600; color: #ffc79e; min-height: 1.3em; }
+@media (prefers-reduced-motion: reduce) { .forge-scan .sweep, .forge-scan .steps li.now .mark { animation: none; } }
