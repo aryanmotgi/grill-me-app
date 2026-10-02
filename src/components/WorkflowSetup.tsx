@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
 import type { Catalog } from "../lib/catalog";
 import { builtinCatalog, loadCatalog } from "../lib/catalogLoad";
 import type { ScanResult } from "../lib/scan";
+import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING, REPLY_SCHEMA, SYSTEM_PROMPT, buildPrompt, complete, filled, mergeReply, type Turn } from "../lib/interview";
 import {
   AGENTS, BUILDING, MAX_PAINS, PAINS, STYLE, TEAM,
   emptyProfile, profileFacts, profileOf, suggestUpgrades, toolsYouHave, workflowStages,
@@ -201,4 +202,109 @@ export function useProfileDraft(scan: ScanResult | null, ready: boolean): [Workf
     if (ready && !draft) setDraft(emptyProfile(scan));
   }, [ready]);
   return [draft ?? emptyProfile(scan), setDraft, saved !== null];
+}
+
+// -- The interview ---------------------------------------------------------------
+
+/** A short chat with the user's own AI that fills the same fields as the form. */
+export function Interview({ brain, scan, start, onDone, onUseForm }: {
+  brain: string;
+  scan: ScanResult | null;
+  start: WorkflowProfile;
+  onDone: (p: WorkflowProfile) => void;
+  onUseForm: () => void;
+}) {
+  const name = BRAIN_NAMES[brain] ?? brain;
+  const [turns, setTurns] = useState<Turn[]>([{ who: "ai", text: OPENING }]);
+  const [profile, setProfile] = useState<WorkflowProfile>({ ...start, source: "interview" });
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const answers = turns.filter((t) => t.who === "you").length;
+
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [turns, busy]);
+  useEffect(() => { if (!busy && !done) inputRef.current?.focus(); }, [busy, done]);
+
+  const ask = async (history: Turn[], p: WorkflowProfile) => {
+    setBusy(true);
+    setError("");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const raw = await invoke<unknown>("interview_turn", {
+        brain, system: SYSTEM_PROMPT, prompt: buildPrompt(history, p, scan), schema: JSON.stringify(REPLY_SCHEMA),
+      });
+      const r = mergeReply(p, raw);
+      setProfile(r.profile);
+      setTurns([...history, { who: "ai", text: r.say }]);
+      if (r.done || history.filter((t) => t.who === "you").length >= MAX_ANSWERS) setDone(true);
+    } catch (e) {
+      setError(`${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const send = () => {
+    const t = text.trim().slice(0, MAX_ANSWER_CHARS);
+    if (!t || busy || done) return;
+    const history: Turn[] = [...turns, { who: "you", text: t }];
+    setTurns(history);
+    setText("");
+    void ask(history, profile);
+  };
+  const retry = () => void ask(turns, profile);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {filled(profile).map((f) => (
+          <span key={f.label} className={`flex items-center gap-1.5 text-[12px] ${f.done ? "text-ink" : "text-faint"}`}>
+            {f.done ? <Icon name="check" size={10} className="text-ok" /> : <span className="w-2 h-2 rounded-full border border-faint" />} {f.label}
+          </span>
+        ))}
+      </div>
+      <div className="hairline rounded-lg bg-panel/60 px-4 py-3 flex flex-col gap-2.5 max-h-[340px] overflow-y-auto" aria-live="polite">
+        {turns.map((t, i) => (
+          <div key={i} className={`max-w-[85%] text-[13px] leading-relaxed whitespace-pre-wrap ${t.who === "you" ? "self-end bg-accent/15 border border-accent/40 rounded-[10px_10px_2px_10px] px-3 py-1.5 text-ink" : "text-ink"}`}>
+            {t.who === "ai" ? <span className="text-[11px] text-faint block mb-0.5">{name}</span> : null}
+            {t.text}
+          </div>
+        ))}
+        {busy ? <div className="text-[12px] text-faint flex items-center gap-2"><span className="spinner" /> {name} is thinking…</div> : null}
+        {error ? (
+          <div className="text-[12px] text-warn flex flex-wrap items-center gap-2">
+            <span>{name} couldn't answer: {error}</span>
+            <button className="btn" onClick={retry}>Try again</button>
+            <button className="btn" onClick={onUseForm}>Use the quick form</button>
+          </div>
+        ) : null}
+        <div ref={endRef} />
+      </div>
+      {done ? (
+        <button className="btn primary w-fit" autoFocus onClick={() => onDone({ ...profile, updated: Date.now() })}>See my workflow</button>
+      ) : (
+        <div className="flex gap-2 items-end">
+          <textarea ref={inputRef} rows={2} value={text} disabled={busy} maxLength={MAX_ANSWER_CHARS}
+            className="flex-1 min-w-0 resize-none bg-raised hairline rounded-md px-3 py-2 text-[13px] outline-none focus:border-accent placeholder:text-faint disabled:opacity-60"
+            placeholder="Type your answer… (Enter to send)"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
+          <button className="btn primary" disabled={busy || !text.trim()} onClick={send}>Send</button>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-3 text-[12px] text-faint">
+        <span>Question {Math.min(answers + 1, MAX_ANSWERS)} of up to {MAX_ANSWERS} · runs on your {name} plan</span>
+        <span className="flex-1" />
+        {!done && answers > 0 ? (
+          <button className="hover:text-ink cursor-pointer" onClick={() => onDone({ ...profile, updated: Date.now() })}>
+            {complete(profile) ? "Finish" : "Finish now"}
+          </button>
+        ) : null}
+        <button className="hover:text-ink cursor-pointer" onClick={onUseForm}>Use the quick form instead</button>
+      </div>
+    </div>
+  );
 }

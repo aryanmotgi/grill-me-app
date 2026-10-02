@@ -6,9 +6,10 @@ import { Toasts } from "./Chrome";
 import { runDoctor, type DoctorCheck } from "./DoctorTab";
 import { CONSENT_ITEMS } from "./InstallConsent";
 import { SCAN_SOURCES, scanSummary, type ScanResult } from "../lib/scan";
-import { agentsFromScan } from "../lib/profile";
-import { QuickForm, WorkflowResult, useProfileDraft, useWorkflowInputs } from "./WorkflowSetup";
-import { pickBrain, readyAis, statusLabel, type AiId, type AiStatus } from "../lib/aiConnect";
+import { agentsFromScan, type WorkflowProfile } from "../lib/profile";
+import { BRAIN_NAMES } from "../lib/interview";
+import { Interview, QuickForm, WorkflowResult, useProfileDraft, useWorkflowInputs } from "./WorkflowSetup";
+import { interviewBrainOf, pickBrain, readyAis, statusLabel, type AiId, type AiStatus } from "../lib/aiConnect";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 
@@ -511,18 +512,22 @@ function Scan({ go }: { go: (s: FirstRunStep) => void }) {
 
 function Workflow({ go }: { go: (s: FirstRunStep) => void }) {
   const setAppSetting = useApp((s) => s.setAppSetting);
+  const brain = useApp((s) => interviewBrainOf(s.appSettings.interviewBrain));
   const { scan, catalog, ready } = useWorkflowInputs();
   const [draft, setDraft, hadSaved] = useProfileDraft(scan, ready);
-  const [showResult, setShowResult] = useState(hadSaved);
+  // a saved profile opens on the result; otherwise the interview when an AI
+  // is connected, else the quick form
+  const [view, setView] = useState<"interview" | "form" | "result">(hadSaved ? "result" : brain !== "form" && native() ? "interview" : "form");
+  const aiName = BRAIN_NAMES[brain] ?? "your AI";
 
-  const save = () => {
-    const p = { ...draft, source: "form" as const, updated: Date.now() };
-    setDraft(p);
-    setAppSetting("workflowProfile", p);
-    setShowResult(true);
+  const save = (p: WorkflowProfile) => {
+    const saved = { ...p, updated: Date.now() };
+    setDraft(saved);
+    setAppSetting("workflowProfile", saved);
+    setView("result");
   };
 
-  if (showResult) {
+  if (view === "result") {
     return (
       <Frame step="workflow" title="Here's how you work"
         lead="Built from your scan and your answers. The upgrades are only suggestions, picked for what slows you down and what your setup is missing."
@@ -532,19 +537,36 @@ function Workflow({ go }: { go: (s: FirstRunStep) => void }) {
           <button className="btn primary" autoFocus onClick={() => go(nextStep("workflow"))}>Continue</button>
         </>}
       >
-        <WorkflowResult profile={draft} scan={scan} catalog={catalog} onEdit={() => setShowResult(false)} />
+        <WorkflowResult profile={draft} scan={scan} catalog={catalog} onEdit={() => setView("form")} />
+      </Frame>
+    );
+  }
+
+  if (view === "interview") {
+    return (
+      <Frame step="workflow" title="How do you work?"
+        lead={`A quick chat with ${aiName} so Grill Me can suggest a better way to work. About a minute, and you can stop any time.`}
+        footer={<>
+          <BackButton step="workflow" go={go} />
+          <span className="flex-1" />
+          <button className="btn" onClick={() => go(nextStep("workflow"))}>Skip</button>
+        </>}
+      >
+        {ready ? <Interview brain={brain} scan={scan} start={draft} onDone={save} onUseForm={() => setView("form")} />
+          : <p className="text-[13px] text-faint flex items-center gap-2"><span className="spinner" /> Loading…</p>}
       </Frame>
     );
   }
 
   return (
     <Frame step="workflow" title="How do you work?"
-      lead="Five quick questions so Grill Me can suggest a better way to work. All optional, about a minute. A chat-style interview with your own AI is coming soon."
+      lead="Five quick questions so Grill Me can suggest a better way to work. All optional, about a minute."
       footer={<>
         <BackButton step="workflow" go={go} />
         <span className="flex-1" />
+        {brain !== "form" && native() ? <button className="btn" onClick={() => setView("interview")}>Chat with {aiName} instead</button> : null}
         <button className="btn" onClick={() => go(nextStep("workflow"))}>Skip</button>
-        <button className="btn primary" disabled={!ready} onClick={save}>See my workflow</button>
+        <button className="btn primary" disabled={!ready} onClick={() => save({ ...draft, source: "form" })}>See my workflow</button>
       </>}
     >
       {ready ? <QuickForm value={draft} onChange={setDraft} scanned={agentsFromScan(scan).length > 0} /> : <p className="text-[13px] text-faint flex items-center gap-2"><span className="spinner" /> Loading…</p>}

@@ -12,6 +12,7 @@ mod tailscale;
 mod remote;
 mod doctor;
 mod ai_connect;
+mod interview;
 mod catalog;
 pub mod mcp;
 
@@ -4627,6 +4628,7 @@ pub fn run() {
             doctor::doctor_install,
             ai_connect::ai_status,
             ai_connect::ai_login,
+            interview::interview_turn,
             uninstall_all,
             doctor::diagnostics,
             team_config,
