@@ -35,13 +35,14 @@ pub const WRITE_TOOLS: [&str; 10] = [
 pub const REMOTE_PROPOSALS: [&str; 3] = ["save_plan", "send_to_coder", "answer_question"];
 // Never offered over the internet, whatever allowWrites says: team chat posts
 // reach teammates' screens, and actions run things on this Mac.
-pub const REMOTE_DENY: [&str; 5] = ["post_team_chat", "run_tests", "restart_session", "open_preview", "create_session"];
+// The Coding DNA stays on this computer too.
+pub const REMOTE_DENY: [&str; 6] = ["post_team_chat", "run_tests", "restart_session", "open_preview", "create_session", "coding_dna"];
 const DESTRUCTIVE: [&str; 1] = ["restart_session"];
 
 // MCP tool annotations: clients (claude.ai, Claude Code) use readOnlyHint to
 // skip the permission prompt on reads and to flag the tools that change things.
 // Nothing here reaches outside the Mac, so openWorldHint is false everywhere.
-const TITLES: [(&str, &str); 23] = [
+const TITLES: [(&str, &str); 24] = [
     ("search_brain", "Search the brain"),
     ("whats_new", "What's new in my sessions"),
     ("read_session", "Read a session"),
@@ -65,6 +66,7 @@ const TITLES: [(&str, &str); 23] = [
     ("restart_session", "Ask to restart a session"),
     ("open_preview", "Ask to open the app preview"),
     ("create_session", "Ask to start a new session"),
+    ("coding_dna", "Read my Coding DNA"),
 ];
 const IDEMPOTENT: [&str; 1] = ["set_goal"];
 
@@ -164,6 +166,7 @@ pub fn call_tool(ctx: &Ctx, name: &str, args: &Value) -> Result<String, String> 
             }
             Ok(parts.join("\n\n"))
         }
+        "coding_dna" => Ok(coding_dna(&ctx.root, &s(arg("strand")))),
         "past_lessons" => {
             let l = ctx.lessons_text(None, 20)?;
             let kits = ctx.kits_text(None, 10);
@@ -835,6 +838,17 @@ mod tests {
     }
 
     #[test]
+    fn coding_dna_is_local_and_read_only() {
+        let local = tools_for(&ctx(Remote::default()));
+        let t = local.iter().find(|t| name_of(t) == "coding_dna").expect("coding_dna offered locally");
+        assert_eq!(t["annotations"]["readOnlyHint"], true);
+        for allow_writes in [false, true] {
+            let remote = tools_for(&ctx(Remote { on: true, allow_writes, no_transcripts: false }));
+            assert!(!remote.iter().any(|t| name_of(t) == "coding_dna"), "never over the internet");
+        }
+    }
+
+    #[test]
     fn action_tools_are_local_writes_and_never_remote() {
         let local = ctx(Remote::default());
         let all = tools_for(&local);
@@ -923,5 +937,38 @@ mod tests {
         let settings = json!({ "teamChatMe": { "id": "m1", "name": "Aryan" }, "teamChatRead": { "proj": 25 } });
         assert_eq!(chat_reader(&settings, "proj"), ("m1".to_string(), 25.0));
         assert_eq!(chat_reader(&settings, "other").1, 0.0);
+    }
+}
+
+/// The user's Coding DNA, from the readable copy Grill Me keeps next to it
+/// (~/.grillme/coding-dna.md); `strand` narrows it to one section.
+pub fn coding_dna(root: &str, strand: &str) -> String {
+    let Ok(md) = std::fs::read_to_string(std::path::Path::new(root).join("coding-dna.md")) else {
+        return "No Coding DNA yet. The user can build it in Grill Me → DNA.".into();
+    };
+    if strand.is_empty() { return md; }
+    let want = format!("## {}", strand[..1].to_uppercase() + &strand[1..]).to_lowercase();
+    let mut out = vec![];
+    let mut on = false;
+    for line in md.lines() {
+        if line.starts_with("## ") { on = line.to_lowercase() == want; }
+        if on { out.push(line); }
+    }
+    if out.is_empty() { format!("Nothing in the {strand} strand yet.") } else { out.join("\n") }
+}
+
+#[cfg(test)]
+mod dna_tool_tests {
+    #[test]
+    fn reads_all_or_one_strand() {
+        let dir = std::env::temp_dir().join(format!("grillme-dna-tool-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_string_lossy().into_owned();
+        assert!(super::coding_dna(&root, "").starts_with("No Coding DNA yet"));
+        std::fs::write(dir.join("coding-dna.md"), "# Coding DNA\n\n## Rules\n- Never push to main.\n\n## Pains\n- Flaky tests\n").unwrap();
+        assert_eq!(super::coding_dna(&root, "rules"), "## Rules\n- Never push to main.\n");
+        assert!(super::coding_dna(&root, "").contains("## Pains"));
+        assert_eq!(super::coding_dna(&root, "wins"), "Nothing in the wins strand yet.");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

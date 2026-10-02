@@ -20,6 +20,7 @@ mod blur;
 mod catalog;
 mod learn;
 mod past;
+mod dnasync;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4675,6 +4676,10 @@ pub fn run() {
             past::past_rules,
             past::past_tools,
             past::past_terminal,
+            dnasync::dna_sync_read,
+            dnasync::dna_sync_apply,
+            dnasync::dna_sync_undo,
+            dnasync::dna_sync_last,
             blur::forge_blur_mask,
             forge::perf_enabled,
             forge::perf_report,

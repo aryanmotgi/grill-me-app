@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
 import { useDNA } from "../lib/dnaStore";
+import { agentsOf, blockFor, changeOf, currentBlock, targetsFor, withBlock, type Change, type Target } from "../lib/dnaSync";
 import {
   FLOW_STAGES, STRANDS, addItem, applyPast, dnaOf, editItem, mergeDNA, muteCandidates, pastCandidates, removeItem, setPainStatus, setRule, strandView,
   type Candidate, type CodingDNA, type FlowStage, type PastResults, type PastSource, type Strand, type View,
@@ -33,6 +34,7 @@ export function DNAPage() {
   const toast = useApp((s) => s.toast);
   const [strand, setStrand] = useState<Strand>("flow");
   const [pastOpen, setPastOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
   const [importing, setImporting] = useState<CodingDNA | null>(null);
   useEffect(() => { void load(); }, [load]);
@@ -74,6 +76,7 @@ export function DNAPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button className="composer-btn" onClick={() => setSyncOpen(true)} title="Write your rules into the files your AIs read (you see every change first)"><Icon name="upload" size={11} /> Sync to my AIs</button>
             <button className="composer-btn" onClick={() => setPastOpen(true)}><Icon name="spark" size={11} /> Build from my past</button>
             <button className="composer-btn" disabled={learning || dna.paused} onClick={() => void learnNow()}>{learning ? <span className="spinner" /> : null} Learn now</button>
             <label className="composer-btn cursor-pointer" title="While paused, nothing is learned from your sessions or your past">
@@ -126,6 +129,7 @@ export function DNAPage() {
         ) : null}
       </div>
       {pastOpen ? <PastPanel onClose={() => setPastOpen(false)} /> : null}
+      {syncOpen ? <SyncPanel onClose={() => setSyncOpen(false)} /> : null}
     </div>
   );
 }
@@ -337,6 +341,108 @@ function PastPanel({ onClose }: { onClose: () => void }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// -- DNA Sync ------------------------------------------------------------------------
+
+interface Planned { t: Target; before: string; after: string; exists: boolean; change: Change }
+const CHANGE: Record<Change, string> = { new: "New file", update: "Update Grill Me's section", remove: "Remove Grill Me's section", same: "Up to date", blocked: "Not Grill Me's file: left alone" };
+
+function SyncPanel({ onClose }: { onClose: () => void }) {
+  const { dna } = useDNA();
+  const projects = useApp((s) => s.projects);
+  const toast = useApp((s) => s.toast);
+  const [plan, setPlan] = useState<Planned[] | null>(null);
+  const [pick, setPick] = useState<Record<string, boolean>>({});
+  const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [last, setLast] = useState<number | null>(null);
+  const load = async () => {
+    if (!dna || !native()) { setPlan([]); return; }
+    setError("");
+    const { homeDir } = await import("@tauri-apps/api/path");
+    const home = (await homeDir()).replace(/\/$/, "");
+    const targets = targetsFor(home, projects.filter((p) => p.path.startsWith("/")).map((p) => ({ name: p.name, path: p.path })), agentsOf(dna));
+    const now = await invoke<{ path: string; exists: boolean; text: string }[]>("dna_sync_read", { paths: targets.map((t) => t.path) }).catch((e) => { setError(`${e}`); return []; });
+    const planned = targets.map((t): Planned => {
+      const cur = now.find((c) => c.path === t.path) ?? { exists: false, text: "" };
+      const after = withBlock(cur.text, blockFor(dna, t, cur.text), t.whole);
+      return { t, before: cur.text, after, exists: cur.exists, change: changeOf(t, cur.text, cur.exists, after) };
+    });
+    setPlan(planned);
+    // ticked by default: changes to files that exist or personal files; new project files are your call
+    setPick(Object.fromEntries(planned.map((p) => [p.t.path, p.change !== "same" && p.change !== "blocked" && (p.exists || p.t.scope === "personal")])));
+    setLast(await invoke<number | null>("dna_sync_last").catch(() => null));
+  };
+  useEffect(() => { void load(); }, []);
+  const apply = async () => {
+    const writes = (plan ?? []).filter((p) => pick[p.t.path] && p.change !== "same" && p.change !== "blocked").map((p) => ({ path: p.t.path, before: p.before, after: p.after }));
+    if (!writes.length) return;
+    setBusy(true); setError("");
+    try {
+      await invoke("dna_sync_apply", { writes });
+      toast(`Synced ${writes.length} file${writes.length === 1 ? "" : "s"}`);
+      await load();
+    } catch (e) { setError(`${e}`); } finally { setBusy(false); }
+  };
+  const undo = async () => {
+    setBusy(true);
+    try { const n = await invoke<number>("dna_sync_undo"); toast(`Put back ${n} file${n === 1 ? "" : "s"}`); await load(); }
+    catch (e) { setError(`${e}`); } finally { setBusy(false); }
+  };
+  const count = (plan ?? []).filter((p) => pick[p.t.path] && p.change !== "same" && p.change !== "blocked").length;
+  const groups = [["Personal: every project", (plan ?? []).filter((p) => p.t.scope === "personal")], ...[...new Set((plan ?? []).filter((p) => p.t.project).map((p) => p.t.project!))].map((name) => [`Project: ${name}`, (plan ?? []).filter((p) => p.t.project === name)])] as [string, Planned[]][];
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
+      <div className="composer-card rounded-2xl w-full max-w-[720px] max-h-[86vh] overflow-y-auto p-5 flex flex-col gap-4" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Sync to my AIs">
+        <div>
+          <h2 className="text-[17px] font-semibold text-ink">Sync your Coding DNA to your AIs</h2>
+          <p className="text-[12.5px] text-faint mt-1">
+            Writes your rules into the files each AI reads. Grill Me only writes inside its own marked section, never changes your text, and skips rules you already wrote there. Every sync can be undone.
+          </p>
+        </div>
+        {error ? <div className="text-[12.5px] text-warn">{error}</div> : null}
+        {!plan ? <div className="flex items-center gap-2 text-[13px] text-dim"><span className="spinner" /> Reading your files…</div> : null}
+        {plan && !native() ? <div className="text-[13px] text-faint">Sync runs in the desktop app.</div> : null}
+        {groups.filter(([, xs]) => xs.length).map(([title, xs]) => (
+          <div key={title}>
+            <div className="text-[11px] tracking-[0.1em] uppercase text-faint mb-1.5">{title}</div>
+            <div className="flex flex-col gap-1">
+              {xs.map((p) => {
+                const live = p.change !== "same" && p.change !== "blocked";
+                return (
+                  <div key={p.t.path} className="border border-line rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" className="accent-(--accent)" disabled={!live} checked={live && !!pick[p.t.path]} onChange={(e) => setPick({ ...pick, [p.t.path]: e.target.checked })} aria-label={p.t.label} />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[13px] text-ink truncate">{p.t.label}</span>
+                        <span className="block text-[11.5px] text-faint">{p.t.reads} · {CHANGE[p.change]}</span>
+                      </span>
+                      {live ? <button className="text-[12px] text-dim hover:text-ink" onClick={() => setOpen(open === p.t.path ? null : p.t.path)}>{open === p.t.path ? "Hide" : "Preview"}</button> : null}
+                    </div>
+                    {open === p.t.path ? (
+                      <div className="mt-2 grid gap-2 text-[12px]">
+                        {currentBlock(p.before) ? <pre className="whitespace-pre-wrap rounded-md p-2 bg-[rgba(255,90,60,.08)] border border-[rgba(255,90,60,.25)] text-dim">{currentBlock(p.before)}</pre> : null}
+                        {currentBlock(p.after) ? <pre className="whitespace-pre-wrap rounded-md p-2 bg-[rgba(80,200,120,.08)] border border-[rgba(80,200,120,.25)] text-ink">{currentBlock(p.after)}</pre> : <div className="text-faint">Grill Me's section is removed.</div>}
+                        <div className="text-faint">Everything else in this file stays exactly as it is.</div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center gap-2 sticky bottom-0 pt-2">
+          {last ? <button className="composer-btn" disabled={busy} onClick={() => void undo()}>Undo last sync <span className="text-faint">({ago(last)})</span></button> : null}
+          <span className="flex-1" />
+          <button className="composer-btn" onClick={onClose}>Close</button>
+          <button className="composer-btn" disabled={busy || !count} onClick={() => void apply()}>{busy ? <span className="spinner" /> : null} Write {count || ""} file{count === 1 ? "" : "s"}</button>
+        </div>
       </div>
     </div>
   );
