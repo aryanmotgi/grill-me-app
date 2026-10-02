@@ -1,95 +1,71 @@
 // ---------------------------------------------------------------------------
-// The forge world behind first-run setup: drifting embers, the Spark (Grill
-// Me's AI, a bright ember that pulses while it talks), a constellation of the
-// user's tools, and the forged Plan → Ship path. Canvas 2D with pre-rendered
-// glow sprites (cheap, no shadowBlur). All text lives in the DOM overlay
-// (ForgeOnboarding.tsx), so it stays crisp and readable; the only DOM this
-// file owns is the constellation's star labels.
+// The forge world: what moves and why. Rendering is all on the GPU
+// (gl.ts); this file only decides where things are. Ambient embers cost
+// nothing here (their motion lives in a shader); the CPU only moves the few
+// hundred points that act with intent: the logo, bursts, scouts, the
+// constellation, AI orbs and stage beacons. Labels are DOM (crisp text).
 //
-// Reduce Motion: embers stand still, nothing flies, the Spark doesn't pulse.
-// Lite mode (slow computers, auto-detected): fewer embers, 1× resolution, no
-// path sparks.
+// Reduce Motion: no drifting, nothing flies; things appear in place.
+// Lite (auto when frames run long): fewer ambient embers, 1× resolution.
 // ---------------------------------------------------------------------------
 
+import { EmberGL, type GLLine, type GLPoint } from "./gl";
+
 export interface StarSpec { id: string; label: string; kind: "agent" | "kid" | "mate"; sub?: string; parent?: string }
-interface Star extends StarSpec { x: number; y: number; tx: number; ty: number; op: number; shown: boolean; orbit: boolean; ang: number; rad: number; el: HTMLDivElement; parentStar?: Star }
-interface Ember { x: number; y: number; vx: number; vy: number; h: number; s: number; a: number; ph: number; mode: "ambient" | "burst" | "seek" | "hold"; tx: number; ty: number; speed: number; green: boolean; onArrive?: (e: Ember) => void }
+interface Star extends StarSpec { x: number; y: number; tx: number; ty: number; op: number; top: number; orbit: boolean; ang: number; rad: number; el: HTMLDivElement; parentStar?: Star; home?: [number, number, boolean] }
+interface Mote { x: number; y: number; vx: number; vy: number; tx: number; ty: number; mode: "hold" | "burst" | "seek" | "rise"; temp: number; cool: number; size: number; alpha: number; soft: number; life: number; speed: number; done?: () => void }
+export interface Beacon { x: number; y: number; lit: number; size: number; pulse?: boolean }
 export interface PathPoint { x: number; y: number; lit: boolean }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-function sprite(r: number, g: number, b: number, size = 64): HTMLCanvasElement {
-  const s = document.createElement("canvas");
-  s.width = s.height = size;
-  const c = s.getContext("2d")!, grd = c.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  grd.addColorStop(0, "rgba(255,248,235,1)");
-  grd.addColorStop(0.18, `rgba(${r},${g},${b},.95)`);
-  grd.addColorStop(0.45, `rgba(${r},${g},${b},.28)`);
-  grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
-  c.fillStyle = grd;
-  c.fillRect(0, 0, size, size);
-  return s;
-}
-const HUES: [number, number, number][] = [[255, 79, 26], [255, 106, 42], [255, 138, 58], [255, 170, 80], [242, 193, 78]];
-export const SPRITES = HUES.map(([r, g, b]) => sprite(r, g, b));
-const GREEN = sprite(79, 207, 134);
-
 export class ForgeWorld {
   reduce: boolean;
   lite = false;
-  W = 0;
-  H = 0;
-  private dpr = 1;
-  private ctx: CanvasRenderingContext2D;
-  private embers: Ember[] = [];
+  W = innerWidth;
+  H = innerHeight;
+  readonly gl: EmberGL;
+  private motes: Mote[] = [];
   private stars: Star[] = [];
-  private lines: [Star, Star, number][] = [];
+  private links: [Star, Star, number][] = [];
   private path: PathPoint[] | null = null;
-  private pathSparks: { seg: number; u: number; v: number; ph: number }[] = [];
+  private beacons = new Map<string, Beacon & { cur: number }>();
   private dim = 0;
   private tdim = 0;
+  private calm = 0;
+  private tcalm = 0;
   private raf = 0;
   private last = 0;
   private t0 = 0;
-  private frames = 0;
   private slow = 0;
-  /** the Spark */
-  spark = { x: 0, y: 0, tx: 0, ty: 0, r: 0, tr: 14, glow: 1, born: false, speaking: false, ring: 0 };
-  /** called every frame with the Spark's position (the overlay follows it) */
+  private frames = 0;
+  /** CPU time spent per frame (ms), for the perf probe */
+  workMs = 0;
+  private workN = 0;
+  workAvg() { return this.workN ? Math.round((this.workMs / this.workN) * 100) / 100 : 0; }
+  spark = { x: 0, y: 0, tx: 0, ty: 0, r: 0, tr: 20, glow: 1, born: false, speaking: false, ring: 0, alpha: 1, energy: 0 };
   onFrame?: (spark: { x: number; y: number; r: number }) => void;
-  /** called once if the first ~2 s ran slowly and lite mode switched on */
   onLite?: () => void;
 
-  constructor(private canvas: HTMLCanvasElement, private starLayer: HTMLDivElement, reduce: boolean) {
+  constructor(canvas: HTMLCanvasElement, private starLayer: HTMLDivElement, reduce: boolean) {
     this.reduce = reduce;
-    this.ctx = canvas.getContext("2d")!;
+    this.gl = new EmberGL(canvas, 700);
     this.resize();
     addEventListener("resize", this.resize);
-    for (let i = 0; i < this.emberCount(); i++) this.embers.push(this.ember(rand(0, this.W), rand(0, this.H)));
-  }
-
-  private emberCount() { return this.lite ? 160 : 480; }
-  private ember(x: number, y: number): Ember {
-    return { x, y, vx: 0, vy: 0, h: (Math.random() * SPRITES.length) | 0, s: rand(2, 6), a: rand(.35, .95), ph: rand(0, 6.28), mode: "ambient", tx: 0, ty: 0, speed: 3, green: false };
   }
 
   resize = () => {
-    this.dpr = this.lite ? 1 : Math.min(devicePixelRatio || 1, 2);
     this.W = innerWidth;
     this.H = innerHeight;
-    this.canvas.width = this.W * this.dpr;
-    this.canvas.height = this.H * this.dpr;
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.gl.resize(this.W, this.H, this.lite ? 1 : Math.min(devicePixelRatio || 1, 2));
   };
 
   setLite(on: boolean) {
     this.lite = on;
+    this.gl.setAmbient(on ? 260 : 700);
     this.resize();
-    const want = this.emberCount();
-    while (this.embers.length > want) this.embers.pop();
-    while (this.embers.length < want) this.embers.push(this.ember(rand(0, this.W), rand(0, this.H)));
   }
 
   start() {
@@ -104,106 +80,97 @@ export class ForgeWorld {
   }
 
   // ---- the Spark ----------------------------------------------------------------
-  sparkBorn(x: number, y: number) {
-    Object.assign(this.spark, { x, y, tx: x, ty: y, r: this.reduce ? 14 : 0, born: true });
-  }
+  sparkBorn(x: number, y: number) { Object.assign(this.spark, { x, y, tx: x, ty: y, r: this.reduce ? this.spark.tr : 0, born: true, alpha: 1 }); }
   sparkTo(x: number, y: number, r?: number) {
-    this.spark.tx = x;
-    this.spark.ty = y;
+    this.spark.tx = x; this.spark.ty = y;
     if (r) this.spark.tr = r;
     if (this.reduce) { this.spark.x = x; this.spark.y = y; }
   }
-  /** an answer was absorbed: grow a little brighter */
+  /** an answer was absorbed: a little brighter */
   feed() {
-    this.spark.tr = Math.min(this.spark.tr + 2, 26);
-    this.spark.glow = Math.min(2, this.spark.glow + .18);
-    this.spark.ring = 1;
-    this.burstAt(this.spark.x, this.spark.y, 14);
+    this.spark.tr = Math.min(this.spark.tr + 2, 32);
+    this.spark.glow = Math.min(2.2, this.spark.glow + .2);
+    this.burstAt(this.spark.x, this.spark.y, 18, .9);
   }
   setDim(on: boolean) { this.tdim = on ? 1 : 0; }
 
-  // ---- embers ---------------------------------------------------------------------
-  burstAt(x: number, y: number, n = 30, green = false) {
+  // ---- motes: points that act with intent ------------------------------------------
+  private mote(x: number, y: number, o: Partial<Mote> = {}): Mote {
+    const m: Mote = { x, y, vx: 0, vy: 0, tx: x, ty: y, mode: "burst", temp: 1, cool: .35, size: rand(1.4, 3.2), alpha: 1, soft: 0, life: 1, speed: 3, ...o };
+    this.motes.push(m);
+    return m;
+  }
+  burstAt(x: number, y: number, n = 30, temp = 1) {
     if (this.reduce) return;
     for (let i = 0; i < n; i++) {
-      const e = this.embers[(Math.random() * this.embers.length) | 0];
-      const a = rand(0, 6.283), sp = rand(2, 6);
-      Object.assign(e, { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, mode: "burst", green, onArrive: undefined });
-      if (green) setTimeout(() => (e.green = false), 1800);
+      const a = rand(0, 6.283), sp = rand(40, 220);
+      this.mote(x, y, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30, temp: temp * rand(.8, 1), cool: rand(.5, .9), size: rand(1.2, 3) });
     }
   }
 
-  /** The launch animation hands off on the logo: show it in embers, then burst
-   *  it outward into the ambient world and gather a few into the Spark. */
+  /** First run: embers rise and gather into the wordmark, hold, then burst
+   *  outward, and the Spark is born from the middle. */
   async logoBurst(text: string, wait: (ms: number) => Promise<void>) {
-    const pts = this.textPoints(text, Math.min(this.W * .16, 170));
-    if (!pts.length) return;
-    const n = Math.min(this.embers.length, Math.round(pts.length * 1.4));
-    this.embers.forEach((e, i) => {
-      if (i < n) { const p = pts[i % pts.length]; Object.assign(e, { x: p.x + rand(-1, 1), y: p.y + rand(-1, 1), mode: "hold", a: rand(.7, 1) }); }
-      else e.a = 0;
-    });
-    await wait(900);
+    const pts = this.textPoints(text, Math.min(this.W * .11, 128));
     const cx = this.W / 2, cy = this.H * .45;
-    for (const e of this.embers) {
-      if (e.mode !== "hold") { e.a = rand(.3, .9); continue; }
-      if (this.reduce) { Object.assign(e, { x: rand(0, this.W), y: rand(0, this.H), mode: "ambient" }); continue; }
-      const a = Math.atan2(e.y - cy, e.x - cx) + rand(-.5, .5), sp = rand(3, 13);
-      Object.assign(e, { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, mode: "burst" });
+    // embers rise from below and settle into the letters, warming as they arrive
+    const logo = pts.slice(0, this.lite ? 600 : 1300).map((p) => this.mote(this.reduce ? p.x : p.x + rand(-160, 160), this.reduce ? p.y : this.H + rand(20, 260), {
+      mode: "seek", tx: p.x, ty: p.y, speed: rand(2.2, 3.2), temp: rand(.75, .95), cool: 0, size: rand(2.2, 3.4), life: 1,
+    }));
+    await wait(1900);
+    for (const m of logo) { m.mode = "hold"; m.temp = rand(.85, 1); m.x = m.tx; m.y = m.ty; }
+    await wait(1500);
+    for (const m of logo) {
+      if (this.reduce) { m.life = 0; continue; }
+      const a = Math.atan2(m.y - cy, m.x - cx) + rand(-.4, .4), sp = rand(120, 520);
+      Object.assign(m, { mode: "burst", vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, cool: rand(.25, .55) });
     }
-    await wait(650);
+    await wait(350);
     this.sparkBorn(cx, cy);
-    this.sparkTo(cx, this.H * .36, 15);
-    for (const e of this.embers.slice(0, 26)) {
-      Object.assign(e, { mode: "seek", tx: cx, ty: this.H * .36, speed: 4, onArrive: (x: Ember) => { x.mode = "ambient"; x.x = rand(0, this.W); x.y = this.H + 10; } });
-    }
-    await wait(800);
+    this.sparkTo(cx, this.H * .34, 20);
+    await wait(900);
   }
 
   private textPoints(text: string, size: number) {
     const c = document.createElement("canvas"), x = c.getContext("2d")!;
     c.width = this.W; c.height = this.H;
-    x.font = `700 ${size}px "Chakra Petch", sans-serif`;
+    x.font = `600 ${size}px -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif`;
     x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#fff";
     x.fillText(text, this.W / 2, this.H * .45);
-    const d = x.getImageData(0, 0, this.W, this.H).data, out: { x: number; y: number }[] = [], step = this.lite ? 7 : 4;
-    for (let y = 0; y < this.H; y += step) for (let xx = 0; xx < this.W; xx += step) if (d[(y * this.W + xx) * 4 + 3] > 128) out.push({ x: xx, y });
+    const d = x.getImageData(0, 0, this.W, this.H).data, out: { x: number; y: number }[] = [];
+    for (let y = 0; y < this.H; y += 3) for (let xx = 0; xx < this.W; xx += 3) if (d[(y * this.W + xx) * 4 + 3] > 140) out.push({ x: xx + rand(-.8, .8), y: y + rand(-.8, .8) });
     return out.sort(() => Math.random() - .5);
   }
 
-  /** Embers fly out from the Spark to the edges (the scan is looking). */
-  scoutOut() {
-    const scouts = this.embers.slice(0, this.lite ? 30 : 70);
-    for (const e of scouts) {
-      const a = rand(0, 6.283), d = Math.max(this.W, this.H) * .7;
-      Object.assign(e, { x: this.spark.x, y: this.spark.y, mode: "seek", speed: 2.4, tx: this.W / 2 + Math.cos(a) * d, ty: this.H / 2 + Math.sin(a) * d, a: 1, onArrive: undefined });
+  /** Embers fly out from the Spark to the edges (the scan is looking)… */
+  scoutOut(): Mote[] {
+    const out: Mote[] = [];
+    if (this.reduce) return out;
+    for (let i = 0; i < (this.lite ? 30 : 60); i++) {
+      const a = rand(0, 6.283), d = Math.max(this.W, this.H) * .65;
+      out.push(this.mote(this.spark.x, this.spark.y, { mode: "seek", tx: this.W / 2 + Math.cos(a) * d, ty: this.H / 2 + Math.sin(a) * d, speed: rand(1.4, 2.2), temp: .9, cool: 0, size: rand(1.6, 2.6) }));
     }
+    return out;
   }
   /** …and come back. */
-  scoutBack() {
-    for (const e of this.embers.slice(0, this.lite ? 30 : 70)) {
-      Object.assign(e, { tx: this.spark.x + rand(-40, 40), ty: this.spark.y + rand(-40, 40), speed: 2.2, onArrive: (x: Ember) => { x.mode = "ambient"; x.a = rand(.3, .9); if (this.reduce) { x.x = rand(0, this.W); x.y = rand(0, this.H); } } });
-    }
+  scoutBack(scouts: Mote[]) {
+    for (const m of scouts) Object.assign(m, { tx: this.spark.x + rand(-30, 30), ty: this.spark.y + rand(-30, 30), speed: rand(1.6, 2.4), done: () => { m.mode = "burst"; m.vx = rand(-40, 40); m.vy = rand(-60, -10); m.cool = .8; } });
   }
 
-  // ---- constellation ------------------------------------------------------------------
-  /** Build the stars, starting far out (so they fly in as they're revealed). */
+  // ---- constellation -------------------------------------------------------------------
   setStars(specs: StarSpec[], links: [string, string][] = []) {
     this.starLayer.innerHTML = "";
     this.stars = [];
-    this.lines = [];
+    this.links = [];
     const agents = specs.filter((s) => s.kind === "agent");
-    const cx = this.W / 2, cy = this.H * .52, spread = Math.min(this.W * .19, 240);
+    const cx = this.W / 2, cy = this.H * .5, spread = Math.min(this.W * .19, 250);
     for (const spec of specs) {
       const el = document.createElement("div");
       el.className = `forge-star ${spec.kind}`;
-      const dot = document.createElement("i");
-      const label = document.createElement("span");
-      label.textContent = spec.label;
-      if (spec.sub) { const em = document.createElement("em"); em.textContent = spec.sub; label.append(em); }
-      el.append(dot, label);
+      el.textContent = spec.label;
+      if (spec.sub) { const em = document.createElement("em"); em.textContent = spec.sub; el.append(em); }
       this.starLayer.append(el);
-      this.stars.push({ ...spec, x: cx, y: cy, tx: cx, ty: cy, op: 0, shown: false, orbit: false, ang: 0, rad: 0, el });
+      this.stars.push({ ...spec, x: cx, y: cy, tx: cx, ty: cy, op: 0, top: 0, orbit: false, ang: 0, rad: 0, el });
     }
     agents.forEach((a, i) => {
       const s = this.stars.find((x) => x.id === a.id)!;
@@ -216,194 +183,195 @@ export class ForgeWorld {
       const p = this.stars.find((x) => x.id === pid);
       if (!p) continue;
       kids.forEach((k, j) => {
-        Object.assign(k, { parentStar: p, orbit: true, rad: Math.min(150, this.W * .12) + (j % 2) * 26, ang: (j / kids.length) * 6.283 + agents.indexOf(p) });
+        Object.assign(k, { parentStar: p, orbit: true, rad: Math.min(150, this.W * .11) + (j % 2) * 28, ang: (j / kids.length) * 6.283 + agents.indexOf(p) * .7 });
         k.tx = p.tx + Math.cos(k.ang) * k.rad;
-        k.ty = p.ty + Math.sin(k.ang) * k.rad * .62;
-        this.lines.push([p, k, .45]);
+        k.ty = p.ty + Math.sin(k.ang) * k.rad * .6;
+        this.links.push([p, k, .5]);
       });
     }
     for (const [a, b] of links) {
       const sa = this.stars.find((s) => s.id === a), sb = this.stars.find((s) => s.id === b);
-      if (sa && sb) this.lines.push([sa, sb, .22]);
+      if (sa && sb) this.links.push([sa, sb, .25]);
     }
-    for (const s of this.stars) { s.x = s.tx + (s.tx - cx) * 2.2; s.y = s.ty + (s.ty - this.H / 2) * 2.2; }
+    for (const s of this.stars) { s.x = s.tx + (s.tx - cx) * 1.8; s.y = s.ty + (s.ty - cy) * 1.8; }
   }
-  /** Reveal stars one at a time. */
   async revealStars(wait: (ms: number) => Promise<void>) {
-    for (const s of this.stars) { s.shown = true; s.op = 1; await wait(this.reduce ? 0 : 110); }
+    for (const s of this.stars) { s.top = 1; await wait(this.reduce ? 0 : 90); }
   }
-  showAllStars() { for (const s of this.stars) { s.shown = true; s.op = 1; s.x = s.tx; s.y = s.ty; } }
-  addMate(id: string, label: string, side: number) {
-    const el = document.createElement("div");
-    el.className = "forge-star mate";
-    el.innerHTML = "<i></i><span></span>";
-    el.querySelector("span")!.textContent = label;
-    this.starLayer.append(el);
-    const s: Star = { id, label, kind: "mate", x: side > 0 ? this.W + 40 : -40, y: this.H * rand(.3, .8), tx: this.W / 2 + side * Math.min(this.W * .32, 380), ty: this.H * .78, op: 1, shown: true, orbit: false, ang: 0, rad: 0, el };
-    this.stars.push(s);
-    for (const a of this.stars.filter((x) => x.kind === "agent")) this.lines.push([s, a, .3]);
-    this.burstAt(s.tx, s.ty, 18, true);
-  }
-  /** During the interview the constellation steps back: labels hide (CSS
-   *  .recede) and stars drift into a wide arc near the top. */
+  showAllStars() { for (const s of this.stars) { s.top = 1; s.op = 1; s.x = s.tx; s.y = s.ty; } }
+  hasStars() { return this.stars.length > 0; }
+  /** During the interview the constellation steps back to a faint arc near the top. */
   recede(on: boolean) {
     this.starLayer.classList.toggle("recede", on);
     if (on) {
       this.stars.forEach((s, i) => {
-        (s as Star & { home?: [number, number, boolean] }).home = [s.tx, s.ty, s.orbit];
+        s.home = [s.tx, s.ty, s.orbit];
         s.orbit = false;
-        const a = Math.PI * (0.08 + 0.84 * (i / Math.max(1, this.stars.length - 1)));
-        s.tx = this.W / 2 - Math.cos(a) * this.W * .44;
-        s.ty = this.H * .1 + (1 - Math.sin(a)) * this.H * .18;
+        const a = Math.PI * (.1 + .8 * (i / Math.max(1, this.stars.length - 1)));
+        s.tx = this.W / 2 - Math.cos(a) * this.W * .42;
+        s.ty = this.H * .08 + (1 - Math.sin(a)) * this.H * .16;
       });
-    } else {
-      for (const s of this.stars as (Star & { home?: [number, number, boolean] })[]) if (s.home) [s.tx, s.ty, s.orbit] = s.home;
-    }
+    } else for (const s of this.stars) if (s.home) [s.tx, s.ty, s.orbit] = s.home;
   }
-  /** Stars pull into a line, then each flies to its stage (or fades). */
+  /** Stars pull into a line, then each flies into its stage (or fades). */
   async forgeLine(stageOf: (label: string) => number | null, slots: { x: number; y: number }[], wait: (ms: number) => Promise<void>) {
     const x0 = slots[0].x, x1 = slots[slots.length - 1].x, y = slots[0].y;
+    this.links = [];
     this.stars.forEach((s, i) => { s.orbit = false; s.tx = lerp(x0, x1, (i + .5) / this.stars.length); s.ty = y; });
-    await wait(900);
+    await wait(1000);
     for (const s of this.stars) {
       const i = stageOf(s.label);
-      if (i != null && slots[i]) { s.tx = slots[i].x; s.ty = slots[i].y; } else { s.ty = s.y + 30; }
+      if (i != null && slots[i]) { s.tx = slots[i].x; s.ty = slots[i].y; } else s.ty = s.y + 24;
+      s.top = 0;
     }
     await wait(700);
-    for (const s of this.stars) s.op = 0;
-    this.lines = [];
+    this.starLayer.innerHTML = "";
+    this.stars = [];
   }
-  hideStars() { for (const s of this.stars) s.op = 0; this.lines = []; }
-
-  // ---- the forged path ----------------------------------------------------------------
-  setPath(points: PathPoint[] | null) {
-    this.path = points;
-    if (points && !this.pathSparks.length) this.pathSparks = Array.from({ length: 16 }, () => ({ seg: (Math.random() * Math.max(1, points.length - 1)) | 0, u: Math.random(), v: rand(.5, 1.1), ph: rand(0, 6) }));
+  hideStars() { for (const s of this.stars) s.top = 0; this.links = []; }
+  addMate(id: string, label: string, side: number) {
+    const el = document.createElement("div");
+    el.className = "forge-star mate";
+    el.textContent = label;
+    this.starLayer.append(el);
+    const s: Star = { id, label, kind: "mate", x: side > 0 ? this.W + 40 : -40, y: this.H * rand(.3, .8), tx: this.W / 2 + side * Math.min(this.W * .3, 380), ty: this.H * .76, op: 0, top: 1, orbit: false, ang: 0, rad: 0, el };
+    this.stars.push(s);
+    for (const a of this.stars.filter((x) => x.kind === "agent")) this.links.push([s, a, .3]);
   }
 
-  /** Finale: everything pulls into the centre. */
+  // ---- beacons (AI orbs, stages) and the path ---------------------------------------------
+  setBeacon(id: string, b: Beacon | null) {
+    if (!b) { this.beacons.delete(id); return; }
+    const prev = this.beacons.get(id);
+    if (prev && b.lit > prev.lit + .3) this.burstAt(b.x, b.y, 34, 1);
+    this.beacons.set(id, { ...b, cur: prev?.cur ?? (this.reduce ? b.lit : 0) });
+  }
+  clearBeacons() { this.beacons.clear(); }
+  setPath(points: PathPoint[] | null) { this.path = points; }
+
+  /** Finale: everything is drawn into the centre. */
   collapse() {
-    for (const s of this.stars) { s.orbit = false; s.tx = this.W / 2; s.ty = this.H / 2; s.op = 0; }
-    this.lines = [];
+    this.links = [];
     this.path = null;
     this.tdim = 0;
-    for (const e of this.embers.slice(0, this.lite ? 60 : 180)) {
-      Object.assign(e, { mode: "seek", tx: this.W / 2 + rand(-20, 20), ty: this.H / 2 + rand(-20, 20), speed: 3, onArrive: (x: Ember) => { x.mode = "ambient"; x.a = 0; } });
+    for (const s of this.stars) { s.orbit = false; s.tx = this.W / 2; s.ty = this.H / 2; s.top = 0; }
+    for (const [id, b] of this.beacons) { this.mote(b.x, b.y, { mode: "seek", tx: this.W / 2, ty: this.H / 2, speed: 2.4, temp: 1, cool: 0, size: 3, done: () => {} }); this.beacons.delete(id); }
+    if (!this.reduce) for (let i = 0; i < (this.lite ? 60 : 160); i++) {
+      const a = rand(0, 6.283), d = rand(.3, .7) * Math.max(this.W, this.H);
+      this.mote(this.W / 2 + Math.cos(a) * d, this.H / 2 + Math.sin(a) * d, { mode: "seek", tx: this.W / 2, ty: this.H / 2, speed: rand(1.4, 2.6), temp: rand(.7, 1), cool: 0, size: rand(1.4, 2.8) });
     }
-    this.sparkTo(this.W / 2, this.H / 2, 6);
+    this.sparkTo(this.W / 2, this.H / 2, 14);
+    this.tcalm = 1;
   }
-  fadeEmbers(k: number) { for (const e of this.embers) e.a *= k; }
+  fadeSpark() { this.spark.alpha = 0; }
 
-  // ---- frame ----------------------------------------------------------------------------
+  // ---- frame ------------------------------------------------------------------------------
   private frame(now: number) {
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    const w0 = performance.now();
+    this.frameInner(now);
+    this.gl.gl.flush();
+    this.workMs += performance.now() - w0;
+    this.workN++;
+  }
+  private frameInner(now: number) {
+    const dt = Math.min(1 / 30, (now - this.last) / 1000);
+    const real = now - this.last;
     this.last = now;
     const t = (now - this.t0) / 1000;
-    if (!this.lite && this.frames < 120) {
+    if (!this.lite && this.frames < 150) {
       this.frames++;
-      if (dt > 1 / 40) this.slow++;
-      if (this.frames === 120 && this.slow > 40) { this.setLite(true); this.onLite?.(); }
+      if (real > 1000 / 24) this.slow++;
+      if (this.frames === 150 && this.slow > 50) { this.setLite(true); this.onLite?.(); }
     }
-    const { ctx, W, H, reduce } = this;
-    ctx.clearRect(0, 0, W, H);
-    ctx.globalCompositeOperation = "lighter";
+    const { W, H, reduce } = this;
+    this.dim = lerp(this.dim, this.tdim, reduce ? 1 : clamp(dt * 3.5));
+    this.calm = lerp(this.calm, this.tcalm, reduce ? 1 : clamp(dt * 1.5));
 
-    for (const e of this.embers) {
-      if (e.mode === "ambient") {
-        if (!reduce) {
-          e.vx += Math.sin(t * .6 + e.ph) * .004; e.vx *= .985;
-          e.vy = lerp(e.vy, -rand(.08, .35), .02);
-          e.x += e.vx * 60 * dt; e.y += e.vy * 60 * dt;
-          if (e.y < -10) { e.y = H + 10; e.x = rand(0, W); }
-          if (e.x < -10) e.x = W + 10;
-          if (e.x > W + 10) e.x = -10;
-        }
-      } else if (e.mode === "burst") {
-        e.x += e.vx * 60 * dt; e.y += e.vy * 60 * dt; e.vx *= .94; e.vy *= .94;
-        if (Math.abs(e.vx) + Math.abs(e.vy) < .4) e.mode = "ambient";
-      } else if (e.mode === "seek") {
-        const k = reduce ? 1 : clamp(dt * e.speed);
-        e.x = lerp(e.x, e.tx, k); e.y = lerp(e.y, e.ty, k);
-        if (Math.abs(e.x - e.tx) + Math.abs(e.y - e.ty) < 2 && e.onArrive) { const f = e.onArrive; e.onArrive = undefined; f(e); }
+    const pts: GLPoint[] = [];
+    // motes
+    const keep: Mote[] = [];
+    for (const m of this.motes) {
+      if (m.mode === "burst") {
+        m.vx *= Math.pow(.18, dt); m.vy = m.vy * Math.pow(.18, dt) - 22 * dt; // drag, then heat lifts it
+        m.x += m.vx * dt; m.y += m.vy * dt;
+        m.temp -= m.cool * dt;
+      } else if (m.mode === "seek") {
+        const k = reduce ? 1 : clamp(dt * m.speed);
+        m.x = lerp(m.x, m.tx, k); m.y = lerp(m.y, m.ty, k);
+        if (m.done && Math.abs(m.x - m.tx) + Math.abs(m.y - m.ty) < 3) { const f = m.done; m.done = undefined; f(); }
+        if (this.tcalm && Math.abs(m.x - m.tx) + Math.abs(m.y - m.ty) < 6) m.temp -= dt * 2;
+      } else if (m.mode === "hold") {
+        m.x += Math.sin(t * 2 + m.y) * .05;
       }
-      let a = e.a * (0.75 + 0.25 * Math.sin(t * 3 + e.ph));
-      if (this.dim > 0 && e.mode === "ambient") a *= 1 - this.dim * .75;
-      if (a <= 0.01) continue;
-      const s = e.s * (e.mode === "seek" ? 1.4 : 1) * 4;
-      ctx.globalAlpha = a;
-      ctx.drawImage(e.green ? GREEN : SPRITES[e.h], e.x - s / 2, e.y - s / 2, s, s);
+      if (m.temp <= 0.02 || m.life <= 0 || m.y < -40) continue;
+      keep.push(m);
+      const flick = .82 + .18 * Math.sin(t * 13 + m.x * .7);
+      pts.push({ x: m.x, y: m.y, size: m.size, temp: clamp(m.temp) * flick, alpha: m.alpha, soft: m.soft });
     }
+    this.motes = keep;
 
-    for (const [a, b, w] of this.lines) {
-      if (!a.shown || !b.shown) continue;
-      const al = w * Math.min(a.op, b.op) * (1 - this.dim * .85);
-      if (al <= 0.01) continue;
-      const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-      g.addColorStop(0, `rgba(255,170,90,${al})`);
-      g.addColorStop(1, `rgba(242,193,78,${al * .7})`);
-      ctx.strokeStyle = g; ctx.lineWidth = 1.2; ctx.globalAlpha = 1;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-    }
-
-    if (this.path) {
-      const pts = this.path;
-      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const lit = pts[i].lit && pts[i + 1].lit;
-        ctx.strokeStyle = lit ? "rgba(255,150,70,.9)" : "rgba(255,255,255,.12)";
-        ctx.lineWidth = lit ? 3 : 2;
-        ctx.setLineDash(lit ? [] : [6, 8]);
-        ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[i + 1].x, pts[i + 1].y); ctx.stroke();
-      }
-      ctx.setLineDash([]);
-      if (!reduce && !this.lite) {
-        ctx.globalCompositeOperation = "lighter";
-        for (const p of this.pathSparks) {
-          p.u += dt * p.v;
-          if (p.u > 1) { p.u = 0; p.seg = (Math.random() * (pts.length - 1)) | 0; }
-          if (!(pts[p.seg]?.lit && pts[p.seg + 1]?.lit)) continue;
-          const a = pts[p.seg], b = pts[p.seg + 1];
-          const x = lerp(a.x, b.x, p.u), y = lerp(a.y, b.y, p.u) + Math.sin(p.u * 9 + p.ph) * 3;
-          ctx.globalAlpha = .9;
-          ctx.drawImage(SPRITES[4], x - 9, y - 9, 18, 18);
-        }
-      }
-    }
-
-    this.dim = lerp(this.dim, this.tdim, reduce ? 1 : clamp(dt * 4));
-    if (this.dim > 0.01) { ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = this.dim * .55; ctx.fillStyle = "#07040a"; ctx.fillRect(0, 0, W, H); }
-
+    // the Spark sheds a tiny ember now and then, like a real coal
     const sp = this.spark;
-    if (sp.born) {
-      const k = reduce ? 1 : clamp(dt * 2.6);
-      sp.x = lerp(sp.x, sp.tx, k); sp.y = lerp(sp.y, sp.ty, k);
-      sp.r = lerp(sp.r, sp.tr, reduce ? 1 : clamp(dt * 3));
-      const pulse = sp.speaking && !reduce ? 1 + .14 * Math.sin(t * 14) + .06 * Math.sin(t * 23) : 1 + (reduce ? 0 : .04 * Math.sin(t * 2));
-      const r = sp.r * pulse;
-      ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = .55 * sp.glow; ctx.drawImage(SPRITES[2], sp.x - r * 7, sp.y - r * 7, r * 14, r * 14);
-      ctx.globalAlpha = .9; ctx.drawImage(SPRITES[4], sp.x - r * 3, sp.y - r * 3, r * 6, r * 6);
-      ctx.globalAlpha = 1; ctx.drawImage(SPRITES[4], sp.x - r * 1.2, sp.y - r * 1.2, r * 2.4, r * 2.4);
-      if (sp.ring > 0) {
-        sp.ring -= dt * 1.6;
-        ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = clamp(sp.ring);
-        ctx.strokeStyle = "#ffcf7a"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(sp.x, sp.y, r * (2 + (1 - sp.ring) * 4), 0, 6.283); ctx.stroke();
-      }
+    if (sp.born && !reduce && Math.random() < dt * (sp.speaking ? 9 : 3)) {
+      this.mote(sp.x + rand(-sp.r, sp.r) * .5, sp.y, { vx: rand(-20, 20), vy: rand(-70, -30), temp: rand(.8, 1), cool: rand(.5, .9), size: rand(1, 2) });
     }
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
 
+    // beacons: dim orbs that ignite
+    for (const b of this.beacons.values()) {
+      b.cur = lerp(b.cur, b.lit, reduce ? 1 : clamp(dt * 2.5));
+      const pulse = b.pulse && !reduce ? .5 + .5 * Math.sin(t * 5) : 0;
+      const breath = reduce ? 1 : .92 + .08 * Math.sin(t * 1.7 + b.x);
+      pts.push({ x: b.x, y: b.y, size: b.size * (.55 + .45 * b.cur) * breath, temp: .22 + .73 * b.cur + pulse * .15, alpha: .5 + .5 * b.cur, soft: .65 });
+      if (b.cur > .5) pts.push({ x: b.x, y: b.y, size: b.size * .28, temp: 1, alpha: b.cur, soft: 0 });
+      if (pulse) pts.push({ x: b.x, y: b.y, size: b.size * (1.6 + pulse), temp: .6, alpha: .25 * pulse, soft: 1 });
+    }
+
+    // constellation
     for (const s of this.stars) {
       if (s.parentStar && s.orbit && !reduce) {
-        s.ang += dt * .12;
+        s.ang += dt * .1;
         s.tx = s.parentStar.x + Math.cos(s.ang) * s.rad;
-        s.ty = s.parentStar.y + Math.sin(s.ang) * s.rad * .62;
+        s.ty = s.parentStar.y + Math.sin(s.ang) * s.rad * .6;
       }
-      const k = reduce ? 1 : clamp(dt * 3);
+      const k = reduce ? 1 : clamp(dt * 2.6);
       s.x = lerp(s.x, s.tx, k); s.y = lerp(s.y, s.ty, k);
-      s.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -50%)`;
+      s.op = lerp(s.op, s.top, reduce ? 1 : clamp(dt * 3));
+      const recede = this.starLayer.classList.contains("recede") ? .3 : 1;
+      const big = s.kind === "agent" ? 7 : s.kind === "mate" ? 5 : 3;
+      if (s.op > .02) pts.push({ x: s.x, y: s.y, size: big, temp: s.kind === "mate" ? .7 : .92, alpha: s.op * recede, soft: 0 }, { x: s.x, y: s.y, size: big * 4, temp: .55, alpha: s.op * .35 * recede, soft: 1 });
+      s.el.style.transform = `translate(${s.x}px, ${s.y + big + 8}px) translate(-50%, 0)`;
       s.el.style.opacity = String(s.op);
     }
+
+    const lines: GLLine[] = [];
+    for (const [a, b, w] of this.links) {
+      const al = w * Math.min(a.op, b.op) * (1 - this.dim * .85) * .55;
+      if (al > .01) lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, r: 1, g: .62, b: .3, a: al });
+    }
+    if (this.path) {
+      for (let i = 0; i < this.path.length - 1; i++) {
+        const a = this.path[i], b = this.path[i + 1], lit = a.lit && b.lit;
+        lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, r: 1, g: lit ? .55 : 1, b: lit ? .2 : 1, a: lit ? .7 : .14, dotted: !lit });
+        // heat travelling along lit stretches
+        if (lit && !reduce) for (let j = 0; j < 3; j++) {
+          const u = ((t * .35 + j / 3 + i * .17) % 1);
+          pts.push({ x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), size: 2.2, temp: .95, alpha: Math.sin(u * Math.PI), soft: 0 });
+        }
+      }
+    }
+
+    // the Spark
+    if (sp.born) {
+      const k = reduce ? 1 : clamp(dt * 2.2);
+      sp.x = lerp(sp.x, sp.tx, k); sp.y = lerp(sp.y, sp.ty, k);
+      sp.r = lerp(sp.r, sp.tr, reduce ? 1 : clamp(dt * 2.5));
+      sp.energy = lerp(sp.energy, sp.speaking && !reduce ? 1 + .5 * Math.sin(t * 11) : 0, clamp(dt * 8));
+    }
+    this.gl.draw({
+      time: t, w: W, h: H, dim: this.dim, calm: this.calm,
+      points: pts, lines,
+      spark: sp.born ? { x: sp.x, y: sp.y, r: sp.r, energy: sp.energy, glow: sp.glow, alpha: sp.alpha } : null,
+    });
     if (sp.born) this.onFrame?.({ x: sp.x, y: sp.y, r: sp.r });
   }
 }

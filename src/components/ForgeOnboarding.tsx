@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../store";
-import { ForgeWorld, SPRITES, type PathPoint } from "../forge/engine";
+import { ForgeWorld, type PathPoint } from "../forge/engine";
 import { constellationFromScan, stageIndexOf } from "../forge/constellation";
 import "../forge/forge.css";
 import { LOGO_TEXT } from "../brand";
+import { probeFps } from "../lib/perf";
 import { runDoctor, type DoctorCheck } from "./DoctorTab";
 import { CONSENT_ITEMS } from "./InstallConsent";
 import { SCAN_SOURCES, type ScanResult } from "../lib/scan";
@@ -16,33 +17,34 @@ import { BRAIN_NAMES, MAX_ANSWERS, MAX_ANSWER_CHARS, OPENING, OPENING_OPTIONS, R
 import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, emptyProfile, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type Upgrade, type WorkflowProfile } from "../lib/profile";
 
 // ---------------------------------------------------------------------------
-// First-run setup as an experience: "stepping into the forge where your
-// workspace gets made". A full-screen, see-through ember world (src/forge)
-// with the Spark, Grill Me's AI, as the guide. Same steps and logic as
-// before (check → connect your AI → project → scan → interview + workflow +
-// upgrades + card → consent → team); only the look and feel changed.
-// "Skip to app" and Escape always work; Reduce Motion gets a still version;
-// slow computers drop to a lite mode on their own.
+// First run: "stepping into the forge where your workspace gets made." The
+// forge takes over the screen (macOS full screen), pure black, lit only by
+// the Spark and its embers (GPU, src/forge). Same steps and logic as before:
+// check → connect your AI → project → scan → interview, workflow, upgrades,
+// card → consent → team. Esc leaves from anywhere. Reduce Motion gets a still
+// version; slow machines drop to fewer embers on their own.
 // ---------------------------------------------------------------------------
 
 const native = () => "__TAURI_INTERNALS__" in window;
 const REQUIRED = ["claude", "git", "python3"];
-/** The Spark's speech sits just under it. */
-const bubbleTop = (y: number, r: number) => Math.min(innerHeight - 220, y + r * 4 + 14);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const STEP_NAMES: Record<string, string> = { welcome: "Arrival", check: "Your machine", connect: "Your AI", project: "Your project", scan: "Your tools", workflow: "Your workflow", consent: "Files", team: "Your team" };
+const INTRO = "For the next few minutes, the forge takes over your screen. We'll learn how you work and shape Grill Me around it. Press Esc anytime to leave.";
 
 interface Forge {
   world: ForgeWorld;
   say: (text: string) => Promise<void>;
   hush: () => void;
-  /** y just under the speech, where a scene puts its controls */
+  /** y just under the Spark's words, where a scene puts its controls */
   below: (gap?: number) => number;
   toast: (msg: string) => void;
   go: (s: FirstRunStep) => void;
   wait: (ms: number) => Promise<void>;
-  /** fly an element into the Spark (an answer being absorbed) */
+  /** an answer is absorbed into the Spark */
   absorb: (el: Element | null) => void;
   finish: (fast: boolean) => void;
+  /** step out of full screen (e.g. while a browser sign-in is open) and back */
+  fullscreen: (on: boolean) => void;
 }
 interface SceneProps { f: Forge }
 
@@ -55,6 +57,7 @@ async function openExternal(url: string) {
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url).catch(() => {});
 }
+const sayTop = (y: number, r: number) => Math.min(innerHeight - 240, y + Math.max(r, 10) * 3.2 + 26);
 
 /** Says `text` when the scene mounts; returns where controls go once it's said. */
 function useLine(f: Forge, text: string): number | null {
@@ -68,8 +71,11 @@ function useLine(f: Forge, text: string): number | null {
   return top;
 }
 
-function Chip({ children, onClick, kind = "", float = true, disabled, autoFocus }: { children: React.ReactNode; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; kind?: string; float?: boolean; disabled?: boolean; autoFocus?: boolean }) {
-  return <button type="button" className={`forge-chip ${kind} ${float ? "forge-float" : ""}`} onClick={onClick} disabled={disabled} autoFocus={autoFocus}>{children}</button>;
+function Btn({ children, onClick, primary, small, disabled, autoFocus }: { children: React.ReactNode; onClick: () => void; primary?: boolean; small?: boolean; disabled?: boolean; autoFocus?: boolean }) {
+  return <button type="button" className={`forge-btn ${primary ? "primary" : ""} ${small ? "small" : ""}`} onClick={onClick} disabled={disabled} autoFocus={autoFocus}>{children}</button>;
+}
+function Link({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return <button type="button" className="forge-link" onClick={onClick}>{children}</button>;
 }
 
 // =================================================================== the shell
@@ -78,7 +84,7 @@ export function ForgeOnboarding() {
   const step = useApp((s) => firstRunStepOf(s.appSettings.firstRunStep));
   const setAppSetting = useApp((s) => s.setAppSetting);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const starsRef = useRef<HTMLDivElement>(null);
+  const labelsRef = useRef<HTMLDivElement>(null);
   const sayRef = useRef<HTMLDivElement>(null);
   const toastRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -90,11 +96,11 @@ export function ForgeOnboarding() {
 
   useEffect(() => {
     document.documentElement.classList.add("forge-on");
-    // a browser preview has no desktop behind it: give it a dark backdrop
-    if (!native()) document.documentElement.classList.add("forge-web");
     // ?reduce-motion forces the still version (handy to check it in a browser)
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches || location.search.includes("reduce-motion");
-    const world = new ForgeWorld(canvasRef.current!, starsRef.current!, reduce);
+    let world: ForgeWorld;
+    try { world = new ForgeWorld(canvasRef.current!, labelsRef.current!, reduce); }
+    catch { setAppSetting("firstRunStep", "done"); return; } // no WebGL: straight to the app
     const wait = (ms: number) => sleep(reduce ? Math.min(ms, 200) : ms);
     let toastT = 0;
     const toast = (msg: string) => {
@@ -102,7 +108,7 @@ export function ForgeOnboarding() {
       el.textContent = msg;
       el.classList.add("on");
       clearTimeout(toastT);
-      toastT = window.setTimeout(() => el.classList.remove("on"), 3000);
+      toastT = window.setTimeout(() => el.classList.remove("on"), 3200);
     };
     let sayGen = 0;
     const forge: Forge = {
@@ -111,8 +117,10 @@ export function ForgeOnboarding() {
       say: async (text) => {
         const gen = ++sayGen;
         const el = sayRef.current!;
-        el.innerHTML = '<span class="who">The Spark</span><span class="tx"></span>';
-        const tx = el.querySelector(".tx")!;
+        el.textContent = "";
+        const tx = document.createElement("span"), caret = document.createElement("span");
+        caret.className = "caret";
+        el.append(tx, caret);
         el.classList.add("on");
         world.spark.speaking = true;
         if (reduce) tx.textContent = text;
@@ -120,78 +128,76 @@ export function ForgeOnboarding() {
           for (let i = 1; i <= text.length; i++) {
             if (gen !== sayGen) return;
             tx.textContent = text.slice(0, i);
-            await sleep(".?!".includes(text[i - 1]) ? 150 : 16);
+            await sleep(".?!".includes(text[i - 1]) ? 170 : text[i - 1] === "," ? 70 : 19);
           }
         }
-        if (gen === sayGen) world.spark.speaking = false;
+        if (gen === sayGen) { world.spark.speaking = false; caret.remove(); }
       },
       hush: () => { sayGen++; world.spark.speaking = false; sayRef.current?.classList.remove("on"); },
-      below: (gap = 18) => {
-        // from where the Spark is heading (the bubble may still be moving)
-        const h = sayRef.current!.getBoundingClientRect().height || 80;
-        return Math.min(innerHeight - 180, bubbleTop(world.spark.ty, world.spark.tr) + h + gap);
+      below: (gap = 26) => {
+        const h = sayRef.current!.getBoundingClientRect().height || 60;
+        return Math.min(innerHeight - 200, sayTop(world.spark.ty, world.spark.tr) + h + gap);
       },
       absorb: (el) => {
         if (!el) return;
         const r = el.getBoundingClientRect();
-        const ghost = el.cloneNode(true) as HTMLElement;
-        ghost.classList.remove("forge-float");
-        Object.assign(ghost.style, { position: "fixed", left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, margin: "0", zIndex: "20", pointerEvents: "none", translate: "0 0" });
-        document.body.appendChild(ghost);
-        const dx = world.spark.x - (r.left + r.width / 2), dy = world.spark.y - (r.top + r.height / 2);
-        const done = () => { ghost.remove(); world.feed(); };
-        if (reduce) { done(); return; }
-        ghost.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(.15)`, opacity: .2 }], { duration: 620, easing: "cubic-bezier(.5,0,.75,0)" }).onfinish = done;
+        el.animate([{ opacity: 1 }, { opacity: .25 }], { duration: 300, fill: "forwards" });
+        world.burstAt(r.left + r.width / 2, r.top + r.height / 2, 10, .85);
+        world.feed();
       },
       finish: (fast) => { if (!finaleRef.current) setFinale(fast ? "fast" : "full"); },
+      fullscreen: (on) => { if (native()) void invoke("forge_fullscreen", { on }).catch(() => {}); },
     };
-    world.onFrame = (sp) => { if (sayRef.current) sayRef.current.style.top = `${bubbleTop(sp.y, sp.r)}px`; };
-    world.onLite = () => toast("Lite mode on: this computer is busy, so the forge uses fewer embers");
+    world.onFrame = (sp) => { if (sayRef.current) sayRef.current.style.top = `${sayTop(sp.y, sp.r)}px`; };
+    world.onLite = () => toast("Fewer embers: this computer is busy right now");
     world.start();
+    // take over the screen once we're actually on it (asking while the
+    // window is still appearing is ignored by macOS)
+    forge.fullscreen(true);
+    void probeFps("forge-intro", 9000, () => ({ cpuMsPerFrame: world.workAvg(), ambientEmbers: world.gl.ambientCount }));
     setF(forge);
-    // the launch animation hands off on the logo: burst it into the world.
-    // Resuming mid-setup (opening a project reloads the app) skips that.
+    // first time in: embers rise into the wordmark, burst, and the Spark is
+    // born. Resuming mid-setup (opening a project reloads the app) skips it.
     void (async () => {
       const first = firstRunStepOf(useApp.getState().appSettings.firstRunStep) === "welcome";
-      await document.fonts.ready;
+      // let macOS finish sliding into full screen before the wordmark forms
+      await sleep(reduce ? 0 : 1100);
       if (first) await world.logoBurst(LOGO_TEXT, wait);
-      else world.sparkBorn(world.W / 2, world.H * .36);
+      else world.sparkBorn(world.W / 2, world.H * .34);
       setReady(true);
     })();
-    return () => { world.stop(); document.documentElement.classList.remove("forge-on", "forge-web"); };
+    return () => { world.stop(); document.documentElement.classList.remove("forge-on"); };
   }, []);
 
-  // Skip to app / Escape: always works, from anywhere
-  const skip = () => {
+  // Esc / "Leave": always works, from anywhere
+  const leave = () => {
     const st = useApp.getState();
     st.setAppSetting("onboarded", true);
     if (st.appMode === null) st.setAppMode("solo");
     f?.finish(true);
   };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") skip(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); leave(); } };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   });
 
-  // the finale: everything collapses into the glass box, which opens into the app
+  // finale: everything is drawn into the glass box, which opens into the app
   useEffect(() => {
     if (!finale || !f) return;
-    const fast = finale === "fast";
-    const q = f.world.reduce ? 0 : fast ? .45 : 1;
+    const q = f.world.reduce ? 0 : finale === "fast" ? .45 : 1;
     void (async () => {
       f.hush();
       f.world.collapse();
       const box = boxRef.current!;
-      await sleep(500 * q);
+      await sleep(700 * q);
       box.style.opacity = "1";
-      f.world.spark.born = false;
-      if (!f.world.reduce) box.querySelector<HTMLElement>(".cube")!.style.animation = `forge-spin ${2.4 * q}s ease-in-out`;
-      for (let p = 0; p <= 100; p += 10) { box.style.setProperty("--fill", `${p}%`); box.querySelectorAll<HTMLElement>(".f").forEach((x) => x.style.setProperty("--fill", `${p}%`)); await sleep(110 * q); }
-      box.style.transform = "scale(9)";
+      f.world.fadeSpark();
+      if (!f.world.reduce) box.querySelector<HTMLElement>(".cube")!.style.animation = `forge-spin ${2.2 * q}s cubic-bezier(.6,0,.3,1)`;
+      for (let p = 0; p <= 100; p += 10) { box.querySelectorAll<HTMLElement>(".f").forEach((x) => x.style.setProperty("--fill", `${p}%`)); await sleep(110 * q); }
+      box.style.transform = "scale(10)";
       box.style.opacity = "0";
-      f.world.fadeEmbers(.2);
-      await sleep(380 * q);
+      await sleep(450 * q);
       setAppSetting("firstRunStep", "done");
       if (native()) await invoke("forge_window_done").catch(() => {});
     })();
@@ -200,19 +206,23 @@ export function ForgeOnboarding() {
   const n = stepNumber(step);
   return (
     <div className="forge" role="dialog" aria-label="Set up Grill Me">
-      <div className="forge-veil" />
       <canvas ref={canvasRef} />
-      <div ref={starsRef} className="forge-stars" aria-hidden />
-      <div data-tauri-drag-region className="forge-drag" />
-      <div className="forge-ui">
-        {f && ready && !finale ? <Scene step={step} f={f} /> : null}
-      </div>
+      <div ref={labelsRef} className="forge-labels" aria-hidden />
+      <div className="forge-ui">{f && ready && !finale ? <Scene step={step} f={f} /> : null}</div>
       <div ref={sayRef} className="forge-say" role="status" aria-live="polite" />
       <div ref={boxRef} className="forge-box" aria-hidden>
         <div className="cube">{[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className={`f f${i}`} />)}</div>
       </div>
-      {!finale ? <button type="button" className="forge-skip" onClick={skip}>Skip to app<kbd>esc</kbd></button> : null}
-      <div className="forge-steps" aria-hidden>{FIRST_RUN_STEPS.map((s, i) => <i key={s} className={i < n ? "on" : ""} />)}</div>
+      {!finale ? (
+        <div className="forge-hud">
+          <b>Grill Me</b>
+          <span>{String(n).padStart(2, "0")} / {String(FIRST_RUN_STEPS.length).padStart(2, "0")}</span>
+          <span>{STEP_NAMES[step] ?? ""}</span>
+          <span className="grow" />
+          <button type="button" onClick={leave}>Esc · Leave</button>
+        </div>
+      ) : null}
+      <div className="forge-progress" aria-hidden><i style={{ width: `${(n / FIRST_RUN_STEPS.length) * 100}%` }} /></div>
       <div ref={toastRef} className="forge-toast" role="status" />
     </div>
   );
@@ -244,15 +254,15 @@ function Scene({ step, f }: { step: FirstRunStep; f: Forge }) {
 function Welcome({ f }: SceneProps) {
   const setAppSetting = useApp((s) => s.setAppSetting);
   const joining = useApp((s) => s.appSettings.firstRunJoining === true);
-  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .32, 15); }, []);
-  const top = useLine(f, "Welcome to the forge. This is where your workspace gets made. A few minutes, and you can leave any time.");
+  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .3, 20); }, []);
+  const top = useLine(f, INTRO);
   const start = (join: boolean) => { setAppSetting("firstRunJoining", join); f.hush(); f.go(nextStep("welcome")); };
   if (top == null) return null;
   return (
     <div className="forge-content" style={{ top }}>
       <div className="forge-row">
-        <Chip kind={joining ? "" : "go"} autoFocus={!joining} onClick={() => start(false)}>Start forging</Chip>
-        <Chip kind={joining ? "go" : ""} autoFocus={joining} onClick={() => start(true)}>I'm joining a team</Chip>
+        <Btn primary autoFocus onClick={() => start(joining)}>{joining ? "Join my team" : "Enter the forge"}</Btn>
+        {joining ? null : <Btn onClick={() => start(true)}>I'm joining a team</Btn>}
       </div>
     </div>
   );
@@ -262,15 +272,15 @@ function Check({ f }: SceneProps) {
   const [checks, setChecks] = useState<DoctorCheck[] | null>(null);
   const [busy, setBusy] = useState("");
   const refresh = () => { void runDoctor().then(setChecks); };
-  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .24, 13); refresh(); }, []);
+  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .22, 17); refresh(); }, []);
   const required = (checks ?? []).filter((c) => REQUIRED.includes(c.id));
   const allOk = checks !== null && required.every((c) => c.ok);
-  const top = useLine(f, checks === null ? "First, let me check this computer has what the forge needs." : allOk ? "Everything the forge needs is here." : "A few tools are missing. I can install them, or you can run the command yourself.");
-  // all good: move on by itself
+  const top = useLine(f, checks === null ? "First, the tools the forge needs on this machine." : allOk ? "Everything the forge needs is here." : "A few tools are missing. I can install them for you.");
   useEffect(() => {
-    if (!native()) return;
-    if (checks !== null && allOk) { const t = setTimeout(() => { f.hush(); f.go(nextStep("check")); }, 1400); return () => clearTimeout(t); }
-  }, [checks, allOk]);
+    if (!native() || top == null || !allOk) return;
+    const t = setTimeout(() => { f.hush(); f.go(nextStep("check")); }, 2600);
+    return () => clearTimeout(t);
+  }, [top, allOk]);
   const install = async (c: DoctorCheck) => {
     setBusy(c.id);
     try { await invoke("doctor_install", { id: c.id }); refresh(); } catch (e) { f.toast(`${e}`); } finally { setBusy(""); }
@@ -278,23 +288,21 @@ function Check({ f }: SceneProps) {
   if (top == null) return null;
   return (
     <div className="forge-content" style={{ top }}>
-      {!native() ? <div className="forge-note">The computer check runs in the desktop app.</div> : null}
-      {required.map((c) => (
-        <div key={c.id} className={`forge-check ${c.ok ? "ok" : "missing"}`}>
-          <span className="dot" />
-          <div className="grow"><b>{c.label}</b><small>{c.ok ? c.detail : c.why}</small></div>
-          {!c.ok ? (
-            <>
-              <Chip float={false} kind="go" disabled={!!busy} onClick={() => void install(c)}>{busy === c.id ? "Installing…" : "Install for me"}</Chip>
-              <Chip float={false} kind="ghost" onClick={() => void navigator.clipboard.writeText(c.fix).then(() => f.toast("Copied. Run it in Terminal, then press Check again"))}>Copy command</Chip>
-            </>
-          ) : null}
+      {native() ? (
+        <div className="forge-checks">
+          {required.map((c) => (
+            <div key={c.id} className={`forge-check ${c.ok ? "ok" : "missing"}`}>
+              <span className="mark" />
+              <div className="grow"><b>{c.label}</b><small>{c.ok ? c.detail : c.why}</small></div>
+              {!c.ok ? <Btn small primary disabled={!!busy} onClick={() => void install(c)}>{busy === c.id ? "Installing" : "Install"}</Btn> : null}
+            </div>
+          ))}
         </div>
-      ))}
+      ) : <div className="forge-note">The machine check runs in the desktop app.</div>}
       {!allOk || !native() ? (
         <div className="forge-row">
-          {native() ? <Chip float={false} kind="ghost" onClick={refresh}>Check again</Chip> : null}
-          <Chip float={false} kind={allOk || !native() ? "go" : "ghost"} onClick={() => { f.hush(); f.go(nextStep("check")); }}>{allOk || !native() ? "Continue" : "Skip for now"}</Chip>
+          {native() ? <Link onClick={refresh}>Check again</Link> : null}
+          <Btn primary={allOk || !native()} onClick={() => { f.hush(); f.go(nextStep("check")); }}>{allOk || !native() ? "Continue" : "Skip for now"}</Btn>
         </div>
       ) : null}
     </div>
@@ -305,7 +313,6 @@ const SAMPLE_AIS: AiStatus[] = [
   { id: "claude", name: "Claude Code", installed: true, signedIn: true, detail: "" },
   { id: "codex", name: "Codex", installed: true, signedIn: false, detail: "" },
 ];
-const AI_MARK: Record<string, string> = { claude: "C", codex: "Cx", cursor: "Cu", gemini: "G" };
 
 function Connect({ f }: SceneProps) {
   const setAppSetting = useApp((s) => s.setAppSetting);
@@ -313,31 +320,37 @@ function Connect({ f }: SceneProps) {
   const [rows, setRows] = useState<AiStatus[] | null>(null);
   const [chosen, setChosen] = useState("");
   const [waiting, setWaiting] = useState("");
-  const orbRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const W = f.world.W, H = f.world.H;
   useEffect(() => {
-    f.world.sparkTo(f.world.W / 2, f.world.H * .2, 13);
+    f.world.sparkTo(W / 2, H * .2, 17);
     const load = native() ? invoke<AiStatus[]>("ai_status", { ids: null }).catch(() => []) : Promise.resolve(SAMPLE_AIS);
     void load.then((r) => { setRows(r); setChosen(pickBrain(r, saved)); });
+    return () => f.world.clearBeacons();
   }, []);
-  const top = useLine(f, "I talk through your own AI. It uses a little of your plan, about one short chat. Light one up.");
+  const top = useLine(f, "I speak through your own AI. It uses a little of your plan, about one short chat. Light one.");
   const installed = (rows ?? []).filter((r) => r.installed);
   const ready = readyAis(rows ?? []);
+  const oy = H * .55;
+  const ox = (i: number) => W / 2 + (i - (installed.length - 1) / 2) * Math.min(220, W / (installed.length + 1));
+  // orbs are light, drawn on the GPU: dim until signed in, then they ignite
+  useEffect(() => {
+    installed.forEach((r, i) => f.world.setBeacon(`ai:${r.id}`, { x: ox(i), y: oy, lit: r.signedIn === true ? (chosen === r.id ? 1 : .75) : .1, size: 46, pulse: waiting === r.id }));
+  }, [rows, chosen, waiting, W, H]);
 
   const ignite = (now: AiStatus) => {
     setRows((rs) => (rs ?? []).map((x) => (x.id === now.id ? now : x)));
     setChosen(now.id);
-    const el = orbRefs.current[now.id]?.querySelector(".ball");
-    if (el) { const r = el.getBoundingClientRect(); f.world.burstAt(r.left + r.width / 2, r.top + r.height / 2, 40); }
   };
   const signIn = async (r: AiStatus) => {
     setWaiting(r.id);
     if (!native()) { await sleep(1400); ignite({ ...r, signedIn: true }); setWaiting(""); return; }
-    f.toast(r.id === "gemini" ? "Gemini opened in Terminal. Pick “Sign in with Google” there." : "Finish signing in in your browser. I'll notice.");
+    // the browser opens for the sign-in: step out of full screen meanwhile
+    f.fullscreen(false);
     const started = Date.now();
     const poll = window.setInterval(() => {
-      if (Date.now() - started > 10 * 60_000) { window.clearInterval(poll); setWaiting(""); return; }
+      if (Date.now() - started > 10 * 60_000) { window.clearInterval(poll); setWaiting(""); f.fullscreen(true); return; }
       void invoke<AiStatus[]>("ai_status", { ids: [r.id] }).then(([now]) => {
-        if (now?.signedIn === true) { window.clearInterval(poll); setWaiting(""); ignite(now); }
+        if (now?.signedIn === true) { window.clearInterval(poll); setWaiting(""); f.fullscreen(true); setTimeout(() => ignite(now), 700); }
       }).catch(() => {});
     }, 3000);
     invoke("ai_login", { id: r.id }).catch((e) => f.toast(`${e}`));
@@ -346,26 +359,28 @@ function Connect({ f }: SceneProps) {
 
   if (top == null || rows === null) return null;
   return (
-    <div className="forge-content" style={{ top }}>
-      {installed.length === 0 ? <div className="forge-note">No AI coding tools found. That's fine: I'll ask a few quick questions instead.</div> : null}
-      <div className="forge-orbs">
-        {installed.map((r) => {
-          const lit = r.signedIn === true;
-          return (
-            <div key={r.id} ref={(el) => { orbRefs.current[r.id] = el; }} className={`forge-orb ${lit ? "lit" : ""} ${chosen === r.id ? "chosen" : ""}`}>
-              <button type="button" className="ball" aria-label={r.name} onClick={() => lit && setChosen(r.id)}>{AI_MARK[r.id] ?? r.name[0]}</button>
+    <>
+      {installed.map((r, i) => {
+        const lit = r.signedIn === true;
+        return (
+          <div key={r.id}>
+            <button type="button" className="forge-hit" style={{ left: ox(i), top: oy }} aria-label={`${r.name}: ${statusLabel(r)}`} onClick={() => (lit ? setChosen(r.id) : void signIn(r))} />
+            <div className={`forge-tag ${lit ? "" : "dark"}`} style={{ left: ox(i), top: oy + 46 }}>
               <b>{r.name}</b>
-              <small>{waiting === r.id ? "Finish in your browser…" : statusLabel(r)}</small>
-              {!lit ? <Chip float={false} disabled={waiting === r.id} onClick={() => void signIn(r)}>{waiting === r.id ? "Waiting…" : "Sign in"}</Chip> : null}
+              <small>{waiting === r.id ? "Finish in your browser" : chosen === r.id && lit ? "Speaking through this" : statusLabel(r)}</small>
             </div>
-          );
-        })}
+            {!lit && waiting !== r.id ? <div className="forge-orb-act" style={{ left: ox(i), top: oy + 96 }}><Btn small onClick={() => void signIn(r)}>Sign in</Btn></div> : null}
+          </div>
+        );
+      })}
+      <div className="forge-content" style={{ top: Math.max(top, oy + 150) }}>
+        {installed.length === 0 ? <div className="forge-note">No AI coding tools on this machine. That's fine: I'll ask a few quick questions instead.</div> : null}
+        <div className="forge-row">
+          {ready.length ? <Btn primary autoFocus onClick={() => finish(chosen || ready[0].id)}>Continue with {BRAIN_NAMES[chosen] ?? "your AI"}</Btn> : null}
+          <Link onClick={() => finish("form")}>Use quick questions instead</Link>
+        </div>
       </div>
-      <div className="forge-row">
-        {ready.length ? <Chip float={false} kind="go" onClick={() => finish(chosen || ready[0].id)}>Continue with {BRAIN_NAMES[chosen] ?? "your AI"}</Chip> : null}
-        <Chip float={false} kind={ready.length ? "ghost" : "go"} onClick={() => finish("form")}>Use quick questions instead</Chip>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -376,14 +391,14 @@ function Project({ f }: SceneProps) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState("");
   const warn = (m: string) => f.toast(m);
-  // opening a project reloads the app: save the next step first so the forge resumes there
   const advance = () => { f.hush(); f.go(nextStep("project")); };
   useEffect(() => {
-    f.world.sparkTo(f.world.W / 2, f.world.H * .22, 13);
+    f.world.sparkTo(f.world.W / 2, f.world.H * .22, 17);
     if (native()) void invoke<string[]>("discover_repos", { known: [] }).then((r) => setFound(r.slice(0, 6))).catch(() => {});
   }, []);
   const top = useLine(f, "Which project are we forging? Pick one I found, open a folder, or paste your team's repo link.");
   const has = !!activeProject && activeProject !== "default";
+  // opening a project reloads the app: save the next step first so the forge resumes there
   const openPath = async (p: string) => { setBusy(p); try { useApp.getState().setAppSetting("firstRunStep", nextStep("project")); await openProjectAt(p, warn); } catch (e) { warn(`${e}`); setBusy(""); } };
   const openFolder = async () => { setBusy("folder"); useApp.getState().setAppSetting("firstRunStep", nextStep("project")); if (!(await addProjectFromFinder(warn))) { useApp.getState().setAppSetting("firstRunStep", "project"); setBusy(""); } };
   const clone = async () => {
@@ -400,15 +415,19 @@ function Project({ f }: SceneProps) {
   if (top == null) return null;
   return (
     <div className="forge-content" style={{ top }}>
-      <div className="forge-row">
-        {has ? <Chip kind="go" onClick={advance}>Keep {projectName ?? activeProject}</Chip> : null}
-        {found.map((p) => <Chip key={p} disabled={!!busy} onClick={() => void openPath(p)}>{busy === p ? "Opening…" : p.split("/").pop()}</Chip>)}
-        <Chip kind={has || found.length ? "ghost" : "go"} disabled={!!busy || !native()} onClick={() => void openFolder()}>{busy === "folder" ? "Opening…" : "Open a folder…"}</Chip>
-        {!native() ? <Chip kind="go" onClick={advance}>Continue</Chip> : null}
-      </div>
+      {has ? <Btn primary autoFocus onClick={advance}>Keep {projectName ?? activeProject}</Btn> : null}
+      {found.length ? (
+        <div className="forge-opts">
+          {found.map((p) => <button type="button" key={p} className="forge-opt" disabled={!!busy} onClick={() => void openPath(p)}>{busy === p ? "Opening…" : p.split("/").pop()}</button>)}
+        </div>
+      ) : null}
       <div className="forge-type">
         <input value={url} placeholder="https://github.com/your-team/your-repo" aria-label="Repository link" onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void clone(); }} />
-        <Chip float={false} kind="go" disabled={!url.trim() || !!busy || !native()} onClick={() => void clone()}>{busy === "clone" ? "Downloading…" : "Download"}</Chip>
+        <Btn small disabled={!url.trim() || !!busy || !native()} onClick={() => void clone()}>{busy === "clone" ? "Downloading" : "Download"}</Btn>
+      </div>
+      <div className="forge-row">
+        <Link onClick={() => void openFolder()}>{busy === "folder" ? "Opening…" : "Open a folder"}</Link>
+        {!native() ? <Btn primary onClick={advance}>Continue</Btn> : null}
       </div>
     </div>
   );
@@ -424,7 +443,6 @@ const SAMPLE_SCAN: ScanResult = {
   },
   stack: { languages: ["TypeScript"], frameworks: ["React"] },
 };
-
 async function loadScan(): Promise<ScanResult | null> {
   if (!native()) return SAMPLE_SCAN;
   return invoke<ScanResult | null>("workflow_scan_read").catch(() => null);
@@ -436,72 +454,67 @@ function Scan({ f }: SceneProps) {
   const [phase, setPhase] = useState<"ask" | "looking" | "done">("ask");
   const [result, setResult] = useState<ScanResult | null>(null);
   const [showList, setShowList] = useState(false);
-  const [top, setTop] = useState<number | null>(null);
-  useEffect(() => {
-    let live = true;
-    f.world.sparkTo(f.world.W / 2, f.world.H * .2, 13);
-    void f.say("Can I look at your setup? Names of tools only, never keys or code. Nothing leaves this computer.").then(() => live && setTop(f.below()));
-    return () => { live = false; };
-  }, []);
+  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .2, 17); }, []);
+  const top = useLine(f, "May I look at your setup? Names of tools only. Never keys, never code. Nothing leaves this machine.");
   const look = async () => {
     setPhase("looking");
     f.hush();
-    f.world.sparkTo(f.world.W / 2, f.world.H * .5, 12);
-    await f.wait(450);
-    f.world.scoutOut();
-    void f.say("Looking around…");
+    f.world.sparkTo(f.world.W / 2, f.world.H * .5, 16);
+    await f.wait(500);
+    const scouts = f.world.scoutOut();
     const sources = SCAN_SOURCES.filter((x) => on[x.id]).map((x) => x.id);
     const [res] = await Promise.all([
       native() ? invoke<ScanResult>("workflow_scan", { project: projectPath ?? null, sources }).catch((e) => { f.toast(`Scan failed: ${e}`); return null; }) : Promise.resolve(SAMPLE_SCAN),
-      f.wait(1300),
+      f.wait(1400),
     ]);
     setResult(res);
     const { stars, links } = constellationFromScan(res);
     f.world.setStars(stars, links);
-    f.world.scoutBack();
+    f.world.scoutBack(scouts);
     await f.world.revealStars(f.wait);
-    f.world.sparkTo(f.world.W / 2, f.world.H * .12, 11);
+    f.world.sparkTo(f.world.W / 2, f.world.H * .13, 14);
     const agents = stars.filter((s) => s.kind === "agent").length;
-    await f.say(`Here's your forge: ${agents === 1 ? "your agent" : `${agents} agents`} and what they work with. Lines are things that work together.`);
+    await f.say(`Your forge. ${agents === 1 ? "One agent" : `${agents} agents`}, and everything they work with. Lines are things that work together.`);
     setPhase("done");
   };
   if (top == null) return null;
   if (phase === "ask") {
     return (
       <div className="forge-content" style={{ top }}>
-        <div className="forge-row">
+        <div className="forge-opts">
           {SCAN_SOURCES.map((x) => (
-            <Chip key={x.id} float={false} kind={on[x.id] ? "on" : "ghost"} onClick={() => setOn({ ...on, [x.id]: !on[x.id] })}>{x.label}{x.defaultOn ? "" : " (optional)"}</Chip>
+            <button type="button" key={x.id} className={`forge-opt ${on[x.id] ? "on" : ""}`} aria-pressed={on[x.id]} onClick={() => setOn({ ...on, [x.id]: !on[x.id] })}>
+              {x.label}{x.defaultOn ? "" : <span className="n">optional</span>}
+            </button>
           ))}
         </div>
-        <div className="forge-note">{SCAN_SOURCES.find((x) => x.id === "history")?.detail}</div>
         <div className="forge-row">
-          <Chip kind="go" disabled={!Object.values(on).some(Boolean)} onClick={() => void look()}>Let the Spark look</Chip>
-          <Chip kind="ghost" onClick={() => { f.hush(); f.go(nextStep("scan")); }}>Skip</Chip>
+          <Btn primary autoFocus disabled={!Object.values(on).some(Boolean)} onClick={() => void look()}>Look</Btn>
+          <Link onClick={() => { f.hush(); f.go(nextStep("scan")); }}>Skip</Link>
         </div>
       </div>
     );
   }
   if (phase === "looking") return null;
   return (
-    <div className="forge-content" style={{ top: innerHeight - 150 }}>
-      {showList && result ? <ul className="forge-panel">{result.checked.map((c, i) => <li key={i}>{c.item}</li>)}</ul> : null}
+    <div className="forge-content" style={{ top: innerHeight - 130 }}>
+      {showList && result ? <ul className="forge-list">{result.checked.map((c, i) => <li key={i}>{c.item}</li>)}</ul> : null}
       <div className="forge-row">
-        <Chip kind="go" autoFocus onClick={() => { f.hush(); f.go(nextStep("scan")); }}>Looks right</Chip>
-        <Chip kind="ghost" onClick={() => setShowList(!showList)}>{showList ? "Hide" : "What did you look at?"}</Chip>
-        <Chip kind="ghost" onClick={() => { void invoke("workflow_scan_delete").catch(() => {}); f.world.hideStars(); f.toast("Scan deleted"); f.hush(); f.go(nextStep("scan")); }}>Delete this scan</Chip>
+        <Btn primary autoFocus onClick={() => { f.hush(); f.go(nextStep("scan")); }}>That's right</Btn>
+        <Link onClick={() => setShowList(!showList)}>{showList ? "Hide" : "What did you read?"}</Link>
+        <Link onClick={() => { void invoke("workflow_scan_delete").catch(() => {}); f.world.hideStars(); f.toast("Scan deleted"); f.hush(); f.go(nextStep("scan")); }}>Forget it</Link>
       </div>
     </div>
   );
 }
 
-// ---- workflow: interview → path → upgrades → card ----------------------------------
+// ---- workflow: interview → forged path → upgrades → card ---------------------------
 
 interface Q { key: "team" | "style" | "pains"; text: string; options: string[]; multi?: boolean }
 const QUICK: Q[] = [
   { key: "team", text: OPENING, options: OPENING_OPTIONS },
-  { key: "style", text: "How do you use AI to code?", options: STYLE.map((s) => s.label) },
-  { key: "pains", text: `What slows you down most? Pick up to ${MAX_PAINS}.`, options: PAINS.map((p) => p.label), multi: true },
+  { key: "style", text: "How do you work with AI when you code?", options: STYLE.map((s) => s.label) },
+  { key: "pains", text: `What slows you down most? Choose up to ${MAX_PAINS}.`, options: PAINS.map((p) => p.label), multi: true },
 ];
 const idOf = <T extends string>(list: { id: T; label: string }[], label: string) => list.find((x) => x.label === label)?.id;
 
@@ -514,13 +527,12 @@ function Workflow({ f }: SceneProps) {
   const [loaded, setLoaded] = useState(false);
   const [phase, setPhase] = useState<"interview" | "path" | "upgrades" | "card">("interview");
   const [profile, setProfile] = useState<WorkflowProfile | null>(null);
-
   useEffect(() => {
     void (async () => {
       const [s, c] = await Promise.all([loadScan(), loadCatalog().catch(() => builtinCatalog())]);
       setScan(s); setCatalog(c);
       // resuming after a reload: rebuild the constellation from the saved scan
-      if (s) { const { stars, links } = constellationFromScan(s); f.world.setStars(stars, links); f.world.showAllStars(); }
+      if (s && !f.world.hasStars()) { const { stars, links } = constellationFromScan(s); f.world.setStars(stars, links); f.world.showAllStars(); }
       const p = profileOf(savedProfile);
       if (p && p.updated) { setProfile(p); setPhase("path"); } else setProfile(emptyProfile(s));
       setLoaded(true);
@@ -542,7 +554,7 @@ function Interview({ f, brain, scan, start, onDone }: SceneProps & { brain: stri
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const state = useRef({ turns: [] as Turn[], profile: { ...start }, i: 0, ai });
-  const rowRef = useRef<HTMLDivElement>(null);
+  const optsRef = useRef<HTMLDivElement>(null);
   const lastQ = useRef<Q | null>(null);
   const lastAnswer = useRef("");
 
@@ -550,25 +562,25 @@ function Interview({ f, brain, scan, start, onDone }: SceneProps & { brain: stri
     lastQ.current = next;
     setTop(null); setPicks([]); setTyped("");
     await f.say(next.text);
-    setQ(next); setTop(f.below(22));
+    setQ(next); setTop(f.below());
   };
   useEffect(() => {
     f.world.recede(true);
     f.world.setDim(true);
-    f.world.sparkTo(f.world.W / 2, f.world.H * .3, 15);
+    f.world.sparkTo(f.world.W / 2, f.world.H * .3, 20);
     void (async () => {
-      await f.say(state.current.ai ? `A few questions, through ${name}. Tap an answer or type your own.` : "A few quick questions. Tap an answer or type your own.");
-      await f.wait(600);
+      await f.say(state.current.ai ? `A few questions, through ${name}. Choose an answer, or say it in your own words.` : "A few quick questions. Choose an answer, or say it in your own words.");
+      await f.wait(700);
       state.current.turns = [{ who: "ai", text: OPENING }];
       void ask(QUICK[0]);
     })();
     return () => { f.world.recede(false); f.world.setDim(false); };
   }, []);
 
-  const finish = async (p: WorkflowProfile, thanks = "Got it. Let's forge your workflow.") => {
+  const finish = async (p: WorkflowProfile, thanks = "Understood. Now let's forge your workflow.") => {
     setQ(null); setTop(null);
     await f.say(thanks);
-    await f.wait(500);
+    await f.wait(600);
     onDone(p);
   };
 
@@ -576,24 +588,20 @@ function Interview({ f, brain, scan, start, onDone }: SceneProps & { brain: stri
     const s = state.current;
     const cur = q ?? lastQ.current;
     if (!cur || busy) return;
-    // the answer is absorbed into the Spark
-    const els = rowRef.current ? [...rowRef.current.querySelectorAll(".forge-chip.on, .forge-chip.picked")] : [];
-    els.forEach((el) => f.absorb(el));
+    optsRef.current?.querySelectorAll(".forge-opt.on").forEach((el) => f.absorb(el));
     if (!s.ai) {
-      // quick questions: fill fields straight from the chips
       const p = { ...s.profile };
       if (cur.key === "team") p.team = idOf(TEAM, text) ?? p.team;
       if (cur.key === "style") p.style = idOf(STYLE, text) ?? p.style;
       if (cur.key === "pains") p.pains = chosen.map((c) => idOf(PAINS, c)).filter((x): x is NonNullable<typeof x> => !!x).slice(0, MAX_PAINS);
       s.profile = p;
       setQ(null);
-      await f.wait(650);
+      await f.wait(600);
       s.i++;
       if (s.i < QUICK.length) void ask(QUICK[s.i]);
       else void finish(p);
       return;
     }
-    // your AI: one turn, validated, then its next question and options
     lastAnswer.current = text;
     s.turns = [...s.turns, { who: "you", text: text.slice(0, MAX_ANSWER_CHARS) }];
     setBusy(true); setError(""); setQ(null);
@@ -603,8 +611,8 @@ function Interview({ f, brain, scan, start, onDone }: SceneProps & { brain: stri
       s.profile = r.profile;
       s.turns = [...s.turns, { who: "ai", text: r.say }];
       const answers = s.turns.filter((t) => t.who === "you").length;
-      if (r.done || answers >= MAX_ANSWERS) { setBusy(false); void finish(r.profile, r.say); return; }
       setBusy(false);
+      if (r.done || answers >= MAX_ANSWERS) { void finish(r.profile, r.say); return; }
       void ask({ key: "pains", text: r.say, options: r.options });
     } catch (e) {
       setBusy(false);
@@ -612,15 +620,14 @@ function Interview({ f, brain, scan, start, onDone }: SceneProps & { brain: stri
       setError(`${name} couldn't answer: ${e}`);
     }
   };
-
   const fallBack = () => { state.current.ai = false; setError(""); state.current.i = 0; void ask(QUICK[0]); };
 
-  if (busy) return <div className="forge-content" style={{ top: f.below(22) }}><div className="forge-note">{name} is thinking…</div></div>;
+  if (busy) return <div className="forge-content" style={{ top: f.below() }}><div className="forge-micro">{name} is thinking</div></div>;
   if (error) {
     return (
-      <div className="forge-content" style={{ top: f.below(22) }}>
+      <div className="forge-content" style={{ top: f.below() }}>
         <div className="forge-note">{error}</div>
-        <div className="forge-row"><Chip kind="go" onClick={() => { setError(""); void answer(lastAnswer.current); }}>Try again</Chip><Chip kind="ghost" onClick={fallBack}>Use quick questions</Chip></div>
+        <div className="forge-row"><Btn primary onClick={() => { setError(""); void answer(lastAnswer.current); }}>Try again</Btn><Link onClick={fallBack}>Use quick questions</Link></div>
       </div>
     );
   }
@@ -628,29 +635,29 @@ function Interview({ f, brain, scan, start, onDone }: SceneProps & { brain: stri
   const multi = q.multi && !state.current.ai;
   return (
     <div className="forge-content" style={{ top }}>
-      <div ref={rowRef} className="forge-row">
+      <div ref={optsRef} className="forge-opts">
         {q.options.map((o) => {
           const i = picks.indexOf(o);
           return (
-            <Chip key={o} kind={i >= 0 ? "on picked" : ""} onClick={(e) => {
-              if (!multi) { e.currentTarget.classList.add("picked"); void answer(o); return; }
+            <button type="button" key={o} className={`forge-opt ${i >= 0 ? "on" : ""}`} onClick={(e) => {
+              if (!multi) { e.currentTarget.classList.add("on"); void answer(o); return; }
               setPicks(i >= 0 ? picks.filter((x) => x !== o) : picks.length < MAX_PAINS ? [...picks, o] : picks);
-            }}>{multi && i >= 0 ? <span className="n">{i + 1}</span> : null}{o}</Chip>
+            }}>{multi && i >= 0 ? <span className="n">{String(i + 1).padStart(2, "0")}</span> : null}{o}</button>
           );
         })}
       </div>
       <div className="forge-type">
-        <input value={typed} placeholder="Or type it…" aria-label="Type your answer" maxLength={MAX_ANSWER_CHARS} autoFocus={q.options.length === 0}
+        <input value={typed} placeholder="Or in your own words…" aria-label="Your answer" maxLength={MAX_ANSWER_CHARS} autoFocus={q.options.length === 0}
           onChange={(e) => setTyped(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && typed.trim()) { f.absorb(e.currentTarget); void answer(typed.trim(), multi ? [typed.trim()] : []); } }} />
-        {multi ? <Chip float={false} kind="go" disabled={picks.length === 0} onClick={() => void answer(picks.join(", "), picks)}>That's it</Chip> : null}
+        {multi ? <Btn small primary disabled={picks.length === 0} onClick={() => void answer(picks.join(", "), picks)}>Done</Btn> : null}
       </div>
-      <div className="forge-row"><button type="button" className="forge-chip ghost" style={{ padding: "4px 12px", fontSize: 12.5 }} onClick={() => void finish(state.current.profile, "No problem. Let's forge with what I know.")}>Finish now</button></div>
+      <Link onClick={() => void finish(state.current.profile, "Fine. I'll forge with what I know.")}>Finish now</Link>
     </div>
   );
 }
 
-interface NodeView { id: string; name: string; x: number; y: number; lit: boolean; tools: string[]; ignite: number }
+interface NodeView { id: string; name: string; x: number; y: number; lit: boolean; tools: string[] }
 
 function Forged({ f, scan, catalog, profile, phase, setPhase }: SceneProps & { scan: ScanResult | null; catalog: Catalog; profile: WorkflowProfile; phase: string; setPhase: (p: "path" | "upgrades" | "card") => void }) {
   const have = useMemo(() => toolsYouHave(catalog, scan), [catalog, scan]);
@@ -660,56 +667,62 @@ function Forged({ f, scan, catalog, profile, phase, setPhase }: SceneProps & { s
   const [top, setTop] = useState<number | null>(null);
   const [placed, setPlaced] = useState<(Upgrade & { at: number })[]>([]);
   const [focus, setFocus] = useState<(Upgrade & { at: number }) | null>(null);
-  const [dragTarget, setDragTarget] = useState(-1);
-  const [card, setCard] = useState("");
+  const [target, setTarget] = useState(-1);
   const W = f.world.W, H = f.world.H;
-  const y = H * .48;
-  const slots = STAGES.map((_, i) => ({ x: W * .14 + (W * .72) * (i / (STAGES.length - 1)), y }));
+  const y = H * .46;
+  const slots = STAGES.map((_, i) => ({ x: W * .15 + (W * .7) * (i / (STAGES.length - 1)), y }));
 
-  const syncPath = (ns: NodeView[]) => f.world.setPath(ns.map((n): PathPoint => ({ x: n.x, y: n.y - 18, lit: n.lit })));
+  // stage lights + the path between them, drawn on the GPU
+  useEffect(() => {
+    nodes.forEach((n, i) => f.world.setBeacon(`stage:${n.id}`, { x: n.x, y: n.y, lit: n.lit ? 1 : .12, size: 30, pulse: target === i }));
+    f.world.setPath(nodes.length ? nodes.map((n): PathPoint => ({ x: n.x, y: n.y, lit: n.lit })) : null);
+  }, [nodes, target]);
+  useEffect(() => () => { f.world.clearBeacons(); f.world.setPath(null); }, []);
 
-  // the stars pull into a line and get forged into the five stages
+  // the stars pull into a line and are forged into the five stages
   useEffect(() => {
     void (async () => {
       f.hush();
-      f.world.sparkTo(W / 2, H * .13, 11);
+      f.world.sparkTo(W / 2, H * .13, 14);
       await f.world.forgeLine((label) => stageIndexOf(label, catalog), slots, f.wait);
       const ns: NodeView[] = [];
       for (const [i, st] of stages.entries()) {
-        ns.push({ id: st.id, name: st.name, x: slots[i].x, y: slots[i].y, lit: st.covered, tools: st.tools, ignite: st.covered ? 1 : 0 });
+        ns.push({ id: st.id, name: st.name, x: slots[i].x, y: slots[i].y, lit: st.covered, tools: st.tools });
         setNodes([...ns]);
-        if (st.covered) f.world.burstAt(slots[i].x, slots[i].y - 18, 22);
-        await f.wait(220);
+        await f.wait(240);
       }
-      syncPath(ns);
       const lit = ns.filter((n) => n.lit).map((n) => n.name), dark = ns.filter((n) => !n.lit).map((n) => n.name.toLowerCase());
-      await f.say(`Here's your workflow. ${lit.length ? `${lit.join(", ")} ${lit.length === 1 ? "is" : "are"} lit.` : "Nothing's lit yet."} ${dark.length ? `${dark.join(", ")} ${dark.length === 1 ? "is" : "are"} still dark.` : "Every stage is lit."}`.replace(/\. ([a-z])/, (_, c: string) => `. ${c.toUpperCase()}`));
-      setTop(H - 150);
+      const a = lit.length ? `${lit.join(", ")} ${lit.length === 1 ? "is" : "are"} burning.` : "Nothing is burning yet.";
+      const b = dark.length ? ` ${dark.join(", ").replace(/^./, (c) => c.toUpperCase())} ${dark.length === 1 ? "is" : "are"} still dark.` : " Every stage is lit.";
+      await f.say(`Your workflow. ${a}${b}`);
+      setTop(H - 130);
     })();
-    return () => { f.world.setPath(null); };
   }, []);
 
   const light = (u: Upgrade) => {
     const at = STAGES.findIndex((s) => s.id === u.stage);
-    if (placed.some((p) => p.id === u.id)) return;
-    const ns = nodes.map((n, i) => (i === at ? { ...n, lit: true, tools: [u.name, ...n.tools], ignite: n.ignite + 1 } : n));
+    if (placed.some((p) => p.id === u.id) || at < 0) return;
+    const ns = nodes.map((n, i) => (i === at ? { ...n, lit: true, tools: [u.name, ...n.tools] } : n));
     setNodes(ns);
-    syncPath(ns);
-    f.world.burstAt(ns[at].x, ns[at].y - 18, 46);
     const p = { ...u, at };
     setPlaced([...placed, p]);
     setFocus(p);
   };
 
+  const labels = nodes.map((n) => (
+    <div key={n.id} className={`forge-stage ${n.lit ? "" : "gap"}`} style={{ left: n.x, top: n.y + 30 }}>
+      <b>{n.name}</b>
+      <small>{n.lit ? n.tools.slice(0, 2).join(", ") + (n.tools.length > 2 ? ` +${n.tools.length - 2}` : "") : "Dark"}</small>
+    </div>
+  ));
+
   if (phase === "path") {
     return (
       <>
-        {nodes.map((n) => <StageNode key={`${n.id}-${n.ignite}`} n={n} target={false} />)}
+        {labels}
         {top != null ? (
           <div className="forge-content" style={{ top }}>
-            <div className="forge-row">
-              <Chip kind="go" autoFocus onClick={() => { setTop(null); setPhase(upgrades.length ? "upgrades" : "card"); }}>{upgrades.length ? "Show me how to light them" : "Continue"}</Chip>
-            </div>
+            <Btn primary autoFocus onClick={() => { setTop(null); setPhase(upgrades.length ? "upgrades" : "card"); }}>{upgrades.length ? "Light the dark stages" : "Continue"}</Btn>
           </div>
         ) : null}
       </>
@@ -719,66 +732,51 @@ function Forged({ f, scan, catalog, profile, phase, setPhase }: SceneProps & { s
   if (phase === "upgrades") {
     return (
       <>
-        {nodes.map((n, i) => <StageNode key={`${n.id}-${n.ignite}`} n={n} target={dragTarget === i} />)}
+        {labels}
         <UpgradeIntro f={f} count={upgrades.length} />
-        <div className="forge-ups" style={{ top: H * .64 }}>
-          {upgrades.filter((u) => !placed.some((p) => p.id === u.id)).map((u, i) => (
-            <UpgradeCard key={u.id} u={u} index={i} reduce={f.world.reduce}
-              nodeRect={() => {
-                const at = STAGES.findIndex((s) => s.id === u.stage);
-                return { x: nodes[at]?.x ?? 0, y: (nodes[at]?.y ?? 0) - 18, at };
-              }}
-              onTarget={setDragTarget}
-              onPlace={() => { setDragTarget(-1); light(u); }}
-              onMiss={(stage) => f.toast(`Drop it on ${stage}`)} />
-          ))}
-        </div>
         {focus ? (
-          <div className="forge-placed" style={{ left: Math.min(Math.max(nodes[focus.at].x, 200), W - 200), top: nodes[focus.at].y + 74 }}>
-            <b>{focus.name}</b> lights {STAGES[focus.at].name}. {focus.what}
+          <div className="forge-placed" style={{ left: W / 2, top: H * .64 }}>
+            <div className="head">{focus.name} lights {STAGES[focus.at].name}</div>
+            <p>{focus.what}</p>
             {focus.command ? <code>{focus.command}</code> : null}
             <div className="acts">
-              {focus.command ? <Chip float={false} kind="go" onClick={() => void navigator.clipboard.writeText(focus.command!).then(() => f.toast(focus.command!.startsWith("/") ? "Copied. Paste it into Claude Code" : "Copied. Run it in Terminal"), () => f.toast("Select the command to copy it"))}>Copy command</Chip> : null}
-              {focus.docs ? <Chip float={false} kind="ghost" onClick={() => void openExternal(focus.docs!)}>How to set it up</Chip> : null}
-              <Chip float={false} kind="ghost" onClick={() => setFocus(null)}>Done</Chip>
+              {focus.command ? <Link onClick={() => void navigator.clipboard.writeText(focus.command!).then(() => f.toast(focus.command!.startsWith("/") ? "Copied. Paste it into Claude Code" : "Copied. Run it in Terminal"), () => f.toast("Select the command to copy it"))}>Copy command</Link> : null}
+              {focus.docs ? <Link onClick={() => void openExternal(focus.docs!)}>How to set it up</Link> : null}
+              <Link onClick={() => setFocus(null)}>Done</Link>
             </div>
           </div>
-        ) : null}
-        <div className="forge-content" style={{ top: H - 96 }}>
-          <div className="forge-row"><Chip float={false} kind={placed.length ? "go" : "ghost"} onClick={() => { setFocus(null); f.hush(); setPhase("card"); }}>{placed.length ? "Continue" : "Maybe later"}</Chip></div>
+        ) : (
+          <div className="forge-ups" style={{ top: H * .64 }}>
+            {upgrades.filter((u) => !placed.some((p) => p.id === u.id)).map((u, i) => (
+              <UpgradeCard key={u.id} u={u} index={i} reduce={f.world.reduce}
+                stagePos={() => { const at = STAGES.findIndex((s) => s.id === u.stage); return { x: nodes[at]?.x ?? 0, y: nodes[at]?.y ?? 0, at }; }}
+                onTarget={setTarget} onPlace={() => { setTarget(-1); light(u); }} onMiss={(stage) => f.toast(`Drop it on ${stage}`)} />
+            ))}
+          </div>
+        )}
+        <div className="forge-content" style={{ top: H - 92 }}>
+          <Btn primary={placed.length > 0} onClick={() => { setFocus(null); f.hush(); setPhase("card"); }}>{placed.length ? "Continue" : "Maybe later"}</Btn>
         </div>
       </>
     );
   }
-
-  // card
-  return <ShareCard f={f} nodes={nodes} scan={scan} profile={profile} card={card} setCard={setCard} />;
-}
-
-function StageNode({ n, target }: { n: NodeView; target: boolean }) {
-  return (
-    <div className={`forge-node ${n.lit ? "lit" : "gap"} ${target ? "target" : ""} ${n.ignite > 1 ? "ignite" : ""}`} style={{ left: n.x, top: n.y }}>
-      <div className="core" />
-      <b>{n.name}</b>
-      <small>{n.lit ? n.tools.slice(0, 2).join(", ") + (n.tools.length > 2 ? ` +${n.tools.length - 2}` : "") : "Nothing yet"}</small>
-    </div>
-  );
+  return <ShareCard f={f} nodes={nodes} scan={scan} profile={profile} />;
 }
 
 function UpgradeIntro({ f, count }: { f: Forge; count: number }) {
-  useEffect(() => { void f.say(`${count === 1 ? "One upgrade" : `${count} upgrades`} picked for you. Drag one onto its stage to light it.`); }, []);
+  useEffect(() => { void f.say(`${count === 1 ? "One upgrade" : `${count} upgrades`}, chosen for how you work. Drag one onto its stage to light it.`); }, []);
   return null;
 }
 
-function UpgradeCard({ u, index, reduce, nodeRect, onTarget, onPlace, onMiss }: { u: Upgrade; index: number; reduce: boolean; nodeRect: () => { x: number; y: number; at: number }; onTarget: (i: number) => void; onPlace: () => void; onMiss: (stage: string) => void }) {
+function UpgradeCard({ u, index, reduce, stagePos, onTarget, onPlace, onMiss }: { u: Upgrade; index: number; reduce: boolean; stagePos: () => { x: number; y: number; at: number }; onTarget: (i: number) => void; onPlace: () => void; onMiss: (stage: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ sx: number; sy: number; on: boolean }>({ sx: 0, sy: 0, on: false });
+  const drag = useRef({ sx: 0, sy: 0, on: false });
   const stage = STAGES.find((s) => s.id === u.stage)?.name ?? "";
   useEffect(() => {
     if (reduce || !ref.current) return;
-    ref.current.animate([{ transform: "translateY(70px)", opacity: 0 }, { transform: "translateY(0)", opacity: 1 }], { duration: 600, delay: index * 140, easing: "cubic-bezier(.2,1.2,.4,1)", fill: "backwards" });
+    ref.current.animate([{ transform: "translateY(24px)", opacity: 0 }, { transform: "translateY(0)", opacity: 1 }], { duration: 700, delay: index * 120, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
   }, []);
-  const near = (x: number, y: number) => { const r = nodeRect(); return Math.hypot(x - r.x, y - r.y) < 95; };
+  const near = (x: number, y: number) => { const p = stagePos(); return Math.hypot(x - p.x, y - p.y) < 90; };
   return (
     <div ref={ref} className="forge-up" tabIndex={0} role="button" aria-label={`${u.name}. Lights ${stage}. Press Enter to place it.`}
       onKeyDown={(e) => { if (e.key === "Enter") onPlace(); }}
@@ -787,7 +785,7 @@ function UpgradeCard({ u, index, reduce, nodeRect, onTarget, onPlace, onMiss }: 
         drag.current = { sx: e.clientX, sy: e.clientY, on: true };
         e.currentTarget.setPointerCapture(e.pointerId);
         e.currentTarget.classList.add("dragging");
-        onTarget(nodeRect().at);
+        onTarget(stagePos().at);
       }}
       onPointerMove={(e) => { if (drag.current.on) e.currentTarget.style.translate = `${e.clientX - drag.current.sx}px ${e.clientY - drag.current.sy}px`; }}
       onPointerUp={(e) => {
@@ -798,21 +796,22 @@ function UpgradeCard({ u, index, reduce, nodeRect, onTarget, onPlace, onMiss }: 
         if (near(e.clientX, e.clientY)) onPlace();
         else { e.currentTarget.style.translate = "0 0"; if (Math.hypot(e.clientX - drag.current.sx, e.clientY - drag.current.sy) > 12) onMiss(stage); }
       }}>
-      <span className="gem" />
-      <div className="name">{u.name}<span className="kind">{u.kind === "tip" ? "tip" : u.kind}</span></div>
+      <div className="kind"><i />{u.kind === "tip" ? "Tip" : u.kind}</div>
+      <div className="name">{u.name}</div>
       <div className="why">{u.why}</div>
-      <div className="foot"><span>Lights <b>{stage}</b></span><button type="button" onClick={onPlace}>Place it</button></div>
+      <div className="foot"><span>Lights <b>{stage}</b></span><button type="button" onClick={onPlace}>Place</button></div>
     </div>
   );
 }
 
-function ShareCard({ f, nodes, scan, profile, card, setCard }: SceneProps & { nodes: NodeView[]; scan: ScanResult | null; profile: WorkflowProfile; card: string; setCard: (s: string) => void }) {
+function ShareCard({ f, nodes, scan, profile }: SceneProps & { nodes: NodeView[]; scan: ScanResult | null; profile: WorkflowProfile }) {
   const [top, setTop] = useState<number | null>(null);
+  const card = useMemo(() => drawCard(nodes, scan, profile), []);
   useEffect(() => {
+    f.world.clearBeacons();
     f.world.setPath(null);
-    f.world.sparkTo(f.world.W / 2, f.world.H * .09, 10);
-    setCard(drawCard(nodes, scan, profile));
-    void f.say("Your workflow, as a card. Share it if you like.").then(() => setTop(f.below(14)));
+    f.world.sparkTo(f.world.W / 2, f.world.H * .1, 13);
+    void f.say("Your workflow, as a card. Share it if you like.").then(() => setTop(f.below(18)));
   }, []);
   const text = encodeURIComponent(`My AI coding workflow, forged in Grill Me: ${nodes.map((n) => `${n.lit ? "●" : "○"} ${n.name}`).join(" → ")}`);
   const save = async () => {
@@ -823,91 +822,92 @@ function ShareCard({ f, nodes, scan, profile, card, setCard }: SceneProps & { no
     try { const blob = await (await fetch(card)).blob(); await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]); f.toast("Image copied"); }
     catch { f.toast("Couldn't copy the image here. Save it instead"); }
   };
-  if (top == null || !card) return null;
+  if (top == null) return null;
   return (
     <div className="forge-content" style={{ top }}>
       <img className="forge-card" src={card} alt="Your Grill Me workflow card" />
       <div className="forge-row">
-        <Chip float={false} kind="go" onClick={() => void save()}>Save image</Chip>
-        <Chip float={false} kind="ghost" onClick={() => void copy()}>Copy</Chip>
-        <Chip float={false} kind="ghost" onClick={() => void openExternal(`https://x.com/intent/post?text=${text}`)}>Post on X</Chip>
-        <Chip float={false} kind="ghost" onClick={() => void openExternal(`https://www.linkedin.com/feed/?shareActive=true&text=${text}`)}>Share on LinkedIn</Chip>
-        <Chip float={false} kind="go" onClick={() => { f.hush(); f.world.hideStars(); f.go(nextStep("workflow")); }}>Continue</Chip>
+        <Link onClick={() => void save()}>Save image</Link>
+        <Link onClick={() => void copy()}>Copy</Link>
+        <Link onClick={() => void openExternal(`https://x.com/intent/post?text=${text}`)}>Post on X</Link>
+        <Link onClick={() => void openExternal(`https://www.linkedin.com/feed/?shareActive=true&text=${text}`)}>LinkedIn</Link>
       </div>
+      <Btn primary onClick={() => { f.hush(); f.world.hideStars(); f.go(nextStep("workflow")); }}>Continue</Btn>
     </div>
   );
 }
 
-/** A 1200×630 image (the size X and LinkedIn preview well) of their workflow. */
+/** A 1200×630 card (the size X and LinkedIn preview well), in the forge's
+ *  language: black, hairlines, small type, light only where a stage burns. */
 function drawCard(nodes: NodeView[], scan: ScanResult | null, profile: WorkflowProfile): string {
   const c = document.createElement("canvas");
   c.width = 1200; c.height = 630;
   const x = c.getContext("2d")!;
-  const g = x.createLinearGradient(0, 0, 1200, 630);
-  g.addColorStop(0, "#1c1219"); g.addColorStop(1, "#0d090c");
-  x.fillStyle = g; x.fillRect(0, 0, 1200, 630);
-  const glow = (cx: number, cy: number, r: number, col: string) => { const gg = x.createRadialGradient(cx, cy, 0, cx, cy, r); gg.addColorStop(0, col); gg.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = gg; x.fillRect(0, 0, 1200, 630); };
-  glow(120, 600, 420, "rgba(196,84,40,.35)"); glow(1120, 40, 360, "rgba(242,160,78,.18)");
-  x.globalCompositeOperation = "lighter";
-  for (let i = 0; i < 140; i++) { const s = 6 + Math.random() * 16; x.globalAlpha = Math.random() * .5; x.drawImage(SPRITES[(Math.random() * 5) | 0], Math.random() * 1200, Math.random() * 630, s, s); }
-  x.globalAlpha = 1; x.globalCompositeOperation = "source-over";
-  x.fillStyle = "#f2c14e"; x.font = "600 22px 'IBM Plex Mono', monospace"; x.fillText("MY AI CODING WORKFLOW", 70, 92);
+  const font = (w: number, s: number) => `${w} ${s}px -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif`;
+  const tracked = (s: string, cx: number, y: number, size: number, col: string, track: number, align: "left" | "center" | "right" = "left") => {
+    x.font = font(500, size); x.fillStyle = col; x.textAlign = "left";
+    const w = [...s].reduce((a, ch) => a + x.measureText(ch).width + track, -track);
+    let px = align === "center" ? cx - w / 2 : align === "right" ? cx - w : cx;
+    for (const ch of s) { x.fillText(ch, px, y); px += x.measureText(ch).width + track; }
+  };
+  x.fillStyle = "#000"; x.fillRect(0, 0, 1200, 630);
+  x.strokeStyle = "rgba(255,255,255,.12)"; x.lineWidth = 1; x.strokeRect(24.5, 24.5, 1151, 581);
+  tracked("MY AI CODING WORKFLOW", 72, 96, 13, "rgba(255,255,255,.45)", 4);
   const agents = constellationFromScan(scan).stars.filter((s) => s.kind === "agent").map((s) => s.label);
-  x.fillStyle = "#f6efea"; x.font = "700 54px 'Chakra Petch', sans-serif"; x.fillText(agents.join(" + "), 70, 160);
-  const y = 330, xs = nodes.map((_, i) => 130 + i * 235);
+  x.font = font(500, 44); x.fillStyle = "#fff"; x.textAlign = "left"; x.fillText(agents.join("  +  "), 70, 158);
+  const y = 330, xs = nodes.map((_, i) => 150 + i * 225);
   for (let i = 0; i < nodes.length - 1; i++) {
     const lit = nodes[i].lit && nodes[i + 1].lit;
-    x.strokeStyle = lit ? "#ff8a3a" : "rgba(255,255,255,.18)"; x.lineWidth = lit ? 5 : 3; x.setLineDash(lit ? [] : [10, 12]);
-    x.beginPath(); x.moveTo(xs[i], y); x.lineTo(xs[i + 1], y); x.stroke();
+    x.strokeStyle = lit ? "rgba(255,160,90,.85)" : "rgba(255,255,255,.18)"; x.lineWidth = 1.5; x.setLineDash(lit ? [] : [3, 7]);
+    x.beginPath(); x.moveTo(xs[i] + 14, y); x.lineTo(xs[i + 1] - 14, y); x.stroke();
   }
   x.setLineDash([]);
   nodes.forEach((n, i) => {
-    x.save(); x.translate(xs[i], y); x.rotate(Math.PI / 4);
-    if (n.lit) { const gg = x.createRadialGradient(-8, -8, 2, 0, 0, 44); gg.addColorStop(0, "#fff2d6"); gg.addColorStop(.35, "#ffb347"); gg.addColorStop(.7, "#ff6a2a"); gg.addColorStop(1, "#7a2410"); x.fillStyle = gg; x.shadowColor = "#ff7a2e"; x.shadowBlur = 40; x.fillRect(-30, -30, 60, 60); }
-    else { x.fillStyle = "#1c1418"; x.fillRect(-30, -30, 60, 60); x.strokeStyle = "rgba(255,255,255,.25)"; x.setLineDash([6, 6]); x.lineWidth = 2; x.strokeRect(-30, -30, 60, 60); x.setLineDash([]); }
-    x.restore();
-    x.textAlign = "center";
-    x.fillStyle = n.lit ? "#f6efea" : "#8e7f78"; x.font = "700 30px 'Chakra Petch', sans-serif"; x.fillText(n.name, xs[i], y + 88);
-    x.font = "400 19px 'IBM Plex Sans', sans-serif"; x.fillStyle = n.lit ? "#c2b3ab" : "#6f625c";
-    const label = n.lit ? n.tools[0] ?? "" : "—";
-    x.fillText(label.length > 22 ? `${label.slice(0, 21)}…` : label, xs[i], y + 120);
-    x.textAlign = "left";
+    if (n.lit) {
+      const g = x.createRadialGradient(xs[i], y, 0, xs[i], y, 46);
+      g.addColorStop(0, "rgba(255,248,235,1)"); g.addColorStop(.12, "rgba(255,190,120,.95)"); g.addColorStop(.4, "rgba(240,110,40,.35)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      x.fillStyle = g; x.beginPath(); x.arc(xs[i], y, 46, 0, 6.283); x.fill();
+    } else { x.strokeStyle = "rgba(255,255,255,.3)"; x.beginPath(); x.arc(xs[i], y, 5, 0, 6.283); x.stroke(); }
+    tracked(n.name.toUpperCase(), xs[i], y + 74, 12, n.lit ? "#fff" : "rgba(255,255,255,.35)", 3, "center");
+    x.textAlign = "center"; x.font = font(400, 16); x.fillStyle = n.lit ? "rgba(255,255,255,.6)" : "rgba(255,255,255,.22)";
+    const label = n.lit ? n.tools[0] ?? "" : "dark";
+    x.fillText(label.length > 20 ? `${label.slice(0, 19)}…` : label, xs[i], y + 104);
   });
   const team = TEAM.find((t) => t.id === profile.team)?.label;
-  const pains = profile.pains.map((p) => PAINS.find((x) => x.id === p)?.say ?? p);
-  x.fillStyle = "#c2b3ab"; x.font = "400 22px 'IBM Plex Sans', sans-serif";
-  x.fillText([team, pains.length ? `fixing ${pains.join(", ")}` : ""].filter(Boolean).join(" · "), 70, 540);
-  x.textAlign = "right"; x.fillStyle = "#ff8a3a"; x.font = "700 26px 'Chakra Petch', sans-serif"; x.fillText("forged in grillme", 1130, 584);
+  const pains = profile.pains.map((p) => PAINS.find((q) => q.id === p)?.say ?? p);
+  x.textAlign = "left"; x.font = font(400, 18); x.fillStyle = "rgba(255,255,255,.55)";
+  x.fillText([team, pains.length ? `fixing ${pains.join(", ")}` : ""].filter(Boolean).join("   ·   "), 72, 548);
+  tracked("FORGED IN GRILL ME", 1128, 548, 12, "rgba(255,170,110,.85)", 4, "right");
   return c.toDataURL("image/png");
 }
 
 function Consent({ f }: SceneProps) {
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "your project");
   const setAppSetting = useApp((s) => s.setAppSetting);
-  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .18, 12); }, []);
-  const top = useLine(f, `To follow your sessions, I'll add a few small files to ${projectName}. They stay on this computer and out of git.`);
+  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .18, 16); }, []);
+  const top = useLine(f, `To follow your sessions, I'll add a few small files to ${projectName}. They stay on this machine, and out of git.`);
   const answer = (v: true | "declined") => { setAppSetting("installConsent", v); f.hush(); f.go(nextStep("consent")); };
   if (top == null) return null;
   return (
     <div className="forge-content" style={{ top }}>
-      <div className="forge-consent">
-        {CONSENT_ITEMS.map((it) => <div key={it.title}><b>{it.title}</b>{it.detail}<code>{it.file}</code></div>)}
+      <div className="forge-files">
+        {CONSENT_ITEMS.map((it) => <div key={it.title}><b>{it.title}</b><code>{it.file}</code><span>{it.detail}</span></div>)}
       </div>
       <div className="forge-row">
-        <Chip kind="go" autoFocus onClick={() => answer(true)}>Add them</Chip>
-        <Chip kind="ghost" onClick={() => answer("declined")}>Skip for now</Chip>
+        <Btn primary autoFocus onClick={() => answer(true)}>Add them</Btn>
+        <Link onClick={() => answer("declined")}>Not now</Link>
       </div>
-      <div className="forge-note">You can remove them any time: Settings → Setup check → Remove from my repos.</div>
+      <div className="forge-micro">Remove them any time · Settings → Setup check</div>
     </div>
   );
 }
 
 function Team({ f }: SceneProps) {
   const joining = useApp((s) => s.appSettings.firstRunJoining === true);
-  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .24, 13); }, []);
+  useEffect(() => { f.world.sparkTo(f.world.W / 2, f.world.H * .26, 17); }, []);
   const top = useLine(f, joining
-    ? "Last step: let's get you into your team. Your agents will all read one plan."
-    : "Working with others? Everyone's agents share one goal, one plan and one chat. Or start alone and invite people later.");
+    ? "Last, your team. Every agent on it will read one plan."
+    : "Working with others? Everyone's agents share one goal, one plan, one chat. Or begin alone, and invite them later.");
   const done = (mode: "solo" | "team") => {
     const st = useApp.getState();
     st.setAppSetting("onboarded", true);
@@ -919,10 +919,10 @@ function Team({ f }: SceneProps) {
   return (
     <div className="forge-content" style={{ top }}>
       <div className="forge-row">
-        <Chip kind={joining ? "go" : ""} autoFocus={joining} onClick={() => done("team")}>{joining ? "Join my team" : "Create or join a team"}</Chip>
-        <Chip kind={joining ? "ghost" : "go"} autoFocus={!joining} onClick={() => done("solo")}>Just me for now</Chip>
+        <Btn primary={joining} autoFocus={joining} onClick={() => done("team")}>{joining ? "Join my team" : "Create or join a team"}</Btn>
+        <Btn primary={!joining} autoFocus={!joining} onClick={() => done("solo")}>Begin alone</Btn>
       </div>
-      {joining ? <div className="forge-note">Have the invite link your teammate sent ready. You'll paste it next.</div> : null}
+      {joining ? <div className="forge-micro">Have the invite link ready · you'll paste it next</div> : null}
     </div>
   );
 }

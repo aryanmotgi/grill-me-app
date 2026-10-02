@@ -46,19 +46,27 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// settings.json, or {} for a brand-new install (or an unreadable file).
+pub fn read_settings() -> Value {
+    std::fs::read_to_string(settings_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}))
+}
+
 /// Called from `setup`: open the splash, or just show the app.
 pub fn start(app: &AppHandle) {
     let path = settings_path();
-    // a missing or unreadable file means a brand-new install
     let raw = std::fs::read_to_string(&path).ok();
-    let settings: Value = raw.as_deref().and_then(|t| serde_json::from_str(t).ok()).unwrap_or_else(|| json!({}));
+    let settings = read_settings();
     let (enabled, mode, name) = plan(&settings);
     let Some(main) = app.get_webview_window("main") else { return };
-    // first run: the app window becomes the full-screen forge, and the splash
-    // hands its logo to the forge instead of opening a box
-    let forge = crate::forge::first_run(&settings);
-    let forge_frame = if forge { crate::forge::cover_screen(&main) } else { None };
+    // first run: no splash. The forge takes over the whole screen and plays
+    // its own arrival (embers rise into the wordmark), so the app loads now.
+    if crate::forge::first_run(&settings) {
+        crate::boot::release();
+        crate::forge::enter(&main);
+        return;
+    }
     if !enabled {
+        crate::boot::release();
         show_main(app);
         return;
     }
@@ -69,14 +77,9 @@ pub fn start(app: &AppHandle) {
 
     // cover exactly the frame the app window will open in
     let scale = main.scale_factor().unwrap_or(1.0);
-    let mut size = main.outer_size().map(|s| s.to_logical::<f64>(scale)).unwrap_or(tauri::LogicalSize::new(1440.0, 900.0));
-    let mut pos = main.outer_position().ok().map(|p| p.to_logical::<f64>(scale));
-    // the window's own frame updates lazily on macOS: use the frame we just set
-    if let Some((x, y, w, h)) = forge_frame {
-        size = tauri::LogicalSize::new(w, h);
-        pos = Some(tauri::LogicalPosition::new(x, y));
-    }
-    let boot = json!({ "mode": mode, "name": name, "forge": forge });
+    let size = main.outer_size().map(|s| s.to_logical::<f64>(scale)).unwrap_or(tauri::LogicalSize::new(1440.0, 900.0));
+    let pos = main.outer_position().ok().map(|p| p.to_logical::<f64>(scale));
+    let boot = json!({ "mode": mode, "name": name });
     let mut b = WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
         .title("Grill Me")
         .initialization_script(&format!("window.__GRILLME_SPLASH__ = {boot};"))
@@ -91,6 +94,7 @@ pub fn start(app: &AppHandle) {
         .focused(true);
     b = match pos { Some(p) => b.position(p.x, p.y), None => b.center() };
     if b.build().is_err() {
+        crate::boot::release();
         show_main(app);
         return;
     }

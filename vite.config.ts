@@ -11,7 +11,7 @@ export default defineConfig(() => ({
   // two pages: the app, and the launch animation's see-through splash window
   build: {
     rollupOptions: {
-      input: { main: "index.html", splash: "splash.html" },
+      input: { main: "index.html", splash: "splash.html", boot: "boot.html" },
     },
   },
 

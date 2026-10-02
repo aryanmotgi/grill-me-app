@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
-// First-run "forge": setup happens in a full-screen, see-through ember world
-// (src/components/ForgeOnboarding.tsx). While it runs, the main window covers
-// the whole screen with no title bar; the finale calls `forge_window_done`,
-// which turns it back into a normal app window. Also saves the shareable
-// workflow card as a PNG.
+// First-run "forge": setup takes over the screen (macOS full screen) in a
+// pure-black ember world (src/components/ForgeOnboarding.tsx). It steps out
+// of full screen while a browser sign-in is open, and the finale calls
+// `forge_window_done`, which turns it back into a normal app window. Also
+// saves the shareable workflow card as a PNG, and the frame-rate probes.
 // ---------------------------------------------------------------------------
 
 use base64::Engine;
 use serde_json::Value;
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
+use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow};
 
 const APP_W: f64 = 1440.0;
 const APP_H: f64 = 900.0;
@@ -23,46 +23,50 @@ pub fn first_run(settings: &Value) -> bool {
     }
 }
 
-/// The usable part of the screen the window is on (below the menu bar,
-/// above the Dock), in logical points: (x, y, width, height).
-pub fn screen_area(win: &WebviewWindow) -> Option<(f64, f64, f64, f64)> {
-    let mon = win.current_monitor().ok().flatten().or_else(|| win.primary_monitor().ok().flatten())?;
-    let scale = mon.scale_factor();
-    let area = mon.work_area();
-    let pos = area.position.to_logical::<f64>(scale);
-    let size = area.size.to_logical::<f64>(scale);
-    Some((pos.x, pos.y, size.width, size.height))
-}
-
-/// Cover the usable screen, without a title bar. Returns the frame used.
-pub fn cover_screen(win: &WebviewWindow) -> Option<(f64, f64, f64, f64)> {
-    let frame = screen_area(win)?;
-    let _ = win.set_decorations(false);
-    let _ = win.set_size(LogicalSize::new(frame.2, frame.3));
-    let _ = win.set_position(LogicalPosition::new(frame.0, frame.1));
-    Some(frame)
+/// First run: show the app window and take over the screen (macOS full
+/// screen, its own Space: black, no menu bar, no Dock).
+pub fn enter(win: &WebviewWindow) {
+    let _ = win.center();
+    let _ = win.show();
+    let _ = win.set_focus();
+    // the forge asks again once it's on screen (forge_fullscreen); this
+    // early request covers a fast machine and is harmless if ignored
+    let _ = win.set_fullscreen(true);
 }
 
 /// Back to a normal, centred app window that fits the screen.
 fn restore(win: &WebviewWindow) {
     let (mut w, mut h) = (APP_W, APP_H);
     if let Ok(Some(mon)) = win.current_monitor() {
-        let size = mon.size().to_logical::<f64>(mon.scale_factor());
+        let size = mon.work_area().size.to_logical::<f64>(mon.scale_factor());
         w = w.min(size.width - 40.0);
-        h = h.min(size.height - 80.0);
+        h = h.min(size.height - 40.0);
     }
-    let _ = win.set_decorations(true);
     let _ = win.set_size(LogicalSize::new(w, h));
     let _ = win.center();
 }
 
-/// The forge's finale (or "Skip to app"): normal window again.
+/// Step out of full screen (a browser sign-in is opening) and back in.
 #[tauri::command]
-pub fn forge_window_done(app: AppHandle) {
+pub fn forge_fullscreen(app: AppHandle, on: bool) {
     if let Some(main) = app.get_webview_window("main") {
-        restore(&main);
-        let _ = main.set_focus();
+        let _ = main.set_fullscreen(on);
+        if on { let _ = main.set_focus(); }
     }
+}
+
+/// The forge's finale (or Esc): leave full screen and become the normal app
+/// window, with the desktop blur the app uses.
+#[tauri::command(async)]
+pub fn forge_window_done(app: AppHandle) {
+    let Some(main) = app.get_webview_window("main") else { return };
+    let was_full = main.is_fullscreen().unwrap_or(false);
+    let _ = main.set_fullscreen(false);
+    // macOS animates out of full screen; size the window once it has
+    if was_full { std::thread::sleep(std::time::Duration::from_millis(750)); }
+    restore(&main);
+    crate::apply_glass(&main);
+    let _ = main.set_focus();
 }
 
 /// Save the workflow card to ~/Downloads (never overwriting) and show it in
@@ -121,4 +125,20 @@ mod tests {
         assert!(save_share_card(not_png).is_err());
         assert!(save_share_card("%%%".into()).is_err());
     }
+}
+
+/// Frame-rate probes are on only when the app was started with GRILLME_PERF=1.
+#[tauri::command]
+pub fn perf_enabled() -> bool {
+    std::env::var("GRILLME_PERF").map(|v| v == "1").unwrap_or(false)
+}
+
+/// Write one probe's report to /tmp/grillme-perf-<name>.json.
+#[tauri::command]
+pub fn perf_report(name: String, report: String) -> Result<(), String> {
+    if !perf_enabled() {
+        return Ok(());
+    }
+    let safe: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(40).collect();
+    std::fs::write(format!("/tmp/grillme-perf-{safe}.json"), report).map_err(|e| e.to_string())
 }
