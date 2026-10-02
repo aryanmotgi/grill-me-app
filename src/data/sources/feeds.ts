@@ -3,6 +3,7 @@ import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
 import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
 import { DEFAULT_STALL_MIN, LOOP_SAMPLES, isStalled, looksLooping } from "../../lib/stall";
+import { isTrustPrompt } from "../../lib/ptyReady";
 import { parseResetHint } from "../../lib/ratelimit";
 import { sessionTokens, shouldCapPause } from "../../lib/cap";
 import { fmtTokens } from "../../lib/format";
@@ -486,6 +487,9 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           else if (hook.event === "prompt") status = st.quietMs < 120_000 ? "working" : status;
           else if (hook.event === "stop") status = st.oscNotify || st.bell ? "needs-input" : "idle";
         }
+        // the trust screen waits on a human: never "working", never "looping"
+        const trustPrompt = st.alive && isTrustPrompt(st.tail.slice(-20).join("\n"));
+        if (trustPrompt) status = "needs-input";
         const stg = store.getState();
         const member = stg.members.find((m) => m.id === memberId);
         const selfHealOn = stg.appSettings.selfHeal !== false;
@@ -587,7 +591,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         // looping only makes sense while output is actively flowing (working):
         // identical tails then mean repeats, not an idle frozen screen.
         const looping = stallOn && st.alive && !rateLimited && !st.paused &&
-          status === "working" && looksLooping(tailHistory[st.id]);
+          status === "working" && !trustPrompt && looksLooping(tailHistory[st.id]);
         const stalled = stallOn && st.alive && !rateLimited &&
           isStalled(st.quietMs, status, st.paused, stallMin);
         const flag: Teammate["flag"] = looping ? "looping" : stalled ? "stalled" : undefined;
@@ -612,6 +616,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
             cur.paused === st.paused && cur.flag === flag &&
             cur.paused === st.paused &&
             cur.rateLimited === rateLimited && cur.rateLimitResetsAt === resetHint &&
+            !!cur.trustPrompt === trustPrompt &&
             cur.terminal.length === st.tail.length && lastCur === lastNew) {
           continue;
         }
@@ -622,6 +627,7 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           flag,
           rateLimited,
           rateLimitResetsAt: resetHint,
+          trustPrompt,
           health: stuck ? "stale" : cur?.health === "disconnected" ? "disconnected" : "ok",
           terminal: st.tail.map((text) => ({ kind: "out" as const, text })),
         });

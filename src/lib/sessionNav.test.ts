@@ -5,19 +5,20 @@ const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
 
 describe("visibleSessions", () => {
   it("shows every row in team mode", () => {
-    expect(visibleSessions(rows, "team", "b").map((r) => r.id)).toEqual(["a", "b", "c"]);
+    expect(visibleSessions(rows, "team", ["b"]).map((r) => r.id)).toEqual(["a", "b", "c"]);
   });
 
   it("shows every row before a mode is chosen (null)", () => {
-    expect(visibleSessions(rows, null, "b")).toHaveLength(3);
+    expect(visibleSessions(rows, null, ["b"])).toHaveLength(3);
   });
 
-  it("shows only the own row in solo mode", () => {
-    expect(visibleSessions(rows, "solo", "b").map((r) => r.id)).toEqual(["b"]);
+  it("shows every session on this Mac in solo mode, incl. parallel ones", () => {
+    expect(visibleSessions(rows, "solo", ["b"]).map((r) => r.id)).toEqual(["b"]);
+    expect(visibleSessions(rows, "solo", ["a", "c"]).map((r) => r.id)).toEqual(["a", "c"]);
   });
 
-  it("falls back to the first row in solo mode when ownId is unknown", () => {
-    expect(visibleSessions(rows, "solo", undefined).map((r) => r.id)).toEqual(["a"]);
+  it("falls back to the first row in solo mode when there are no local sessions", () => {
+    expect(visibleSessions(rows, "solo", []).map((r) => r.id)).toEqual(["a"]);
   });
 });
 

@@ -171,7 +171,7 @@ export default function App() {
       // normal workspace (a project loaded, no modal up)
       if (!mod && !typing && useApp.getState().activeProject !== null && !blockingOverlayOpen(useApp.getState())) {
         const s = useApp.getState();
-        const ids = visibleSessions(s.teammates, s.appMode, s.members[0]?.id).map((t) => t.id);
+        const ids = visibleSessions(s.teammates, s.appMode, s.members.map((m) => m.id)).map((t) => t.id);
         const cur = s.navSelId ?? s.activeId;
         if (e.key === "j" || e.key === "ArrowDown") {
           e.preventDefault();
