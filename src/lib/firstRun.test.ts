@@ -13,7 +13,8 @@ describe("first run", () => {
     expect(nextStep("check")).toBe("connect");
     expect(nextStep("connect")).toBe("project");
     expect(nextStep("project")).toBe("scan");
-    expect(nextStep("scan")).toBe("consent");
+    expect(nextStep("scan")).toBe("workflow");
+    expect(nextStep("workflow")).toBe("consent");
     expect(nextStep("consent")).toBe("team");
     expect(nextStep("team")).toBe("done");
     expect(prevStep("check")).toBe("welcome");
@@ -27,6 +28,6 @@ describe("first run", () => {
   });
   it("numbers steps for the progress label", () => {
     expect(stepNumber("welcome")).toBe(1);
-    expect(stepNumber("team")).toBe(7);
+    expect(stepNumber("team")).toBe(8);
   });
 });

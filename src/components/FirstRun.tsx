@@ -6,12 +6,14 @@ import { Toasts } from "./Chrome";
 import { runDoctor, type DoctorCheck } from "./DoctorTab";
 import { CONSENT_ITEMS } from "./InstallConsent";
 import { SCAN_SOURCES, scanSummary, type ScanResult } from "../lib/scan";
+import { agentsFromScan } from "../lib/profile";
+import { QuickForm, WorkflowResult, useProfileDraft, useWorkflowInputs } from "./WorkflowSetup";
 import { pickBrain, readyAis, statusLabel, type AiId, type AiStatus } from "../lib/aiConnect";
 import { addProjectFromFinder, openProjectAt } from "../lib/addProject";
 import { FIRST_RUN_STEPS, firstRunStepOf, nextStep, prevStep, stepNumber, type FirstRunStep } from "../lib/firstRun";
 
 // ---------------------------------------------------------------------------
-// First-run setup: seven short steps from "just installed" to "typing my first
+// First-run setup: eight short steps from "just installed" to "typing my first
 // task". Every step says what it does and why, nothing installs or changes
 // without a click, Back always works, and the step is saved so quitting (or
 // the reload that opening a project does) picks up where you left off.
@@ -505,7 +507,52 @@ function Scan({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 6. What we'll add ---------------------------------------------------------
+// -- 6. Your workflow ---------------------------------------------------------
+
+function Workflow({ go }: { go: (s: FirstRunStep) => void }) {
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const { scan, catalog, ready } = useWorkflowInputs();
+  const [draft, setDraft, hadSaved] = useProfileDraft(scan, ready);
+  const [showResult, setShowResult] = useState(hadSaved);
+
+  const save = () => {
+    const p = { ...draft, source: "form" as const, updated: Date.now() };
+    setDraft(p);
+    setAppSetting("workflowProfile", p);
+    setShowResult(true);
+  };
+
+  if (showResult) {
+    return (
+      <Frame step="workflow" title="Here's how you work"
+        lead="Built from your scan and your answers. The upgrades are only suggestions, picked for what slows you down and what your setup is missing."
+        footer={<>
+          <BackButton step="workflow" go={go} />
+          <span className="flex-1" />
+          <button className="btn primary" autoFocus onClick={() => go(nextStep("workflow"))}>Continue</button>
+        </>}
+      >
+        <WorkflowResult profile={draft} scan={scan} catalog={catalog} onEdit={() => setShowResult(false)} />
+      </Frame>
+    );
+  }
+
+  return (
+    <Frame step="workflow" title="How do you work?"
+      lead="Five quick questions so Grill Me can suggest a better way to work. All optional, about a minute. A chat-style interview with your own AI is coming soon."
+      footer={<>
+        <BackButton step="workflow" go={go} />
+        <span className="flex-1" />
+        <button className="btn" onClick={() => go(nextStep("workflow"))}>Skip</button>
+        <button className="btn primary" disabled={!ready} onClick={save}>See my workflow</button>
+      </>}
+    >
+      {ready ? <QuickForm value={draft} onChange={setDraft} scanned={agentsFromScan(scan).length > 0} /> : <p className="text-[13px] text-faint flex items-center gap-2"><span className="spinner" /> Loading…</p>}
+    </Frame>
+  );
+}
+
+// -- 7. What we'll add ---------------------------------------------------------
 
 function Consent({ go }: { go: (s: FirstRunStep) => void }) {
   const projectName = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.name ?? "your project");
@@ -540,7 +587,7 @@ function Consent({ go }: { go: (s: FirstRunStep) => void }) {
   );
 }
 
-// -- 7. Working with others? ---------------------------------------------------
+// -- 8. Working with others? ---------------------------------------------------
 
 function Team({ go }: { go: (s: FirstRunStep) => void }) {
   const joining = useApp((s) => s.appSettings.firstRunJoining === true);
@@ -586,6 +633,7 @@ export function FirstRun() {
       {step === "connect" ? <Connect go={go} /> : null}
       {step === "project" ? <Project go={go} /> : null}
       {step === "scan" ? <Scan go={go} /> : null}
+      {step === "workflow" ? <Workflow go={go} /> : null}
       {step === "consent" ? <Consent go={go} /> : null}
       {step === "team" ? <Team go={go} /> : null}
       <Toasts />
