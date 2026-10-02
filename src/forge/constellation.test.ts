@@ -21,8 +21,9 @@ describe("forge constellation", () => {
     expect(stars.filter((x) => x.kind === "agent").map((x) => x.label)).toEqual(["Claude Code", "Codex"]);
     const claudeKids = stars.filter((x) => x.parent === "agent:claude");
     expect(claudeKids[0]).toMatchObject({ label: "linear", sub: "MCP" });
-    expect(claudeKids.filter((x) => !x.id.startsWith("more:"))).toHaveLength(MAX_KIDS);
-    expect(claudeKids[claudeKids.length - 1]?.label).toBe("+5 more");
+    expect(claudeKids.filter((x) => x.kind === "kid")).toHaveLength(MAX_KIDS);
+    expect(claudeKids.filter((x) => x.kind === "dust")).toHaveLength(6);
+    expect(stars.some((x) => x.label.includes("more"))).toBe(false);
     // ccsquad appears once, linked to Codex too
     expect(stars.filter((x) => x.label === "ccsquad")).toHaveLength(1);
     expect(links).toContainEqual(["tool:ccsquad", "agent:codex"]);

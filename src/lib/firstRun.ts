@@ -5,11 +5,16 @@
 // are marked "done" on first boot and never see it.
 // ---------------------------------------------------------------------------
 
-export const FIRST_RUN_STEPS = ["welcome", "check", "connect", "project", "scan", "workflow", "consent", "team"] as const;
+export const FIRST_RUN_STEPS = ["welcome", "setup", "project", "tools", "workflow", "finish"] as const;
 export type FirstRunStep = (typeof FIRST_RUN_STEPS)[number] | "done";
 
+/** Steps from older builds, folded into today's six. */
+const OLD_STEPS: Record<string, FirstRunStep> = { check: "setup", connect: "setup", scan: "tools", consent: "finish", team: "finish" };
+
 export function firstRunStepOf(v: unknown): FirstRunStep {
-  return v === "done" || (FIRST_RUN_STEPS as readonly unknown[]).includes(v) ? (v as FirstRunStep) : "welcome";
+  if (v === "done" || (FIRST_RUN_STEPS as readonly unknown[]).includes(v)) return v as FirstRunStep;
+  if (typeof v === "string" && OLD_STEPS[v]) return OLD_STEPS[v];
+  return "welcome";
 }
 
 /** What to pin on first boot when no step is saved yet. */
@@ -25,7 +30,7 @@ export function nextStep(step: FirstRunStep): FirstRunStep {
 }
 
 export function prevStep(step: FirstRunStep): FirstRunStep {
-  if (step === "done") return "team";
+  if (step === "done") return "finish";
   const i = FIRST_RUN_STEPS.indexOf(step);
   return FIRST_RUN_STEPS[Math.max(0, i - 1)];
 }

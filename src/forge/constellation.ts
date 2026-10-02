@@ -14,13 +14,22 @@ const AGENTS: [string, string][] = [
 const BIN_TO_AGENT: Record<string, string> = { "cursor-agent": "cursor", agent: "cursor" };
 const APP_TO_AGENT: Record<string, string> = { "Cursor.app": "cursor", "Windsurf.app": "windsurf", "Codex.app": "codex", "Claude.app": "claude" };
 export const MAX_AGENTS = 3;
-export const MAX_KIDS = 6;
+/** named tools per agent; the rest show as small unnamed dots */
+export const MAX_KIDS = 5;
+export const MAX_DUST = 14;
 
 /**
- * Up to three agents, each with up to six of its tools (MCP servers first,
- * then plugins, then skills) and a "+N more" star for the rest. A tool used
- * by several agents appears once, linked to each of them.
+ * Up to three agents, each with its top five tools named (MCP servers
+ * first, then plugins, then skills) and a few more as unnamed dots, so the
+ * picture shows "a lot" without a wall of labels. A tool used by several
+ * agents appears once, linked to each of them.
  */
+/** How many tools were found in total (for the caption). */
+export function toolCount(scan: ScanResult | null | undefined): number {
+  const e = scan?.extensions;
+  return new Set([...(e?.mcp ?? []), ...(e?.plugins ?? []), ...(e?.skills ?? [])].map((x) => x.name.toLowerCase())).size;
+}
+
 export function constellationFromScan(scan: ScanResult | null | undefined): { stars: StarSpec[]; links: [string, string][] } {
   const found = new Set<string>();
   for (const b of scan?.agents?.bins ?? []) found.add(BIN_TO_AGENT[b] ?? b);
@@ -39,18 +48,16 @@ export function constellationFromScan(scan: ScanResult | null | undefined): { st
       ...(ext?.plugins ?? []).filter((p) => p.agent === agentId).map((p) => ({ n: p.name, k: "plugin" })),
       ...(ext?.skills ?? []).filter((s) => s.agent === agentId).map((s) => ({ n: s.name, k: "skill" })),
     ];
-    let shown = 0, more = 0;
+    let shown = 0, dust = 0;
     for (const t of tools) {
       const key = t.n.toLowerCase();
       const existing = seen.get(key);
-      if (existing) { links.push([existing, `agent:${agentId}`]); continue; }
-      if (shown >= MAX_KIDS) { more++; continue; }
+      if (existing) { if (shown < MAX_KIDS || existing.startsWith("tool:")) links.push([existing, `agent:${agentId}`]); continue; }
       const id = `tool:${key}`;
       seen.set(key, id);
-      stars.push({ id, label: t.n, kind: "kid", sub: t.k, parent: `agent:${agentId}` });
-      shown++;
+      if (shown < MAX_KIDS) { stars.push({ id, label: t.n, kind: "kid", sub: t.k, parent: `agent:${agentId}` }); shown++; }
+      else if (dust < MAX_DUST) { stars.push({ id, label: t.n, kind: "dust", parent: `agent:${agentId}` }); dust++; }
     }
-    if (more) stars.push({ id: `more:${agentId}`, label: `+${more} more`, kind: "kid", parent: `agent:${agentId}` });
   }
   return { stars, links };
 }

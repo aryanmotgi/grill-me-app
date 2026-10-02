@@ -13,7 +13,7 @@
 
 import { EmberGL, type GLPoint } from "./gl";
 
-export interface StarSpec { id: string; label: string; kind: "agent" | "kid" | "mate"; sub?: string; parent?: string }
+export interface StarSpec { id: string; label: string; kind: "agent" | "kid" | "dust" | "mate"; sub?: string; parent?: string }
 export interface StageSpec { id: string; name: string; sub: string; lit: boolean }
 interface V3 { x: number; y: number; z: number }
 interface Star extends StarSpec {
@@ -47,6 +47,8 @@ export class ForgeWorld {
   private last = 0;
   private t0 = 0;
   private yaw = 0;
+  /** where diagrams live (the stage's picture area); they never leave it */
+  private vp = { x: 0, y: 0, w: innerWidth, h: innerHeight };
   private fading = false;
   workMs = 0;
   private workN = 0;
@@ -177,17 +179,20 @@ export class ForgeWorld {
     return { x: cx + x1 * s, y: cy + y2 * s, s };
   }
 
+  setViewport(r: { x: number; y: number; w: number; h: number }) { this.vp = r; }
+
   // ---- constellation ----------------------------------------------------------------------
   setStars(specs: StarSpec[], links: [string, string][] = []) {
     this.labels.querySelectorAll(".forge-star").forEach((e) => e.remove());
     this.stars = [];
     this.links = [];
     const agents = specs.filter((s) => s.kind === "agent");
-    const spread = Math.min(this.W * .17, 230);
+    const vp = this.vp;
+    const spread = Math.min(vp.w * (agents.length > 2 ? .17 : .23), 220);
     for (const spec of specs) {
       const el = document.createElement("div");
       el.className = `forge-star ${spec.kind}`;
-      el.textContent = spec.label;
+      if (spec.kind !== "dust") el.textContent = spec.label;
       if (spec.sub) { const em = document.createElement("em"); em.textContent = spec.sub; el.append(em); }
       this.labels.append(el);
       this.stars.push({ ...spec, p: { x: 0, y: 0, z: 0 }, sx: this.W / 2, sy: this.H / 2, ss: 1, flat: null, op: 0, top: 0, el, ang: 0, rad: 0, tilt: 0 });
@@ -199,8 +204,10 @@ export class ForgeWorld {
       const p = this.stars.find((x) => x.id === pid);
       if (!p) continue;
       kids.forEach((k, j) => {
-        Object.assign(k, { parentStar: p, rad: Math.min(170, this.W * .12) + (j % 2) * 34, ang: (j / kids.length) * 6.283, tilt: rand(-.9, .9) });
-        this.links.push([p, k, .55]);
+        const named = k.kind !== "dust";
+        const base = Math.min(vp.h * .34, spread * .62, 130);
+        Object.assign(k, { parentStar: p, rad: named ? base + (j % 2) * 18 : base * rand(.45, 1.15), ang: (j / kids.length) * 6.283 + rand(-.15, .15), tilt: rand(-.9, .9) });
+        if (named) this.links.push([p, k, .55]);
       });
     }
     for (const [a, b] of links) {
@@ -208,12 +215,14 @@ export class ForgeWorld {
       if (sa && sb) this.links.push([sa, sb, .3]);
     }
     // they arrive from deep in the scene
-    for (const s of this.stars) { s.sx = this.W / 2 + rand(-40, 40); s.sy = this.H * .5 + rand(-40, 40); s.ss = .2; }
+    for (const s of this.stars) { s.sx = vp.x + vp.w / 2 + rand(-30, 30); s.sy = vp.y + vp.h / 2 + rand(-30, 30); s.ss = .2; }
   }
   async revealStars(wait: (ms: number) => Promise<void>) { for (const s of this.stars) { s.top = 1; await wait(this.reduce ? 0 : 90); } }
   showAllStars() { for (const s of this.stars) { s.top = 1; s.op = 1; } }
   hasStars() { return this.stars.length > 0; }
   hideStars() { for (const s of this.stars) s.top = 0; }
+  /** remove the constellation entirely (its step is over) */
+  clearStars() { this.labels.querySelectorAll(".forge-star").forEach((e) => e.remove()); this.stars = []; this.links = []; }
   recede(on: boolean) {
     this.labels.classList.toggle("recede", on);
     this.stars.forEach((s, i) => {
@@ -246,7 +255,7 @@ export class ForgeWorld {
   /** Five stages on a gentle 3D arc; the camera drifts so it reads as a
    *  real object. Labels and drop targets follow the projection. */
   setStages(specs: StageSpec[]) {
-    const span = Math.min(this.W * .36, 560);
+    const span = Math.min(this.vp.w * .42, 520);
     const next = specs.map((sp, i) => {
       const prev = this.stages.find((x) => x.id === sp.id);
       const u = specs.length > 1 ? i / (specs.length - 1) : .5;
@@ -257,7 +266,7 @@ export class ForgeWorld {
         el.innerHTML = "<b></b><small></small>";
         this.labels.append(el);
       }
-      return { ...sp, p: { x: (u * 2 - 1) * span, y: -Math.sin(u * Math.PI) * 26, z: -Math.cos((u * 2 - 1) * Math.PI * .5) * 220 + 110 }, sx: prev?.sx ?? this.W / 2, sy: prev?.sy ?? this.H * .45, ss: prev?.ss ?? .3, cur: prev?.cur ?? 0, el, pulse: prev?.pulse ?? false };
+      return { ...sp, p: { x: (u * 2 - 1) * span, y: -Math.sin(u * Math.PI) * 18, z: -Math.cos((u * 2 - 1) * Math.PI * .5) * 160 + 80 }, sx: prev?.sx ?? this.vp.x + this.vp.w / 2, sy: prev?.sy ?? this.vp.y + this.vp.h / 2, ss: prev?.ss ?? .3, cur: prev?.cur ?? 0, el, pulse: prev?.pulse ?? false };
     });
     for (const s of this.stages) if (!next.some((n) => n.el === s.el)) s.el.remove();
     this.stages = next;
@@ -357,7 +366,7 @@ export class ForgeWorld {
         const c = Math.cos(s.ang) * s.rad, d = Math.sin(s.ang) * s.rad;
         s.p = { x: s.parentStar.p.x + c, y: s.parentStar.p.y + d * Math.sin(s.tilt) * .55, z: s.parentStar.p.z + d * Math.cos(s.tilt) };
       }
-      const pr = s.flat ? { x: s.flat.x, y: s.flat.y, s: 1 } : this.project(s.p, W / 2, H * .5, this.yaw);
+      const pr = s.flat ? { x: s.flat.x, y: s.flat.y, s: 1 } : this.project(s.p, this.vp.x + this.vp.w / 2, this.vp.y + this.vp.h / 2 + 6, this.yaw);
       const k = reduce ? 1 : clamp(dt * 3);
       s.sx = lerp(s.sx, pr.x, k); s.sy = lerp(s.sy, pr.y, k); s.ss = lerp(s.ss, pr.s, k);
       s.op = lerp(s.op, s.top, reduce ? 1 : clamp(dt * 3));
@@ -370,10 +379,11 @@ export class ForgeWorld {
     for (const s of this.stars) {
       if (s.op < .02) { s.el.style.opacity = "0"; continue; }
       const depth = clamp((s.ss - .78) / .45); // 0 far … 1 near
-      const big = (s.kind === "agent" ? 8 : s.kind === "mate" ? 6 : 3.4) * s.ss;
-      halo(s.sx, s.sy, big * 5, s.op * dimmed);
-      pts.push({ x: s.sx, y: s.sy, size: big, temp: s.kind === "mate" ? .7 : .95, alpha: s.op * dimmed, soft: 0 },
-        { x: s.sx, y: s.sy, size: big * 4.2, temp: .6, alpha: s.op * .4 * dimmed, soft: 1 });
+      const dust = s.kind === "dust";
+      const big = (s.kind === "agent" ? 8 : s.kind === "mate" ? 6 : dust ? 2 : 3.4) * s.ss;
+      if (!dust) halo(s.sx, s.sy, big * 5, s.op * dimmed);
+      pts.push({ x: s.sx, y: s.sy, size: big, temp: s.kind === "mate" ? .7 : dust ? .7 : .95, alpha: s.op * dimmed * (dust ? .7 : 1), soft: 0 });
+      if (!dust) pts.push({ x: s.sx, y: s.sy, size: big * 4.2, temp: .6, alpha: s.op * .4 * dimmed, soft: 1 });
       s.el.style.transform = `translate(${s.sx}px, ${s.sy + big + 8}px) translate(-50%, 0) scale(${(.82 + .25 * depth).toFixed(3)})`;
       s.el.style.opacity = String(s.op * (.45 + .55 * depth));
       s.el.style.zIndex = String(Math.round(s.ss * 100));
@@ -382,7 +392,7 @@ export class ForgeWorld {
     // workflow path (3D)
     if (this.stages.length) {
       for (const s of this.stages) {
-        const pr = this.project(s.p, W / 2, H * .45, this.yaw * .5, .38);
+        const pr = this.project(s.p, this.vp.x + this.vp.w / 2, this.vp.y + this.vp.h * .42, this.yaw * .5, .38);
         const k = reduce ? 1 : clamp(dt * 3.2);
         s.sx = lerp(s.sx, pr.x, k); s.sy = lerp(s.sy, pr.y, k); s.ss = lerp(s.ss, pr.s, k);
         s.cur = lerp(s.cur, s.lit ? 1 : 0, reduce ? 1 : clamp(dt * 2.2));
