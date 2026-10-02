@@ -12,6 +12,11 @@
 //   • lines — constellation links and the forged path (solid or dotted).
 //   • the Spark — a shader: white-hot core, a flickering corona made of
 //     noise, and a soft halo.
+//   • beams — the diagrams' links: thick-quad lines with a crisp hot core, a
+//     soft glow, flowing dashes, and pulses of light travelling along them.
+//   • nodes — the diagrams' shapes, drawn as distance fields: an agent's
+//     orbit ring with a comet of light, a faceted ember gem for a filled
+//     stage, a slowly turning dashed ring for an empty one, a pulse ring.
 // A touch of film grain is mixed into lit pixels only, so black stays black.
 // ---------------------------------------------------------------------------
 
@@ -133,6 +138,105 @@ void main() {
   gl_FragColor = vec4(c, clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0));
 }`;
 
+const BEAM_VERT = `
+attribute vec2 aPos; attribute float aSide; attribute float aU; attribute float aLen;
+attribute vec4 aCol; attribute vec3 aFx; // dotted, pulse speed, seed
+uniform vec2 uRes;
+varying float vSide; varying float vU; varying float vLen; varying vec4 vCol; varying vec3 vFx;
+void main() {
+  vSide = aSide; vU = aU; vLen = aLen; vCol = aCol; vFx = aFx;
+  gl_Position = vec4(aPos.x / uRes.x * 2.0 - 1.0, 1.0 - aPos.y / uRes.y * 2.0, 0.0, 1.0);
+}`;
+const BEAM_FRAG = `
+precision highp float;
+varying float vSide; varying float vU; varying float vLen; varying vec4 vCol; varying vec3 vFx;
+uniform float uTime;
+void main() {
+  float s = vSide;
+  float core = exp(-s * s * 38.0);
+  float glow = exp(-s * s * 4.5) * 0.32;
+  float a = (core + glow) * vCol.a;
+  if (vFx.x > 0.5) {
+    // dashes that drift along the line
+    float m = fract((vU - uTime * 14.0) / 10.0);
+    a *= smoothstep(0.0, 0.12, m) * (1.0 - smoothstep(0.38, 0.5, m));
+  }
+  float pk = 0.0;
+  if (vFx.y > 0.0) {
+    // pulses of light running from start to end
+    for (int i = 0; i < 2; i++) {
+      float p = fract(uTime * vFx.y + vFx.z + float(i) * 0.5);
+      float d = vU - p * (vLen + 40.0) + 20.0;
+      pk += exp(-d * d / 160.0) * smoothstep(0.0, 0.15, p) * (1.0 - smoothstep(0.85, 1.0, p));
+    }
+  }
+  vec3 c = mix(vCol.rgb, vec3(1.0, 0.95, 0.86), clamp(pk, 0.0, 1.0) * 0.8) * (a + pk * (core * 1.4 + glow * 1.6) * max(vCol.a, 0.35));
+  gl_FragColor = vec4(c, clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0));
+}`;
+
+const NODE_VERT = `
+attribute vec2 aPos; attribute vec2 aLocal; attribute vec4 aP; // R(px), kind, alpha, rot
+attribute float aCur;
+uniform vec2 uRes;
+varying vec2 vL; varying vec4 vP; varying float vCur;
+void main() {
+  vL = aLocal; vP = aP; vCur = aCur;
+  gl_Position = vec4(aPos.x / uRes.x * 2.0 - 1.0, 1.0 - aPos.y / uRes.y * 2.0, 0.0, 1.0);
+}`;
+const NODE_FRAG = `
+precision highp float;
+varying vec2 vL; varying vec4 vP; varying float vCur;
+uniform float uTime;
+${RAMP}
+const float TAU = 6.2831853;
+void main() {
+  float R = vP.x, kind = vP.y, alpha = vP.z, rot = vP.w;
+  vec2 l = vL * 1.8;                 // the quad spans 1.8 R each way
+  float r = length(l), ang = atan(l.y, l.x);
+  vec3 c = vec3(0.0);
+  if (kind < 0.5) {
+    // agent: a fine orbit ring with a comet of light running round it
+    float d = abs(r - 1.0) * R;
+    float ph = fract(ang / TAU - rot);
+    float comet = pow(1.0 - ph, 5.0);
+    float ring = exp(-d * d / 0.9) * (0.28 + 1.5 * comet) + exp(-d * d / 26.0) * (0.06 + 0.35 * comet);
+    float d2 = abs(r - 1.32) * R;
+    float dash = step(0.5, fract(ang / TAU * 36.0 + rot * 3.0));
+    float outer = exp(-d2 * d2 / 0.6) * 0.16 * dash;
+    float bloom = exp(-r * r * 2.2) * 0.22 * vCur;
+    c = heat(0.72 + 0.26 * comet) * ring + heat(0.6) * (outer + bloom);
+  } else if (kind < 1.5) {
+    // a filled stage: a faceted ember gem that catches the light
+    float cs = cos(rot), sn = sin(rot);
+    vec2 q = vec2(cs * l.x - sn * l.y, sn * l.x + cs * l.y);
+    float dd = abs(q.x) + abs(q.y) - 0.78;              // diamond, < 0 inside
+    float inside = 1.0 - smoothstep(-0.02, 0.02, dd);
+    vec2 n = normalize(sign(q) + 1e-4);
+    float light = 0.5 + 0.5 * dot(n, normalize(vec2(-0.8, -1.0)));
+    float facet = smoothstep(0.03, 0.0, min(abs(q.x), abs(q.y))) * 0.35;   // the cross-cut seams
+    vec3 fill = heat(0.42 + 0.42 * light) * (0.55 + 0.45 * light);
+    float core = exp(-dot(q, q) * 14.0);
+    float rimD = dd * R;
+    float rim = exp(-rimD * rimD / 0.7);
+    float glow = exp(-max(dd, 0.0) * R / 7.0) * 0.45 + exp(-max(dd, 0.0) * R / 22.0) * 0.18;
+    c = fill * inside * 0.85 + heat(1.0) * core * 0.9 * inside + heat(0.95) * (rim * 0.9 + facet * inside) + heat(0.62) * glow * (1.0 - inside);
+  } else if (kind < 2.5) {
+    // an empty stage: a dashed ring, turning slowly, waiting to be filled
+    float d = abs(r - 0.62) * R;
+    float dash = smoothstep(0.42, 0.5, fract(ang / TAU * 16.0 - rot)) * (1.0 - smoothstep(0.9, 0.98, fract(ang / TAU * 16.0 - rot)));
+    float ring = exp(-d * d / 0.8) * dash;
+    float dot0 = exp(-r * r * 60.0) * 0.35;
+    c = vec3(0.86, 0.8, 0.74) * (ring * 0.75 + dot0);
+  } else {
+    // a pulse: a ring that swells and fades (rot = phase 0..1)
+    float rr = 0.55 + rot * 0.95;
+    float d = abs(r - rr) * R;
+    c = heat(0.75) * exp(-d * d / 3.0) * (1.0 - rot) * 0.9;
+  }
+  c *= alpha * smoothstep(1.8, 1.55, r);
+  gl_FragColor = vec4(c, clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0));
+}`;
+
 function compile(gl: WebGLRenderingContext, vs: string, fs: string): WebGLProgram {
   const mk = (type: number, src: string) => {
     const s = gl.createShader(type)!;
@@ -152,12 +256,26 @@ function compile(gl: WebGLRenderingContext, vs: string, fs: string): WebGLProgra
 export interface GLPoint { x: number; y: number; size: number; temp: number; alpha: number; soft: number }
 export interface GLLine { x1: number; y1: number; x2: number; y2: number; r: number; g: number; b: number; a: number; dotted?: boolean }
 
+/** A glowing link. `w`: half-width of its glow (px). `pulse`: pulses per second (0 = none). */
+export interface GLBeam { x1: number; y1: number; x2: number; y2: number; r: number; g: number; b: number; a: number; w?: number; dotted?: boolean; pulse?: number; seed?: number; u0?: number }
+/** A diagram shape. kind: 0 agent orbit, 1 gem, 2 empty ring, 3 pulse ring. */
+export interface GLNode { x: number; y: number; R: number; kind: 0 | 1 | 2 | 3; alpha: number; rot: number; cur?: number }
+
+const BEAM_F = 12, MAX_BEAMS = 1400;
+const NODE_F = 9, MAX_NODES = 128;
+
 export class EmberGL {
   readonly gl: WebGLRenderingContext;
   private ambient: WebGLProgram;
   private points: WebGLProgram;
   private lines: WebGLProgram;
   private spark: WebGLProgram;
+  private beams: WebGLProgram;
+  private nodes: WebGLProgram;
+  private beamBuf: WebGLBuffer;
+  private nodeBuf: WebGLBuffer;
+  private beamData = new Float32Array(BEAM_F * 6 * MAX_BEAMS);
+  private nodeData = new Float32Array(NODE_F * 6 * MAX_NODES);
   private seedBuf: WebGLBuffer;
   private ptBuf: WebGLBuffer;
   private lineBuf: WebGLBuffer;
@@ -178,6 +296,8 @@ export class EmberGL {
     this.points = compile(gl, POINT_VERT, POINT_FRAG);
     this.lines = compile(gl, LINE_VERT, LINE_FRAG);
     this.spark = compile(gl, QUAD_VERT, SPARK_FRAG);
+    this.beams = compile(gl, BEAM_VERT, BEAM_FRAG);
+    this.nodes = compile(gl, NODE_VERT, NODE_FRAG);
     this.maxAmbient = this.ambientCount = ambient;
     const seeds = new Float32Array(ambient * 4);
     for (let i = 0; i < ambient; i++) {
@@ -189,6 +309,8 @@ export class EmberGL {
     this.ptBuf = this.buffer(this.ptData, gl.DYNAMIC_DRAW);
     this.lineBuf = this.buffer(this.lineData, gl.DYNAMIC_DRAW);
     this.quadBuf = this.buffer(new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    this.beamBuf = this.buffer(this.beamData, gl.DYNAMIC_DRAW);
+    this.nodeBuf = this.buffer(this.nodeData, gl.DYNAMIC_DRAW);
     gl.disable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE); // light adds up, black stays black
@@ -217,11 +339,15 @@ export class EmberGL {
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride * 4, offset * 4);
   }
+  /** turn a program's attributes off again (programs don't share layouts) */
+  private off(prog: WebGLProgram, names: string[]) {
+    for (const n of names) { const l = this.gl.getAttribLocation(prog, n); if (l >= 0) this.gl.disableVertexAttribArray(l); }
+  }
   private u(prog: WebGLProgram, name: string) { return this.gl.getUniformLocation(prog, name); }
 
   draw(o: {
     time: number; w: number; h: number; dim: number; calm: number;
-    points: GLPoint[]; lines: GLLine[];
+    points: GLPoint[]; lines: GLLine[]; beams?: GLBeam[]; nodes?: GLNode[];
     spark: { x: number; y: number; r: number; energy: number; glow: number; alpha: number } | null;
   }) {
     const gl = this.gl;
@@ -259,12 +385,73 @@ export class EmberGL {
       gl.drawArrays(gl.LINES, 0, n * 2);
     }
 
+    // beams: the diagrams' glowing links
+    if (o.beams?.length) {
+      const n = Math.min(o.beams.length, MAX_BEAMS), d = this.beamData;
+      let k = 0;
+      let n2 = 0;
+      for (let i = 0; i < n; i++) {
+        const b = o.beams[i], dx = b.x2 - b.x1, dy = b.y2 - b.y1, len = Math.hypot(dx, dy) || .001;
+        // a bad coordinate would smear a quad across the whole screen: skip it
+        if (!Number.isFinite(dx + dy + b.x1 + b.y1) || len > 4 * (o.w + o.h)) continue;
+        n2++;
+        const w = b.w ?? 5, nx = -dy / len * w, ny = dx / len * w, u0 = b.u0 ?? 0;
+        // a hair past each end closes the seams between segments of a curve
+        // (more would overlap, and overlapping light adds up into beads)
+        const ex = dx / len * .5, ey = dy / len * .5;
+        const fx = [b.dotted ? 1 : 0, b.pulse ?? 0, b.seed ?? 0];
+        const v = (x: number, y: number, side: number, u: number) => { d.set([x, y, side, u, len + u0, b.r, b.g, b.b, b.a, fx[0], fx[1], fx[2]], k); k += BEAM_F; };
+        const ax = b.x1 - ex, ay = b.y1 - ey, bx = b.x2 + ex, by = b.y2 + ey;
+        v(ax + nx, ay + ny, 1, u0); v(ax - nx, ay - ny, -1, u0); v(bx + nx, by + ny, 1, u0 + len);
+        v(bx + nx, by + ny, 1, u0 + len); v(ax - nx, ay - ny, -1, u0); v(bx - nx, by - ny, -1, u0 + len);
+      }
+      gl.useProgram(this.beams);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.beamBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, d.subarray(0, k));
+      this.attr(this.beams, "aPos", 2, BEAM_F, 0);
+      this.attr(this.beams, "aSide", 1, BEAM_F, 2);
+      this.attr(this.beams, "aU", 1, BEAM_F, 3);
+      this.attr(this.beams, "aLen", 1, BEAM_F, 4);
+      this.attr(this.beams, "aCol", 4, BEAM_F, 5);
+      this.attr(this.beams, "aFx", 3, BEAM_F, 9);
+      gl.uniform2f(this.u(this.beams, "uRes"), o.w, o.h);
+      gl.uniform1f(this.u(this.beams, "uTime"), o.time);
+      gl.drawArrays(gl.TRIANGLES, 0, n2 * 6);
+      this.off(this.beams, ["aPos", "aSide", "aU", "aLen", "aCol", "aFx"]);
+    }
+
+    // nodes: orbit rings, gems, empty rings, pulses
+    if (o.nodes?.length) {
+      const n = Math.min(o.nodes.length, MAX_NODES), d = this.nodeData;
+      let k = 0;
+      let n2 = 0;
+      for (let i = 0; i < n; i++) {
+        const q = o.nodes[i], h = Math.min(q.R, 90) * 1.8;
+        if (!Number.isFinite(q.x + q.y + h)) continue;
+        n2++;
+        const v = (cx: number, cy: number) => { d.set([q.x + cx * h, q.y + cy * h, cx, cy, h / 1.8, q.kind, q.alpha, q.rot, q.cur ?? 1], k); k += NODE_F; };
+        v(-1, -1); v(1, -1); v(-1, 1); v(-1, 1); v(1, -1); v(1, 1);
+      }
+      gl.useProgram(this.nodes);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.nodeBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, d.subarray(0, k));
+      this.attr(this.nodes, "aPos", 2, NODE_F, 0);
+      this.attr(this.nodes, "aLocal", 2, NODE_F, 2);
+      this.attr(this.nodes, "aP", 4, NODE_F, 4);
+      this.attr(this.nodes, "aCur", 1, NODE_F, 8);
+      gl.uniform2f(this.u(this.nodes, "uRes"), o.w, o.h);
+      gl.uniform1f(this.u(this.nodes, "uTime"), o.time);
+      gl.drawArrays(gl.TRIANGLES, 0, n2 * 6);
+      this.off(this.nodes, ["aPos", "aLocal", "aP", "aCur"]);
+    }
+
     // points with intent
     if (o.points.length) {
       const n = Math.min(o.points.length, 4096);
       for (let i = 0; i < n; i++) {
         const p = o.points[i];
-        this.ptData.set([p.x, p.y, p.size, p.temp, p.alpha, p.soft], i * 6);
+        const ok = Number.isFinite(p.x + p.y + p.size);
+        this.ptData.set([ok ? p.x : -9999, ok ? p.y : -9999, ok ? Math.min(p.size, 256) : 0, p.temp, ok ? p.alpha : 0, p.soft], i * 6);
       }
       gl.useProgram(this.points);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.ptBuf);
@@ -275,6 +462,7 @@ export class EmberGL {
       gl.uniform1f(this.u(this.points, "uDpr"), this.dpr);
       gl.uniform1f(this.u(this.points, "uTime"), o.time);
       gl.drawArrays(gl.POINTS, 0, n);
+      this.off(this.points, ["aPos", "aParams"]);
     }
 
     // the Spark
@@ -291,6 +479,7 @@ export class EmberGL {
       gl.uniform1f(this.u(this.spark, "uGlow"), s.glow);
       gl.uniform1f(this.u(this.spark, "uAlpha"), s.alpha);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      this.off(this.spark, ["aCorner"]);
     }
   }
 }

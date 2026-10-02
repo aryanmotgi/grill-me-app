@@ -664,9 +664,9 @@ function Tools({ f, step }: SceneProps) {
   const agents = constellationFromScan(result).stars.filter((s) => s.kind === "agent").length;
   const tools = toolCount(result);
   return (
-    <Stage f={f} step={step} viewHeight={280}
+    <Stage f={f} step={step} viewHeight={320}
       title="Your tools"
-      body={`Found ${agents === 1 ? "1 AI agent" : `${agents} AI agents`} and ${tools} tools. Each agent sits in the middle of its tools; lines link tools that work together.`}
+      body={`Found ${agents === 1 ? "1 AI agent" : `${agents} AI agents`} and ${tools} tools on this Mac.`}
       primary={{ label: "Continue", onClick: () => f.go(nextStep(step)) }}
       note={<button type="button" className="forge-link" onClick={() => setShowList(!showList)}>{showList ? "Hide what I read" : "What did you read?"}</button>}>
       {showList && result ? <ul className="forge-read">{result.checked.map((c, i) => <li key={i}>{c.item}</li>)}</ul> : null}

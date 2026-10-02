@@ -5,13 +5,15 @@
 // labels).
 //
 // Two layers so it reads on any app, light or dark:
-//   • shade (Canvas 2D, underneath): soft dark halos under every light and
-//     a dark outline under every line, so they stand out on white too;
-//   • light (WebGL, gl.ts, on top): the Spark, glows, embers.
+//   • shade (Canvas 2D, underneath): soft dark halos under the Spark and the
+//     AI orbs, so they stand out on white too (the diagrams sit on the
+//     stage's dark glass card, so they need none);
+//   • light (WebGL, gl.ts, on top): the Spark, glows, embers, and the
+//     diagrams' glowing links, orbits and gems.
 // Labels are DOM, so text stays crisp.
 // ---------------------------------------------------------------------------
 
-import { EmberGL, type GLPoint } from "./gl";
+import { EmberGL, type GLBeam, type GLNode, type GLPoint } from "./gl";
 
 export interface StarSpec { id: string; label: string; kind: "agent" | "kid" | "dust" | "mate"; sub?: string; parent?: string }
 export interface StageSpec { id: string; name: string; sub: string; lit: boolean }
@@ -21,11 +23,21 @@ interface Star extends StarSpec {
   sx: number; sy: number; ss: number; // where it is on screen now (+ depth scale)
   flat: { x: number; y: number } | null; // overrides 3D (recede, forging the line)
   op: number; top: number; el: HTMLDivElement; parentStar?: Star; ang: number; rad: number; tilt: number;
+  flared?: boolean;
+  slot: number; slots: number; seed: number; // place among its agent's tools
+  lw: number; lh: number; lx: number; ly: number; // label size and (eased) place
 }
+interface Box { x: number; y: number; w: number; h: number }
+interface Link { a: Star; b: Star; w: number; grow: number; kind: "kid" | "peer" | "mate" }
 interface Stage extends StageSpec { p: V3; sx: number; sy: number; ss: number; cur: number; el: HTMLDivElement; pulse: boolean }
 interface Mote { x: number; y: number; vx: number; vy: number; tx: number; ty: number; mode: "hold" | "burst" | "seek"; temp: number; cool: number; size: number; speed: number; done?: () => void }
 export interface Beacon { x: number; y: number; lit: number; size: number; pulse?: boolean }
 
+/** tool kinds: their colour (links, chips, key) and name */
+type Kind = "mcp" | "plugin" | "skill";
+const KIND_RGB: Record<Kind, [number, number, number]> = { mcp: [.45, .78, 1], plugin: [1, .58, .26], skill: [.78, .62, 1] };
+const KIND_NAME: Record<Kind, string> = { mcp: "MCP", plugin: "Plugin", skill: "Skill" };
+const kindOf = (sub: string): Kind => (/mcp/i.test(sub) ? "mcp" : /skill/i.test(sub) ? "skill" : "plugin");
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -40,7 +52,7 @@ export class ForgeWorld {
   private shadeCanvas: HTMLCanvasElement;
   private motes: Mote[] = [];
   private stars: Star[] = [];
-  private links: [Star, Star, number][] = [];
+  private links: Link[] = [];
   private stages: Stage[] = [];
   private beacons = new Map<string, Beacon & { cur: number }>();
   private raf = 0;
@@ -182,47 +194,109 @@ export class ForgeWorld {
   setViewport(r: { x: number; y: number; w: number; h: number }) { this.vp = r; }
 
   // ---- constellation ----------------------------------------------------------------------
+  /**
+   * Each agent gets its own column of the picture: its core in the middle,
+   * named "Claude Code · 4 tools", its tools spaced evenly around it, each
+   * linked by a line in its kind's colour (MCP / plugin / skill). A tool two
+   * agents share is drawn once, chipped "shared", and linked to both.
+   */
   setStars(specs: StarSpec[], links: [string, string][] = []) {
-    this.labels.querySelectorAll(".forge-star").forEach((e) => e.remove());
-    this.stars = [];
-    this.links = [];
-    const agents = specs.filter((s) => s.kind === "agent");
-    const vp = this.vp;
-    const spread = Math.min(vp.w * (agents.length > 2 ? .17 : .23), 220);
+    this.clearStars();
+    const counts = new Map<string, number>();
+    for (const sp of specs) if (sp.parent) counts.set(sp.parent, (counts.get(sp.parent) ?? 0) + 1);
+    const shared = new Set(links.flat().filter((id) => !id.startsWith("agent:")));
+    const kinds = new Set<string>();
     for (const spec of specs) {
       const el = document.createElement("div");
       el.className = `forge-star ${spec.kind}`;
-      if (spec.kind !== "dust") el.textContent = spec.label;
-      if (spec.sub) { const em = document.createElement("em"); em.textContent = spec.sub; el.append(em); }
+      if (spec.kind === "agent") {
+        const n = counts.get(spec.id) ?? 0;
+        el.innerHTML = "<b></b><small></small>";
+        (el.firstChild as HTMLElement).textContent = spec.label;
+        (el.lastChild as HTMLElement).textContent = n ? `${n} tool${n === 1 ? "" : "s"}` : "no tools yet";
+      } else if (spec.kind !== "dust") {
+        el.append(spec.label);
+        if (spec.sub) {
+          const k = kindOf(spec.sub);
+          kinds.add(k);
+          const em = document.createElement("em");
+          em.className = `k-${k}`;
+          em.textContent = KIND_NAME[k];
+          el.append(em);
+        }
+        if (shared.has(spec.id)) { const em = document.createElement("em"); em.className = "k-shared"; em.textContent = "shared"; el.append(em); }
+      }
+      el.style.opacity = "0";
       this.labels.append(el);
-      this.stars.push({ ...spec, p: { x: 0, y: 0, z: 0 }, sx: this.W / 2, sy: this.H / 2, ss: 1, flat: null, op: 0, top: 0, el, ang: 0, rad: 0, tilt: 0 });
+      this.stars.push({ ...spec, p: { x: 0, y: 0, z: 0 }, sx: 0, sy: 0, ss: 1, flat: null, op: 0, top: 0, el, ang: 0, rad: 0, tilt: 0, slot: 0, slots: 1, seed: rand(0, 100), lw: el.offsetWidth, lh: el.offsetHeight, lx: NaN, ly: NaN });
     }
-    agents.forEach((a, i) => { this.stars.find((x) => x.id === a.id)!.p = { x: (i - (agents.length - 1) / 2) * spread * 2, y: 0, z: 0 }; });
     const byParent = new Map<string, Star[]>();
     for (const s of this.stars) if (s.parent) byParent.set(s.parent, [...(byParent.get(s.parent) ?? []), s]);
     for (const [pid, kids] of byParent) {
       const p = this.stars.find((x) => x.id === pid);
       if (!p) continue;
-      kids.forEach((k, j) => {
-        const named = k.kind !== "dust";
-        const base = Math.min(vp.h * .34, spread * .62, 130);
-        Object.assign(k, { parentStar: p, rad: named ? base + (j % 2) * 18 : base * rand(.45, 1.15), ang: (j / kids.length) * 6.283 + rand(-.15, .15), tilt: rand(-.9, .9) });
-        if (named) this.links.push([p, k, .55]);
-      });
+      const named = kids.filter((k) => k.kind !== "dust"), dust = kids.filter((k) => k.kind === "dust");
+      named.forEach((k, j) => { Object.assign(k, { parentStar: p, slot: j, slots: named.length }); this.links.push({ a: p, b: k, w: .7, grow: 0, kind: "kid" }); });
+      dust.forEach((k, j) => Object.assign(k, { parentStar: p, slot: j, slots: dust.length, ang: (j + .5) / dust.length * 6.283 + rand(-.2, .2) }));
     }
     for (const [a, b] of links) {
       const sa = this.stars.find((s) => s.id === a), sb = this.stars.find((s) => s.id === b);
-      if (sa && sb) this.links.push([sa, sb, .3]);
+      if (sa && sb) this.links.push({ a: sb, b: sa, w: .4, grow: 0, kind: "peer" });
     }
-    // they arrive from deep in the scene
-    for (const s of this.stars) { s.sx = vp.x + vp.w / 2 + rand(-30, 30); s.sy = vp.y + vp.h / 2 + rand(-30, 30); s.ss = .2; }
+    // a small key, so the colours mean something without reading
+    if (kinds.size) {
+      const lg = document.createElement("div");
+      lg.className = "forge-legend";
+      lg.style.opacity = "0";
+      lg.innerHTML = (["mcp", "plugin", "skill"] as const).filter((k) => kinds.has(k)).map((k) => `<span class="k-${k}"><i></i>${KIND_NAME[k]}</span>`).join("")
+        + (shared.size ? `<span class="k-shared"><i></i>Shared by two AIs</span>` : "");
+      this.labels.append(lg);
+      this.legend = lg;
+    }
+    // everything starts at its agent's core and moves out
+    this.layoutStars(0, true);
+  }
+  private legend: HTMLDivElement | null = null;
+
+  /** Where each star belongs right now (screen px), from the picture area. */
+  private layoutStars(t: number, snap = false) {
+    const vp = this.vp;
+    const agents = this.stars.filter((s) => s.kind === "agent");
+    const nA = Math.max(1, agents.length), zoneW = vp.w / nA;
+    const ry = Math.min(vp.h * .33, 118), rx = Math.min(zoneW * .3, ry * 1.45);
+    const homes = new Map<Star, { x: number; y: number }>();
+    agents.forEach((a, i) => homes.set(a, { x: vp.x + zoneW * (i + .5), y: vp.y + vp.h * .47 }));
+    for (const s of this.stars) {
+      const p = s.parentStar && homes.get(s.parentStar);
+      if (!p) continue;
+      if (s.kind === "dust") {
+        homes.set(s, { x: p.x + Math.cos(s.ang + t * .05) * rx * 1.3, y: p.y + Math.sin(s.ang + t * .05) * ry * 1.25 });
+        continue;
+      }
+      // evenly round the core, leaving the bottom clear for the agent's name
+      const gap = .7; // radians kept free either side of straight down
+      const ang = Math.PI / 2 + gap + ((s.slot + .5) / s.slots) * (Math.PI * 2 - gap * 2);
+      s.ang = ang;
+      const bob = this.reduce ? 0 : 1;
+      homes.set(s, { x: p.x + Math.cos(ang) * rx + bob * 2.5 * Math.sin(t * .7 + s.seed), y: p.y + Math.sin(ang) * ry + bob * 2 * Math.cos(t * .6 + s.seed) });
+    }
+    for (const s of this.stars) {
+      const h = homes.get(s);
+      if (!h) continue;
+      if (snap) {
+        const from = s.parentStar ? homes.get(s.parentStar) ?? h : h;
+        s.sx = from.x; s.sy = from.y;
+      }
+      s.p = { x: h.x, y: h.y, z: 0 };
+    }
+    return { rx, ry, homes, zoneW };
   }
   async revealStars(wait: (ms: number) => Promise<void>) { for (const s of this.stars) { s.top = 1; await wait(this.reduce ? 0 : 90); } }
   showAllStars() { for (const s of this.stars) { s.top = 1; s.op = 1; } }
   hasStars() { return this.stars.length > 0; }
   hideStars() { for (const s of this.stars) s.top = 0; }
   /** remove the constellation entirely (its step is over) */
-  clearStars() { this.labels.querySelectorAll(".forge-star").forEach((e) => e.remove()); this.stars = []; this.links = []; }
+  clearStars() { this.labels.querySelectorAll(".forge-star").forEach((e) => e.remove()); this.legend?.remove(); this.legend = null; this.stars = []; this.links = []; }
   recede(on: boolean) {
     this.labels.classList.toggle("recede", on);
     this.stars.forEach((s, i) => {
@@ -237,18 +311,16 @@ export class ForgeWorld {
     await wait(1000);
     for (const s of this.stars) { const i = stageOf(s.label); s.flat = i != null && slots[i] ? { ...slots[i] } : { x: s.sx, y: s.sy + 24 }; s.top = 0; }
     await wait(700);
-    this.labels.querySelectorAll(".forge-star").forEach((e) => e.remove());
-    this.stars = [];
-    this.links = [];
+    this.clearStars();
   }
   addMate(id: string, label: string, side: number) {
     const el = document.createElement("div");
     el.className = "forge-star mate";
     el.textContent = label;
     this.labels.append(el);
-    const s: Star = { id, label, kind: "mate", p: { x: side * Math.min(this.W * .3, 380), y: 160, z: -60 }, sx: side > 0 ? this.W + 40 : -40, sy: this.H * .7, ss: 1, flat: null, op: 0, top: 1, el, ang: 0, rad: 0, tilt: 0 };
+    const s: Star = { id, label, kind: "mate", p: { x: 0, y: 0, z: 0 }, sx: side > 0 ? this.W + 40 : -40, sy: this.H * .7, ss: 1, flat: { x: this.W / 2 + side * Math.min(this.W * .3, 380), y: this.H * .7 }, op: 0, top: 1, el, ang: 0, rad: 0, tilt: 0, slot: 0, slots: 1, seed: 0, lw: 0, lh: 0, lx: NaN, ly: NaN };
     this.stars.push(s);
-    for (const a of this.stars.filter((x) => x.kind === "agent")) this.links.push([s, a, .35]);
+    for (const a of this.stars.filter((x) => x.kind === "agent")) this.links.push({ a, b: s, w: .4, grow: 0, kind: "mate" });
   }
 
   // ---- the workflow path (3D) -------------------------------------------------------------
@@ -313,15 +385,6 @@ export class ForgeWorld {
       g.addColorStop(0, `rgba(0,0,0,${.42 * a})`); g.addColorStop(1, "rgba(0,0,0,0)");
       sh.fillStyle = g; sh.fillRect(x - r, y - r, r * 2, r * 2);
     };
-    const line = (x1: number, y1: number, x2: number, y2: number, rgb: string, a: number, dotted = false) => {
-      sh.setLineDash(dotted ? [2, 6] : []);
-      sh.lineCap = "round";
-      sh.strokeStyle = `rgba(0,0,0,${.5 * a})`; sh.lineWidth = 3.4;
-      sh.beginPath(); sh.moveTo(x1, y1); sh.lineTo(x2, y2); sh.stroke();
-      sh.strokeStyle = `rgba(${rgb},${a})`; sh.lineWidth = 1.3;
-      sh.beginPath(); sh.moveTo(x1, y1); sh.lineTo(x2, y2); sh.stroke();
-      sh.setLineDash([]);
-    };
     if (!reduce) this.yaw = Math.sin(t * .12) * .55;
 
     // embers with intent
@@ -358,35 +421,102 @@ export class ForgeWorld {
       if (pulse) pts.push({ x: b.x, y: b.y, size: b.size * (1.6 + pulse), temp: .6, alpha: .3 * pulse, soft: 1 });
     }
 
-    // constellation (3D)
+    // constellation: one column per agent, its tools evenly around it
     const receded = this.labels.classList.contains("recede");
-    for (const s of this.stars) {
-      if (s.parentStar) {
-        if (!reduce) s.ang += dt * .22;
-        const c = Math.cos(s.ang) * s.rad, d = Math.sin(s.ang) * s.rad;
-        s.p = { x: s.parentStar.p.x + c, y: s.parentStar.p.y + d * Math.sin(s.tilt) * .55, z: s.parentStar.p.z + d * Math.cos(s.tilt) };
-      }
-      const pr = s.flat ? { x: s.flat.x, y: s.flat.y, s: 1 } : this.project(s.p, this.vp.x + this.vp.w / 2, this.vp.y + this.vp.h / 2 + 6, this.yaw);
-      const k = reduce ? 1 : clamp(dt * 3);
-      s.sx = lerp(s.sx, pr.x, k); s.sy = lerp(s.sy, pr.y, k); s.ss = lerp(s.ss, pr.s, k);
-      s.op = lerp(s.op, s.top, reduce ? 1 : clamp(dt * 3));
-    }
-    for (const [a, b, w] of this.links) {
-      const al = w * Math.min(a.op, b.op) * (receded ? .25 : 1);
-      if (al > .02) line(a.sx, a.sy, b.sx, b.sy, "255,176,110", al);
-    }
+    const beams: GLBeam[] = [];
+    const nodes: GLNode[] = [];
     const dimmed = receded ? .35 : 1;
-    for (const s of this.stars) {
-      if (s.op < .02) { s.el.style.opacity = "0"; continue; }
-      const depth = clamp((s.ss - .78) / .45); // 0 far … 1 near
-      const dust = s.kind === "dust";
-      const big = (s.kind === "agent" ? 8 : s.kind === "mate" ? 6 : dust ? 2 : 3.4) * s.ss;
-      if (!dust) halo(s.sx, s.sy, big * 5, s.op * dimmed);
-      pts.push({ x: s.sx, y: s.sy, size: big, temp: s.kind === "mate" ? .7 : dust ? .7 : .95, alpha: s.op * dimmed * (dust ? .7 : 1), soft: 0 });
-      if (!dust) pts.push({ x: s.sx, y: s.sy, size: big * 4.2, temp: .6, alpha: s.op * .4 * dimmed, soft: 1 });
-      s.el.style.transform = `translate(${s.sx}px, ${s.sy + big + 8}px) translate(-50%, 0) scale(${(.82 + .25 * depth).toFixed(3)})`;
-      s.el.style.opacity = String(s.op * (.45 + .55 * depth));
-      s.el.style.zIndex = String(Math.round(s.ss * 100));
+    if (this.stars.length) {
+      const { rx, ry, zoneW } = this.layoutStars(reduce ? 0 : t);
+      const k = reduce ? 1 : clamp(dt * 3);
+      for (const s of this.stars) {
+        const to = s.flat ?? s.p;
+        s.sx = lerp(s.sx, to.x, k); s.sy = lerp(s.sy, to.y, k);
+        s.op = lerp(s.op, s.top, reduce ? 1 : clamp(dt * 3));
+      }
+      const agents = this.stars.filter((s) => s.kind === "agent");
+      // each agent's orbit: a faint ring its tools sit on
+      if (!receded) for (const ag of agents) {
+        if (ag.op < .02 || ag.flat) continue;
+        const N = 64;
+        for (let i = 0; i < N; i++) {
+          const a0 = i / N * 6.283, a1 = (i + 1) / N * 6.283;
+          beams.push({ x1: ag.sx + Math.cos(a0) * rx, y1: ag.sy + Math.sin(a0) * ry, x2: ag.sx + Math.cos(a1) * rx, y2: ag.sy + Math.sin(a1) * ry, r: 1, g: .7, b: .45, a: ag.op * .13, w: 3, dotted: true, u0: i * 6.283 * rx / N });
+        }
+        nodes.push({ x: ag.sx, y: ag.sy, R: 22, kind: 0, alpha: ag.op, rot: reduce ? .2 : t * .16 + agents.indexOf(ag) * .37, cur: 1 });
+      }
+      // links grow out from the agent as each tool arrives, then carry pulses
+      for (const L of this.links) {
+        const { a, b } = L;
+        const ready = Math.min(a.op, b.op);
+        L.grow = reduce ? (ready > .3 ? 1 : 0) : lerp(L.grow, ready > .3 ? 1 : 0, clamp(dt * 2.6));
+        const al = L.w * ready * (receded ? .25 : 1);
+        if (al < .02 || L.grow < .01) continue;
+        const x2 = lerp(a.sx, b.sx, L.grow), y2 = lerp(a.sy, b.sy, L.grow);
+        const [r, g, bl] = KIND_RGB[b.sub ? kindOf(b.sub) : "plugin"];
+        if (L.kind === "peer") arc(beams, a.sx, a.sy, x2, y2, -28, { r, g, b: bl, a: al, w: 4, dotted: true });
+        else beams.push({ x1: a.sx, y1: a.sy, x2, y2, r, g, b: bl, a: al, w: 6, pulse: reduce ? 0 : .32, seed: (b.seed * .37) % 1 });
+      }
+
+      // lights
+      const placed: Box[] = [];
+      for (const s of this.stars) {
+        if (s.op < .02) { s.el.style.opacity = "0"; continue; }
+        const dust = s.kind === "dust", agent = s.kind === "agent";
+        if (!s.flared && !dust && s.top > .5 && s.op > .5) { s.flared = true; this.burstAt(s.sx, s.sy, agent ? 16 : 9, .9); }
+        const big = agent ? 11 : s.kind === "mate" ? 6 : dust ? 2 : 5;
+        const breathe = reduce ? 1 : 1 + .08 * Math.sin(t * 2.2 + s.seed);
+        pts.push({ x: s.sx, y: s.sy, size: big * breathe, temp: s.kind === "mate" ? .7 : dust ? .65 : 1, alpha: s.op * dimmed * (dust ? .55 : 1), soft: 0 });
+        if (!dust) pts.push({ x: s.sx, y: s.sy, size: big * (agent ? 5.5 : 4.2) * breathe, temp: agent ? .7 : .6, alpha: s.op * (agent ? .55 : .4) * dimmed, soft: 1 });
+        if (agent) placed.push({ x: s.sx - 16, y: s.sy - 16, w: 32, h: 32 });
+      }
+
+      // labels: agents under their core; tools outward from their dot,
+      // nudged apart so no label covers another label or a core
+      const boxes: [Star, Box, boolean][] = [];
+      for (const s of this.stars) {
+        if (s.op < .02 || s.kind === "dust") continue;
+        if (!s.lw) { s.lw = s.el.offsetWidth; s.lh = s.el.offsetHeight; }
+        const w = s.lw, h = s.lh;
+        let bx: Box;
+        let side = false;
+        if (s.kind === "agent" || s.flat || !s.parentStar) bx = { x: s.sx - w / 2, y: s.sy + 18, w, h };
+        else {
+          const c = Math.cos(s.ang), sn = Math.sin(s.ang);
+          // beside the dot when it fits inside its agent's column, else above/below
+          const zx = s.parentStar.sx - zoneW / 2 - 12, zr = s.parentStar.sx + zoneW / 2 + 12;
+          const sx = c > 0 ? s.sx + 10 : s.sx - 10 - w;
+          if (Math.abs(c) > .5 && sx >= zx && sx + w <= zr) { side = true; bx = { x: sx, y: s.sy - h / 2, w, h }; }
+          else bx = { x: s.sx - w / 2, y: sn < .2 ? s.sy - 10 - h : s.sy + 10, w, h };
+        }
+        if (s.kind === "agent") placed.push(bx);
+        else boxes.push([s, bx, side]);
+      }
+      for (let it = 0; it < 3; it++) {
+        for (let i = 0; i < boxes.length; i++) {
+          const [, r, side] = boxes[i];
+          for (const o of [...placed, ...boxes.slice(0, i).map((x) => x[1])]) {
+            const ox = Math.min(r.x + r.w, o.x + o.w) - Math.max(r.x, o.x), oy = Math.min(r.y + r.h, o.y + o.h) - Math.max(r.y, o.y);
+            if (ox <= 0 || oy <= 0) continue;
+            if (side || oy < ox) r.y += (r.y + r.h / 2 >= o.y + o.h / 2 ? 1 : -1) * (oy + 2);
+            else r.x += (r.x + r.w / 2 >= o.x + o.w / 2 ? 1 : -1) * (ox + 2);
+          }
+          r.x = clamp(r.x, this.vp.x - 20, this.vp.x + this.vp.w + 20 - r.w);
+        }
+      }
+      const lk = reduce ? 1 : clamp(dt * 8);
+      const show = (s: Star, b: Box) => {
+        s.lx = Number.isNaN(s.lx) ? b.x : lerp(s.lx, b.x, lk); s.ly = Number.isNaN(s.ly) ? b.y : lerp(s.ly, b.y, lk);
+        s.el.style.transform = `translate(${s.lx.toFixed(1)}px, ${s.ly.toFixed(1)}px)`;
+        s.el.style.opacity = String(s.op);
+      };
+      for (const s of this.stars) if (s.kind === "agent" && s.op >= .02) show(s, { x: s.sx - s.lw / 2, y: s.sy + 18, w: s.lw, h: s.lh });
+      for (const [s, b] of boxes) show(s, b);
+      if (this.legend) {
+        const op = Math.max(0, ...agents.map((a) => a.op)) * (receded ? 0 : 1);
+        this.legend.style.transform = `translate(${this.vp.x + this.vp.w / 2}px, ${this.vp.y + this.vp.h}px) translate(-50%, -100%)`;
+        this.legend.style.opacity = String(op);
+      }
     }
 
     // workflow path (3D)
@@ -397,32 +527,35 @@ export class ForgeWorld {
         s.sx = lerp(s.sx, pr.x, k); s.sy = lerp(s.sy, pr.y, k); s.ss = lerp(s.ss, pr.s, k);
         s.cur = lerp(s.cur, s.lit ? 1 : 0, reduce ? 1 : clamp(dt * 2.2));
       }
-      for (let i = 0; i < this.stages.length - 1; i++) {
-        const a = this.stages[i], b = this.stages[i + 1], lit = a.lit && b.lit;
-        line(a.sx, a.sy, b.sx, b.sy, lit ? "255,160,90" : "255,255,255", lit ? .9 : .45, !lit);
-        if (lit && !reduce) for (let j = 0; j < 3; j++) {
-          const u = (t * .35 + j / 3 + i * .17) % 1;
-          pts.push({ x: lerp(a.sx, b.sx, u), y: lerp(a.sy, b.sy, u), size: 2.6, temp: .95, alpha: Math.sin(u * Math.PI), soft: 0 });
+      // the path: a smooth curve through the stages; filled stretches glow
+      // and carry light forward, gaps are dashes drifting along
+      const st = this.stages;
+      for (let i = 0; i < st.length - 1; i++) {
+        const p0 = st[Math.max(0, i - 1)], p1 = st[i], p2 = st[i + 1], p3 = st[Math.min(st.length - 1, i + 2)];
+        const lit = p1.lit && p2.lit, N = 14;
+        const heat = Math.min(p1.cur, p2.cur);
+        let prev = { x: p1.sx, y: p1.sy }, u0 = 0;
+        for (let j = 1; j <= N; j++) {
+          const q = catmull(p0, p1, p2, p3, j / N);
+          const seg = Math.hypot(q.x - prev.x, q.y - prev.y);
+          if (lit) beams.push({ x1: prev.x, y1: prev.y, x2: q.x, y2: q.y, r: 1, g: .58, b: .24, a: .35 + .6 * heat, w: 8, pulse: reduce ? 0 : .3, seed: i * .23, u0 });
+          else beams.push({ x1: prev.x, y1: prev.y, x2: q.x, y2: q.y, r: 1, g: .92, b: .85, a: .4, w: 4, dotted: true, u0 });
+          u0 += seg; prev = q;
         }
       }
-      for (const s of this.stages) {
-        const pulse = s.pulse && !reduce ? .5 + .5 * Math.sin(t * 5) : 0;
-        const size = 34 * s.ss;
-        halo(s.sx, s.sy, size * 1.7, 1);
-        // the diamond: a hairline square turned 45°, with a dark outline under it
-        sh.save(); sh.translate(s.sx, s.sy); sh.rotate(Math.PI / 4);
-        sh.setLineDash(s.lit ? [] : [3, 4]);
-        sh.strokeStyle = "rgba(0,0,0,.55)"; sh.lineWidth = 3.2; sh.strokeRect(-size * .36, -size * .36, size * .72, size * .72);
-        sh.strokeStyle = s.lit ? `rgba(255,200,150,${.5 + .5 * s.cur})` : `rgba(255,255,255,${.5 + pulse * .5})`; sh.lineWidth = 1.2; sh.strokeRect(-size * .36, -size * .36, size * .72, size * .72);
-        sh.restore(); sh.setLineDash([]);
-        if (s.cur > .02) pts.push({ x: s.sx, y: s.sy, size: size * (.7 + .3 * s.cur), temp: .55 + .4 * s.cur, alpha: s.cur, soft: .7 }, { x: s.sx, y: s.sy, size: size * .25, temp: 1, alpha: s.cur, soft: 0 });
-        if (pulse) pts.push({ x: s.sx, y: s.sy, size: size * (1.5 + pulse), temp: .65, alpha: .35 * pulse, soft: 1 });
+      st.forEach((s, i) => {
+        const pulse = s.pulse && !reduce;
+        const size = 34 * clamp(s.ss, .5, 1.6);
+        const R = size * .5;
+        if (s.cur > .02) nodes.push({ x: s.sx, y: s.sy, R, kind: 1, alpha: s.cur, rot: reduce ? 0 : .12 * Math.sin(t * .9 + i * 1.3) });
+        if (s.cur < .98) nodes.push({ x: s.sx, y: s.sy, R: R * 1.15, kind: 2, alpha: (1 - s.cur) * (pulse ? 1 : .8), rot: reduce ? 0 : t * .25 + i * .2 });
+        if (pulse) for (let k = 0; k < 2; k++) nodes.push({ x: s.sx, y: s.sy, R: R * 1.2, kind: 3, alpha: 1, rot: (t * .8 + k * .5) % 1 });
         s.el.classList.toggle("gap", !s.lit);
         (s.el.firstChild as HTMLElement).textContent = s.name;
         (s.el.lastChild as HTMLElement).textContent = s.sub;
-        s.el.style.transform = `translate(${s.sx}px, ${s.sy + size * .62 + 10}px) translate(-50%, 0)`;
+        s.el.style.transform = `translate(${s.sx}px, ${s.sy + size * .62 + 12}px) translate(-50%, 0)`;
         s.el.style.zIndex = String(Math.round(s.ss * 100));
-      }
+      });
     }
 
     // the Spark
@@ -434,9 +567,29 @@ export class ForgeWorld {
       if (sp.alpha > 0) halo(sp.x, sp.y, sp.r * 5, sp.alpha);
     }
     this.gl.draw({
-      time: t, w: W, h: H, dim: 0, calm: 0, points: pts, lines: [],
+      time: t, w: W, h: H, dim: 0, calm: 0, points: pts, lines: [], beams, nodes,
       spark: sp.born ? { x: sp.x, y: sp.y, r: sp.r, energy: sp.energy, glow: sp.glow, alpha: sp.alpha } : null,
     });
     if (sp.born) this.onFrame?.({ x: sp.x, y: sp.y, r: sp.r });
   }
+}
+
+/** A curved glowing link from (x1,y1) to (x2,y2), bowed by `bow` px. */
+function arc(out: GLBeam[], x1: number, y1: number, x2: number, y2: number, bow: number, o: Omit<GLBeam, "x1" | "y1" | "x2" | "y2" | "u0">) {
+  const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const nx = -(y2 - y1) / len, ny = (x2 - x1) / len, N = 12;
+  let px = x1, py = y1, u0 = 0;
+  for (let i = 1; i <= N; i++) {
+    const t = i / N, k = 4 * t * (1 - t);
+    const x = lerp(x1, x2, t) + nx * bow * k, y = lerp(y1, y2, t) + ny * bow * k;
+    out.push({ ...o, x1: px, y1: py, x2: x, y2: y, u0 });
+    u0 += Math.hypot(x - px, y - py); px = x; py = y;
+  }
+}
+
+/** Catmull-Rom between p1 and p2 (screen positions). */
+function catmull(p0: { sx: number; sy: number }, p1: { sx: number; sy: number }, p2: { sx: number; sy: number }, p3: { sx: number; sy: number }, t: number) {
+  const t2 = t * t, t3 = t2 * t;
+  const f = (a: number, b: number, c: number, d: number) => .5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+  return { x: f(p0.sx, p1.sx, p2.sx, p3.sx), y: f(p0.sy, p1.sy, p2.sy, p3.sy) };
 }
