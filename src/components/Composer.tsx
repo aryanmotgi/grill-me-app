@@ -5,7 +5,7 @@ import { useApp, ptyIdFor } from "../store";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
 import { activeToken } from "../lib/composer";
-import { promptHints, sessionStats, type Hint } from "../lib/coach";
+import { QUICK_ASKS, promptHints, sessionStats, type Hint } from "../lib/coach";
 import { useFanOutDraft } from "./FanOut";
 
 // ---------------------------------------------------------------------------
@@ -88,14 +88,15 @@ export function Composer({ mateId }: { mateId: string }) {
     });
   };
 
-  const send = async () => {
-    const text = draft.trim();
+  const send = async (quick?: string) => {
+    const text = (quick ?? draft).trim();
     if (!text || sending || viewOnly) return;
     setSending(true);
     try {
       // show it in the chat now; the transcript catches up a moment later
       usePendingChat.getState().add(mateId, text);
       await submitToAgent(ptyIdFor(mateId), text);
+      if (quick) return;
       setDraft("");
       setCaret(0);
       setHushed(new Set());
@@ -194,20 +195,26 @@ export function Composer({ mateId }: { mateId: string }) {
           <Icon name="folder" size={10} /> {member.repoPath.split("/").pop()}
           <Icon name="branch" size={10} /> {mate?.branch ?? "main"}
         </span>
-        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim"
-          title="Which agent CLI runs in this session (chosen at session creation)">
-          <Icon name="spark" size={10} /> {AGENT_LABEL[member.agent ?? "claude"]}
-        </span>
-        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim"
-          title="Sessions run with permission prompts bypassed; the audit blocklist still applies">
-          <Icon name="lock" size={10} /> bypass on
-        </span>
+        {draft.trim() || viewOnly ? (
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim"
+            title="Which agent CLI runs in this session (chosen at session creation)">
+            <Icon name="spark" size={10} /> {AGENT_LABEL[member.agent ?? "claude"]}
+          </span>
+        ) : (
+          // empty box: the asks people type all day, one click each
+          QUICK_ASKS.map((q) => (
+            <button key={q.label} className="px-2 py-0.5 rounded-md bg-raised text-[10.5px] text-dim hover:text-ink hover:bg-raised/70 cursor-pointer disabled:opacity-40"
+              disabled={sending} title={q.prompt} onClick={() => void send(q.prompt)}>
+              {q.label}
+            </button>
+          ))
+        )}
         <span className="flex-1" />
         <button
           className="flex items-center gap-1 px-3 py-1 rounded-md bg-accent text-accent-ink text-[11px] font-semibold cursor-pointer hover:brightness-110 disabled:opacity-40"
           disabled={!draft.trim() || viewOnly || sending}
           title="Send to the agent (Enter)"
-          onClick={send}
+          onClick={() => void send()}
         >
           send ↵
         </button>

@@ -128,3 +128,13 @@ export function promptHints(draft: string, stats: SessionStats | null): Hint[] {
   }
   return out;
 }
+
+// -- one-click asks ------------------------------------------------------------
+
+/** Things people type all day, worded so the agent gets it right first time. */
+export const QUICK_ASKS: { label: string; prompt: string }[] = [
+  { label: "Run the tests", prompt: "Run the test suite. If anything fails, show me the failing test and the cause in one line, then fix it." },
+  { label: "Fix the last error", prompt: "Look at the last error in this session. Tell me the cause in one line, then fix it and show me it works." },
+  { label: "What changed?", prompt: "In 3 short bullets, what did you change since my last message, and why?" },
+  { label: "Check before shipping", prompt: "Review your changes for bugs, missed edge cases and leftover debug code. List the problems first, then fix them." },
+];
