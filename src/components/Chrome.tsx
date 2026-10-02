@@ -1,29 +1,48 @@
 import { fileConflicts, useApp } from "../store";
+import { teamOverlaps } from "../lib/overlap";
+import { sessionTitle } from "../lib/sessionTitle";
 import { Icon } from "./Icon";
 
-/** Banner shown only when two people's claimed files actually overlap. */
+/** Banner shown only when files actually overlap: two of this Mac's
+ *  sessions on one file, or one of mine and a teammate's on another Mac. */
 export function ConflictBanner() {
   const tasks = useApp((s) => s.tasks);
   const teammates = useApp((s) => s.teammates);
+  const members = useApp((s) => s.members);
   const flashFiles = useApp((s) => s.flashFiles);
+  const teamSessions = useApp((s) => s.teamSessions);
+  const titles = useApp((s) => s.appSettings.sessionTitles);
+  const machine = useApp((s) => (typeof s.appSettings.installId === "string" ? s.appSettings.installId : undefined));
+  const selfMember = useApp((s) => s.roomSelf?.memberId);
   const conflicts = fileConflicts(tasks);
-  if (conflicts.length === 0) return null;
+  const fresh = teamSessions.filter((d) => Date.now() - d.ts < 90_000);
+  const mine = members
+    .map((m) => teammates.find((t) => t.id === m.id))
+    .filter((t): t is NonNullable<typeof t> => !!t)
+    .map((t) => ({ title: sessionTitle(t, titles), files: (t.changes ?? []).map((c) => c.file) }));
+  const shared = teamOverlaps(mine, fresh, { machine, member: selfMember });
+  if (conflicts.length === 0 && shared.length === 0) return null;
 
   const name = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
 
   return (
     <button
       className="flex-none pl-[84px] pr-4 py-1.5 bg-warn/10 border-b border-warn/40 text-warn text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1 cursor-pointer text-left hover:bg-warn/15 transition-colors"
-      title="Jump to these files in the claimed list"
-      onClick={() => flashFiles(conflicts.map((c) => c.file))}
+      title="Two agents are changing the same files. Agree who owns them before both change them."
+      onClick={() => flashFiles([...conflicts.map((c) => c.file), ...shared.map((c) => c.file)])}
     >
-      <span className="font-display font-bold flex items-center gap-1.5"><Icon name="warn" size={12} /> FILE CONFLICT</span>
+      <span className="font-display font-bold flex items-center gap-1.5"><Icon name="warn" size={12} /> SAME FILES</span>
       {conflicts.map((c) => (
         <span key={c.file}>
-          <span className="font-mono">{c.file}</span> — claimed by {c.owners.map(name).join(" and ")}
+          <span className="font-mono">{c.file}</span> — {c.owners.map(name).join(" and ")}
         </span>
       ))}
-      <span className="ml-auto text-warn/70">show below</span>
+      {shared.map((c) => (
+        <span key={`team-${c.file}`}>
+          <span className="font-mono">{c.file}</span> — your {c.mine.join(", ")} and {c.theirs.join(", ")}
+        </span>
+      ))}
+      <span className="ml-auto text-warn/70">{shared.length ? "your agents get this warning too" : "show below"}</span>
     </button>
   );
 }

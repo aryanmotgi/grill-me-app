@@ -56,6 +56,44 @@ fn goal_or_empty(b: &Value) -> Value {
 }
 
 /// A string field, "" when missing or not a string.
+/// Per-project warnings for agents (drift alarm results), newest last.
+pub const ALERTS_FILE: &str = "alerts.json";
+
+/// Files a session changed: uncommitted + committed vs its base branch,
+/// de-duplicated, secret-named ones dropped, at most 30.
+fn session_files(repo: &str) -> Vec<String> {
+    let (base, branch, _) = Ctx::commit_log(repo);
+    let mut files: Vec<String> = super::data::changed_files(repo).iter().filter_map(|l| l.get(3..)).map(|f| js::trim(f).to_string()).collect();
+    if !base.is_empty() && base != branch {
+        files.extend(super::data::git(repo, &["diff", "--name-only", &format!("{base}...HEAD")]).lines().map(str::to_owned));
+    }
+    let mut uniq: Vec<String> = Vec::new();
+    for f in files.into_iter().filter(|f| safe_name(f)) {
+        if !uniq.contains(&f) {
+            uniq.push(f);
+        }
+    }
+    uniq.truncate(30);
+    uniq
+}
+
+/// "`src/auth.ts` — Maya's Login session is editing it too", one per shared file.
+pub fn overlap_lines(mine: &[String], mates: &[Value]) -> Vec<String> {
+    let mut out = Vec::new();
+    for f in mine {
+        let who: Vec<String> = mates
+            .iter()
+            .filter(|d| files_of(d).iter().any(|x| x == f))
+            .map(|d| format!("{}'s {}", str_of(get(d, "memberName")), str_of(get(d, "title"))))
+            .collect();
+        if !who.is_empty() {
+            out.push(format!("- `{f}` — {} {} editing it too", who.join(" and "), if who.len() > 1 { "are" } else { "is" }));
+        }
+    }
+    out.truncate(10);
+    out
+}
+
 /// One teammate session as a context line: who, what, branch, files.
 fn teammate_line(d: &Value) -> String {
     let files = files_of(d);
@@ -275,6 +313,34 @@ impl Ctx {
                 let lines: Vec<String> = mates.iter().map(teammate_line).collect();
                 out.push(format!("**Teammates right now** (their agents, on their own computers):\n{}", lines.join("\n")));
             }
+        }
+
+        // Same files as a teammate's agent: tell this session before it edits
+        // them. Re-sent only when the set of overlaps changes.
+        if let Some(member) = exclude {
+            let repo = self.members().iter().find(|m| eq_str(get(m, "id"), Some(member))).map(|m| to_str(get(m, "repoPath")));
+            if let Some(repo) = repo.filter(|r| !r.is_empty()) {
+                let lines = overlap_lines(&session_files(&repo), &mates);
+                let sig = signature(lines.iter().cloned());
+                let changed = self.seen_changed(&format!("overlap:{member}"), sig);
+                if !lines.is_empty() && (changed || full) {
+                    out.push(format!(
+                        "**⚠ Same files as a teammate** — coordinate before changing these (check the plan, or ask in team chat):\n{}",
+                        lines.join("\n")
+                    ));
+                }
+            }
+        }
+
+        // Warnings Grill Me raised (e.g. two sessions building in contradicting
+        // directions): new ones since this reader last looked.
+        let alerts: Vec<Value> = read_list(&proj.dir.join(ALERTS_FILE))
+            .into_iter()
+            .filter(|a| ts_of(get(a, "ts")) > if full { js::now_ms() - 2.0 * 3_600_000.0 } else { since })
+            .collect();
+        if !alerts.is_empty() {
+            let lines: Vec<String> = js::tail(&alerts, 3).iter().map(|a| format!("- {}", clip(&str_of(get(a, "text")), 400))).collect();
+            out.push(format!("**⚠ Heads-up from Grill Me:**\n{}", lines.join("\n")));
         }
 
         let mut activity: Vec<String> = Vec::new();
@@ -577,18 +643,8 @@ impl Ctx {
                 continue;
             }
             let repo = to_str(get(&m, "repoPath"));
-            let (base, branch, _) = Ctx::commit_log(&repo);
-            let mut files: Vec<String> = super::data::changed_files(&repo).iter().filter_map(|l| l.get(3..)).map(|f| js::trim(f).to_string()).collect();
-            if !base.is_empty() && base != branch {
-                files.extend(super::data::git(&repo, &["diff", "--name-only", &format!("{base}...HEAD")]).lines().map(str::to_owned));
-            }
-            let mut uniq: Vec<String> = Vec::new();
-            for f in files.into_iter().filter(|f| safe_name(f)) {
-                if !uniq.contains(&f) {
-                    uniq.push(f);
-                }
-            }
-            uniq.truncate(30);
+            let (_, branch, _) = Ctx::commit_log(&repo);
+            let uniq = session_files(&repo);
             let last = ts.last();
             sessions.push(json!({
                 "name": self.label_v(&m),
@@ -600,9 +656,9 @@ impl Ctx {
             }));
         }
         let teammates: Vec<Value> = self
-            .team_sessions()
+            .teammate_sessions()
             .iter()
-            .map(|d| json!({ "name": format!("{}'s {}", str_of(get(d, "memberName")), str_of(get(d, "title"))), "doing": str_of(get(d, "sentence")), "branch": str_of(get(d, "branch")) }))
+            .map(|d| json!({ "name": format!("{}'s {}", str_of(get(d, "memberName")), str_of(get(d, "title"))), "doing": str_of(get(d, "sentence")), "branch": str_of(get(d, "branch")), "files": files_of(d) }))
             .collect();
         if sessions.is_empty() || sessions.len() + teammates.len() < 2 {
             return Ok(String::new());
@@ -794,6 +850,62 @@ mod tests {
         assert!(!crossed(end, end + 1.0 * MIN, end + 2.0 * MIN));
         // a reader who has never looked (since = 0) sees the latest crossing
         assert!(crossed(end, 0.0, end - 100.0 * MIN));
+    }
+
+    #[test]
+    fn overlap_names_the_teammates_on_each_shared_file() {
+        let mates = vec![
+            json!({ "memberName": "Maya", "title": "Login", "files": ["src/auth.ts", "src/ui.tsx"] }),
+            json!({ "memberName": "Sam", "title": "API", "files": ["src/auth.ts"] }),
+            json!({ "memberName": "Devon", "title": "Docs", "files": [".env"] }),
+        ];
+        let mine = vec!["src/auth.ts".to_string(), "src/ui.tsx".to_string(), "README.md".to_string(), ".env".to_string()];
+        assert_eq!(
+            overlap_lines(&mine, &mates),
+            vec![
+                "- `src/auth.ts` — Maya's Login and Sam's API are editing it too".to_string(),
+                "- `src/ui.tsx` — Maya's Login is editing it too".to_string(),
+            ],
+            "secret-named files never show"
+        );
+        assert!(overlap_lines(&["a.ts".into()], &mates).is_empty());
+    }
+
+    #[test]
+    fn hooks_warn_a_session_about_shared_files_and_alerts() {
+        let home = std::env::temp_dir().join(format!("grillme-overlap-{}-{}", std::process::id(), js::now_ms()));
+        let g = home.join(".grillme");
+        let repo = home.join("repo");
+        std::fs::create_dir_all(&g).unwrap();
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        let git = |args: &[&str]| assert!(std::process::Command::new("git").arg("-C").arg(&repo)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]).args(args).output().unwrap().status.success());
+        git(&["init", "-q", "-b", "main"]);
+        std::fs::write(repo.join("src/auth.ts"), "a").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "init"]);
+        std::fs::write(repo.join("src/auth.ts"), "changed").unwrap(); // my session is editing auth.ts
+        std::fs::write(g.join("config.json"), json!({ "teammates": [{ "id": "me", "name": "Me", "repoPath": repo.to_string_lossy() }] }).to_string()).unwrap();
+        std::fs::write(g.join("settings.json"), json!({ "installId": "mac-me" }).to_string()).unwrap();
+        let now = js::now_ms() as i64;
+        std::fs::write(g.join("team-sessions.json"), json!([
+            { "id": "m2:me", "member": "m2", "memberName": "Maya", "session": "me", "title": "Login", "status": "working", "sentence": "", "branch": "feat/login", "files": ["src/auth.ts"], "machine": "mac-maya", "ts": now }
+        ]).to_string()).unwrap();
+        let h = home.to_string_lossy().into_owned();
+        let ctx = Ctx { root: format!("{h}/.grillme"), home: h, remote: Default::default(), scope: None, forced: None };
+
+        let first = ctx.catch_up(0.0, Some("me"), true).unwrap();
+        assert!(first.contains("**⚠ Same files as a teammate**"), "{first}");
+        assert!(first.contains("- `src/auth.ts` — Maya's Login is editing it too"), "{first}");
+        // told once
+        let since = js::now_ms();
+        assert!(!ctx.catch_up(since, Some("me"), false).unwrap().contains("Same files"));
+
+        // a drift alert written by the app reaches the next prompt, once
+        std::fs::write(g.join(ALERTS_FILE), json!([{ "id": "d1", "ts": js::now_ms() as i64 + 5, "key": "k", "text": "Me and Maya's Login may be building in contradicting directions: x" }]).to_string()).unwrap();
+        let next = ctx.catch_up(since, Some("me"), false).unwrap();
+        assert!(next.contains("**⚠ Heads-up from Grill Me:**\n- Me and Maya's Login may be building in contradicting directions: x"), "{next}");
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]
