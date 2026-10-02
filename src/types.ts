@@ -169,6 +169,11 @@ export interface TeamSession {
   branch: string;
   /** last auto-test result; null = not run */
   tests: boolean | null;
+  /** files this session changed (vs its base branch + uncommitted), capped —
+   *  what lets teammates see overlap with their own work */
+  files?: string[];
+  /** which install published it, so a Mac can skip its own sessions */
+  machine?: string;
   ts: number;
 }
 

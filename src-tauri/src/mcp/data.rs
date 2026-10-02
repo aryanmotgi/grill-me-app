@@ -656,6 +656,20 @@ impl Ctx {
             .collect()
     }
 
+    /// Teammates' sessions only: drops the ones this install published itself
+    /// (matched by installId; local session ids like "me" repeat across Macs,
+    /// so they can't tell us apart) and the room member we are.
+    pub fn teammate_sessions(&self) -> Vec<Value> {
+        let settings = read_json_or(&self.root_path().join("settings.json"), json!({}));
+        let me = get(&settings, "installId").and_then(Value::as_str).unwrap_or("").to_string();
+        let room_self = get(&settings, "teamRoom").and_then(|r| get(r, "memberId")).and_then(Value::as_str).unwrap_or("").to_string();
+        self.team_sessions()
+            .into_iter()
+            .filter(|d| me.is_empty() || !eq_str(get(d, "machine"), Some(&me)))
+            .filter(|d| room_self.is_empty() || !eq_str(get(d, "member"), Some(&room_self)))
+            .collect()
+    }
+
     /// Team chat (team-chat.json over the room), oldest first by ts.
     pub fn team_chat(&self) -> Vec<Value> {
         let mut all: Vec<Value> = read_list(&self.project_dir().dir.join("team-chat.json"))
