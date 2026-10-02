@@ -55,7 +55,7 @@ export default function App() {
   } = useApp();
 
   useEffect(() => {
-    applyTheme(themes[themeName] ?? themes.monocode);
+    applyTheme(themes[themeName] ?? themes.forge);
   }, [themeName]);
 
   // Background style (monocode theme): "gradient" (default) paints a soft

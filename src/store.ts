@@ -342,7 +342,7 @@ export const useApp = create<AppState>((set, get) => ({
   cinemaOpen: false,
   switcherOpen: false,
   searchQuery: "",
-  themeName: "monocode",
+  themeName: "forge",
   toasts: [],
 
   setActive: (id) => set({ activeId: id, switcherOpen: false, view: "session", navSelId: null }),
@@ -1160,7 +1160,8 @@ let firedBudgetLevel: BudgetLevel = 0;
     const projects: ProjectInfo[] = JSON.parse(await invoke<string>("projects_list"));
     useApp.setState({ projects });
     const color = projects.find((x) => x.id === project)?.color;
-    if (color) {
+    // (not under Forge: its accent is part of the ember gradient look)
+    if (color && useApp.getState().themeName !== "forge") {
       setTimeout(() => document.documentElement.style.setProperty("--accent", color), 300);
     }
   } catch { /* no color set */ }
