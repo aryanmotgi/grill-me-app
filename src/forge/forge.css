@@ -399,3 +399,54 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 @keyframes forge-spin-mark { to { transform: rotate(360deg); } }
 .forge-scan .found { grid-column: 2; font-size: 14px; font-weight: 600; color: #ffc79e; min-height: 1.3em; }
 @media (prefers-reduced-motion: reduce) { .forge-scan .sweep, .forge-scan .steps li.now .mark { animation: none; } }
+
+/* the scan, v2: an orbital scanner with blips, a big count, per-source results */
+.forge-scan2 { display: grid; grid-template-columns: auto 1fr; gap: 14px 30px; align-items: center; width: 100%; }
+.forge-scan2 .scope { position: relative; width: 220px; height: 220px; border-radius: 50%; }
+.forge-scan2 .glow { position: absolute; inset: -18%; border-radius: 50%; background: radial-gradient(circle, rgba(255, 130, 50, .22), rgba(255, 130, 50, .06) 45%, transparent 68%); animation: forge-glow 2.4s ease-in-out infinite; }
+@keyframes forge-glow { 50% { transform: scale(1.06); opacity: .75; } }
+.forge-scan2 .ring { position: absolute; border-radius: 50%; }
+.forge-scan2 .ring.a { inset: 0; border: 1px solid rgba(255, 180, 120, .35);
+  background: repeating-conic-gradient(from 0deg, rgba(255, 200, 150, .55) 0 1deg, transparent 1deg 10deg);
+  -webkit-mask: radial-gradient(circle, transparent calc(100% - 7px), #000 calc(100% - 6px)); mask: radial-gradient(circle, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  animation: forge-turn 22s linear infinite; }
+.forge-scan2 .ring.b { inset: 18%; border: 1px dashed rgba(255, 180, 120, .4); animation: forge-turn 14s linear infinite reverse; }
+.forge-scan2 .ring.c { inset: 36%; border: 1px solid rgba(255, 200, 140, .5); box-shadow: 0 0 22px rgba(255, 140, 60, .35) inset; }
+@keyframes forge-turn { to { transform: rotate(360deg); } }
+.forge-scan2 .beam { position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 170, 90, .65), rgba(255, 140, 60, .15) 35deg, transparent 80deg);
+  -webkit-mask: radial-gradient(circle, transparent 18%, #000 19%); mask: radial-gradient(circle, transparent 18%, #000 19%);
+  animation: forge-turn 1.8s linear infinite; }
+.forge-scan2 .blip { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  background: #ffe3c4; box-shadow: 0 0 10px #ff9a52, 0 0 20px rgba(255, 120, 40, .7); animation: forge-blip .6s cubic-bezier(.2, .8, .2, 1) both, forge-twinkle 2.2s ease-in-out .6s infinite; }
+@keyframes forge-blip { from { transform: scale(0); opacity: 0; } 60% { transform: scale(1.8); } }
+@keyframes forge-twinkle { 50% { opacity: .45; } }
+.forge-scan2 .core { position: absolute; inset: 31%; border-radius: 50%; display: grid; place-content: center; text-align: center;
+  background: radial-gradient(circle at 45% 40%, rgba(60, 30, 18, .95), rgba(20, 12, 12, .95)); border: 1px solid rgba(255, 190, 130, .35); }
+.forge-scan2 .core b { font: 700 28px/1 "Chakra Petch", -apple-system, sans-serif; color: #fff; text-shadow: 0 0 16px rgba(255, 140, 60, .9); font-variant-numeric: tabular-nums; }
+.forge-scan2 .core span { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: rgba(255, 220, 190, .7); margin-top: 4px; }
+.forge-scan2 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.forge-scan2 .steps li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 9px; font-size: 13.5px; color: var(--f-faint); transition: background .3s, color .3s; }
+.forge-scan2 .steps li.now { color: #fff; background: rgba(255, 140, 60, .1); }
+.forge-scan2 .steps li.done { color: rgba(255,255,255,.88); }
+.forge-scan2 .mark { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; border: 1px solid rgba(255,255,255,.2); }
+.forge-scan2 li.done .mark { background: rgba(79, 207, 134, .22); color: #8fe7b2; border-color: transparent; animation: forge-blip .4s both; }
+.forge-scan2 li.now .mark { border-color: #ff9a52; border-top-color: transparent; animation: forge-turn .8s linear infinite; }
+.forge-scan2 .what { font-size: 12px; color: #ffc79e; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.forge-scan2 .shimmer { display: block; width: 64px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255, 170, 100, .5), rgba(255,255,255,.06)) 0 0 / 200% 100%; animation: forge-shimmer 1.1s linear infinite; }
+.forge-scan2 .bar { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.forge-scan2 .bar i { display: block; height: 100%; background: linear-gradient(90deg, #ff5a24, #f2b04e); box-shadow: 0 0 10px rgba(255, 140, 60, .7); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+@media (max-width: 640px) { .forge-scan2 { grid-template-columns: 1fr; justify-items: center; } }
+@media (prefers-reduced-motion: reduce) { .forge-scan2 .ring, .forge-scan2 .beam, .forge-scan2 .glow, .forge-scan2 .blip, .forge-scan2 li .mark, .forge-scan2 .shimmer { animation: none !important; } }
+
+/* the scanner's rings, drawn as SVG so they always show */
+.forge-scan2 .rings { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.forge-scan2 .rings .outer { fill: none; stroke: rgba(255, 180, 120, .45); stroke-width: 1; }
+.forge-scan2 .rings .tick { stroke: rgba(255, 200, 150, .35); stroke-width: 1; }
+.forge-scan2 .rings .tick.long { stroke: rgba(255, 210, 160, .8); stroke-width: 1.4; }
+.forge-scan2 .rings .dash { fill: none; stroke: rgba(255, 170, 110, .55); stroke-width: 1; stroke-dasharray: 3 6; }
+.forge-scan2 .rings .inner { fill: none; stroke: rgba(255, 200, 140, .6); stroke-width: 1.2; filter: drop-shadow(0 0 6px rgba(255, 140, 60, .8)); }
+.forge-scan2 .spin-slow { transform-origin: 100px 100px; animation: forge-turn 30s linear infinite; }
+.forge-scan2 .spin-back { transform-origin: 100px 100px; animation: forge-turn 16s linear infinite reverse; }
+.forge-scan2 .ring { display: none; }
+@media (prefers-reduced-motion: reduce) { .forge-scan2 .spin-slow, .forge-scan2 .spin-back { animation: none; } }

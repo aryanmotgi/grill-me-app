@@ -203,6 +203,10 @@ pub fn forge_window_done(app: AppHandle) {
     let _ = main.set_ignore_cursor_events(false);
     let _ = main.set_always_on_top(false);
     let _ = main.set_decorations(true);
+    // turning decorations back on gives a plain title bar: the app's own top
+    // bar should sit beside the window buttons, as at a normal launch
+    #[cfg(target_os = "macos")]
+    let _ = main.set_title_bar_style(tauri::TitleBarStyle::Overlay);
     let _ = main.set_shadow(true);
     restore(&main);
     crate::apply_glass(&main);

@@ -90,7 +90,11 @@ export class ForgeWorld {
   setLite(on: boolean) { this.lite = on; this.resize(); }
   workAvg() { return this.workN ? Math.round((this.workMs / this.workN) * 100) / 100 : 0; }
 
+  private stopped = false;
   start() {
+    // a world that was stopped (setup closed, or React re-ran the effect)
+    // must never start late: it would draw a second, frozen Spark
+    if (this.stopped || this.raf) return;
     this.t0 = this.last = performance.now();
     const loop = (now: number) => {
       const w0 = performance.now();
@@ -101,6 +105,7 @@ export class ForgeWorld {
     this.raf = requestAnimationFrame(loop);
   }
   stop() {
+    this.stopped = true;
     cancelAnimationFrame(this.raf);
     removeEventListener("resize", this.resize);
     this.labels.innerHTML = "";
