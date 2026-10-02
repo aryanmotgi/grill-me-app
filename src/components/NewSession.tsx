@@ -1,7 +1,9 @@
 import { usePendingChat } from "../lib/pendingChat";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAutoGrow } from "../hooks/useAutoGrow";
 import { uiLayoutOf } from "../lib/uiLayout";
+import { promptHints } from "../lib/coach";
+import { useFanOutDraft } from "./FanOut";
 import { ptyIdFor, useApp } from "../store";
 import { deliverBriefWhenReady } from "../lib/ptyReady";
 import type { AgentId } from "../data/sources/git";
@@ -117,6 +119,8 @@ export function NewSession() {
   const [busy, setBusy] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   useAutoGrow(ta, text);
+  const hints = useMemo(() => promptHints(text, null), [text]);
+  const perksSeen = useApp((s) => s.appSettings.perksSeen === true);
 
   useEffect(() => { ta.current?.focus(); }, []);
   useEffect(() => {
@@ -214,6 +218,28 @@ export function NewSession() {
             className="block w-full resize-none bg-transparent outline-none px-4 pt-3 pb-2 text-[14px] text-ink placeholder:text-faint min-h-[64px] max-h-[240px] overflow-y-auto"
           />
 
+          {hints.length ? (
+            <div className="flex flex-col gap-1 px-3 pb-2" aria-live="polite">
+              {hints.map((h) => (
+                <div key={h.id} className="coach-hint flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] text-dim">
+                  <Icon name="bulb" size={12} className="text-accent flex-none" />
+                  <span className="flex-1 min-w-0">{h.text}</span>
+                  {h.fix?.kind === "split" ? (
+                    <button className="composer-btn h-7 text-[11.5px] flex-none"
+                      onClick={() => { useFanOutDraft.getState().set(h.fix!.value); setText(""); useApp.getState().setView("tasks"); }}>
+                      {h.fix.label}
+                    </button>
+                  ) : h.fix?.kind === "append" ? (
+                    <button className="composer-btn h-7 text-[11.5px] flex-none"
+                      onClick={() => { setText((t) => t.trimEnd() + h.fix!.value); ta.current?.focus(); }}>
+                      {h.fix.label}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           <div className="flex items-center gap-1.5 px-3 pb-3">
             <button className={`composer-btn w-8 justify-center ${menu === "add" ? "on" : ""}`} title="Add to message"
               onClick={() => setMenu(menu === "add" ? "" : "add")}>
@@ -299,15 +325,47 @@ export function NewSession() {
           {simple ? null : <Starter icon={<Icon name="clock" size={13} />} label="Hackathon mode"
             hint={`/grillme --hackathon — scoped to ${hoursLeft !== null && hoursLeft > 0 ? `${Math.ceil(hoursLeft)}h left on the clock` : "24h (set the clock in the status bar)"}`}
             onClick={() => { setAgent("claude"); setGrill("hack"); ta.current?.focus(); }} />}
-          <Starter icon={<Icon name="swap" size={13} />} label={simple ? "Split a checklist into sessions" : "Fan out a checklist"} hint="Paste a checklist → one session per independent item"
+          <Starter icon={<Icon name="swap" size={13} />} label={simple ? "Run a checklist in parallel" : "Fan out a checklist"} hint="Paste a checklist → one session per independent item, side by side"
             onClick={() => useApp.getState().setView("tasks")} />
           <Starter icon={<Icon name="doc" size={13} />} label="From template" hint="Branch prefix + a saved starting brief"
             onClick={() => useApp.setState({ sessionTemplatesOpen: true })} />
-          <Starter icon={<Icon name="team" size={13} />} label="Standup" hint="AI Done / Doing / Blocked from git + tasks"
-            onClick={() => useApp.setState({ standupOpen: true })} />
+          {simple ? null : <Starter icon={<Icon name="team" size={13} />} label="Standup" hint="AI Done / Doing / Blocked from git + tasks"
+            onClick={() => useApp.setState({ standupOpen: true })} />}
         </div>
+
+        {perksSeen ? null : <Perks onDone={() => setAppSetting("perksSeen", true)} />}
       </div>
     </div>
+  );
+}
+
+/** What you get here that a bare terminal never gives you. Shown until dismissed. */
+const PERKS: { icon: string; title: string; body: string }[] = [
+  { icon: "eye", title: "See every change", body: "Each file it touches, as a diff, while it works. Explain turns it into plain English." },
+  { icon: "commit", title: "Save points", body: "One click commits your work on its branch, so a bad turn never costs you good code." },
+  { icon: "bulb", title: "Know what it costs", body: "Live spend per session, and tips before you send that cut wasted turns." },
+  { icon: "swap", title: "Work in parallel", body: "Paste a checklist: one agent per task, side by side, each on its own branch." },
+  { icon: "bell", title: "Pinged when it needs you", body: "Walk away. You get a ping the moment an agent asks a question or gets stuck." },
+  { icon: "lock", title: "Safety net", body: "Force-push to main, rm -rf, DROP TABLE: blocked, even with permissions skipped." },
+];
+
+function Perks({ onDone }: { onDone: () => void }) {
+  return (
+    <section className="mt-10 px-1" aria-label="What Grill Me adds">
+      <div className="flex items-baseline gap-3 mb-3">
+        <h2 className="text-[13px] font-medium text-ink">What you get here that a terminal won't give you</h2>
+        <span className="flex-1" />
+        <button className="text-[11.5px] text-faint hover:text-ink cursor-pointer" onClick={onDone}>Got it</button>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+        {PERKS.map((p) => (
+          <div key={p.title} className="rounded-xl border border-line bg-raised/30 px-3.5 py-3">
+            <div className="flex items-center gap-2 text-[12.5px] text-ink font-medium"><Icon name={p.icon} size={13} className="text-accent" /> {p.title}</div>
+            <p className="mt-1 text-[11.5px] text-dim leading-relaxed">{p.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -181,6 +181,7 @@ export function RightPanel({ active, width }: { active: Teammate | undefined; wi
   const stored = useApp((s) => s.appSettings.rightTab);
   const setAppSetting = useApp((s) => s.setAppSetting);
   const tab = rightTabOf(stored);
+  const view = useApp((s) => s.view);
   const changed = active?.changes?.length ?? 0;
   const waiting = useBridge((b) => pendingCount(b.state));
   const unread = useChatUnread();
@@ -202,7 +203,7 @@ export function RightPanel({ active, width }: { active: Teammate | undefined; wi
           </button>
         ))}
       </div>
-      <SessionCard active={active} />
+      {view === "session" ? <SessionCard active={active} /> : null}
       <div key={tab} className="tab-fade flex-1 min-h-0 flex flex-col">
         {tab === "changes" ? <ChangesPane active={active} /> : null}
         {tab === "preview" ? <PreviewPage /> : null}
