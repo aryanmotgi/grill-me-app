@@ -40,7 +40,9 @@ void main() {
   float a = mix(sharp, soft, vSoft) * vAlpha;
   if (a < 0.003) discard;
   float g = 0.94 + 0.12 * grain(gl_FragCoord.xy, uTime);
-  gl_FragColor = vec4(heat(vTemp) * a * g, 1.0);
+  vec3 c = heat(vTemp) * a * g;
+  // premultiplied: alpha follows brightness, so light floats over any app
+  gl_FragColor = vec4(c, max(c.r, max(c.g, c.b)));
 }`;
 
 const AMBIENT_VERT = `
@@ -127,7 +129,8 @@ void main() {
   float halo = exp(-d * 0.38) * 0.11 * uGlow;
   vec3 col = vec3(1.0, 0.97, 0.92) * core * 1.5 + heat(0.78) * corona + heat(0.55) * tongues + heat(0.42) * halo;
   col *= 0.95 + 0.1 * grain(gl_FragCoord.xy, t);
-  gl_FragColor = vec4(col * uAlpha * smoothstep(8.0, 5.5, d), 1.0);
+  vec3 c = col * uAlpha * smoothstep(8.0, 5.5, d);
+  gl_FragColor = vec4(c, clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0));
 }`;
 
 function compile(gl: WebGLRenderingContext, vs: string, fs: string): WebGLProgram {
@@ -165,8 +168,10 @@ export class EmberGL {
   private maxAmbient: number;
   dpr = 1;
 
-  constructor(private canvas: HTMLCanvasElement, ambient = 700) {
-    const gl = canvas.getContext("webgl", { alpha: false, antialias: false, premultipliedAlpha: false, powerPreference: "high-performance", preserveDrawingBuffer: false });
+  /** `clear`: draw light only, over a fully transparent canvas (the forge
+   *  floats over the user's apps); otherwise over black. */
+  constructor(private canvas: HTMLCanvasElement, ambient = 700, private clear = false) {
+    const gl = canvas.getContext("webgl", { alpha: clear, antialias: false, premultipliedAlpha: true, powerPreference: "high-performance", preserveDrawingBuffer: false });
     if (!gl) throw new Error("WebGL unavailable");
     this.gl = gl;
     this.ambient = compile(gl, AMBIENT_VERT, POINT_FRAG);
@@ -220,7 +225,7 @@ export class EmberGL {
     spark: { x: number; y: number; r: number; energy: number; glow: number; alpha: number } | null;
   }) {
     const gl = this.gl;
-    gl.clearColor(0, 0, 0, 1);
+    gl.clearColor(0, 0, 0, this.clear ? 0 : 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     // ambient embers

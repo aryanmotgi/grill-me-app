@@ -1,17 +1,27 @@
 // ---------------------------------------------------------------------------
-// First-run "forge": setup takes over the screen (macOS full screen) in a
-// pure-black ember world (src/components/ForgeOnboarding.tsx). It steps out
-// of full screen while a browser sign-in is open, and the finale calls
-// `forge_window_done`, which turns it back into a normal app window. Also
-// saves the shareable workflow card as a PNG, and the frame-rate probes.
+// First-run "forge": setup floats over the user's own apps
+// (src/components/ForgeOnboarding.tsx). The app window becomes a borderless,
+// fully see-through layer over the usable screen, kept above other windows.
+// Only what the forge draws catches the mouse: the page reports those areas
+// (`forge_hit_rects`) and a small watcher turns click-through on whenever the
+// pointer is anywhere else, so clicks on empty space reach the apps behind.
+// (macOS can't do per-pixel click-through by itself; this is the standard
+// workaround.) The finale calls `forge_window_done` → a normal app window.
+// Also saves the shareable workflow card as a PNG, and the frame-rate probes.
 // ---------------------------------------------------------------------------
 
 use base64::Engine;
 use serde_json::Value;
-use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 const APP_W: f64 = 1440.0;
 const APP_H: f64 = 900.0;
+
+/// Areas (logical px, relative to the window) the forge draws something in.
+static HIT: Mutex<Vec<[f64; 4]>> = Mutex::new(Vec::new());
+static OVERLAY: AtomicBool = AtomicBool::new(false);
 
 /// Same rule as the app's `initialFirstRunStep`: a saved step decides;
 /// without one, anyone who already used the app (mode, project or the old
@@ -23,15 +33,67 @@ pub fn first_run(settings: &Value) -> bool {
     }
 }
 
-/// First run: show the app window and take over the screen (macOS full
-/// screen, its own Space: black, no menu bar, no Dock).
+/// Is the point inside any of the areas?
+pub fn hits(rects: &[[f64; 4]], x: f64, y: f64) -> bool {
+    rects.iter().any(|r| x >= r[0] && y >= r[1] && x <= r[0] + r[2] && y <= r[1] + r[3])
+}
+
+/// First run: a see-through layer over the usable screen (below the menu
+/// bar), no title bar or shadow, above other windows, click-through except
+/// where the forge draws.
 pub fn enter(win: &WebviewWindow) {
-    let _ = win.center();
+    if let Ok(Some(mon)) = win.current_monitor().or_else(|_| win.primary_monitor()) {
+        let scale = mon.scale_factor();
+        let area = mon.work_area();
+        let pos = area.position.to_logical::<f64>(scale);
+        let size = area.size.to_logical::<f64>(scale);
+        let _ = win.set_decorations(false);
+        let _ = win.set_shadow(false);
+        let _ = win.set_size(LogicalSize::new(size.width, size.height));
+        let _ = win.set_position(LogicalPosition::new(pos.x, pos.y));
+    }
+    let _ = win.set_always_on_top(true);
     let _ = win.show();
     let _ = win.set_focus();
-    // the forge asks again once it's on screen (forge_fullscreen); this
-    // early request covers a fast machine and is harmless if ignored
-    let _ = win.set_fullscreen(true);
+    OVERLAY.store(true, Ordering::SeqCst);
+    let w = win.clone();
+    std::thread::spawn(move || {
+        let mut through: Option<bool> = None;
+        while OVERLAY.load(Ordering::SeqCst) {
+            let inside = (|| {
+                let cur = w.cursor_position().ok()?;
+                let pos = w.inner_position().ok()?;
+                let scale = w.scale_factor().ok()?;
+                let (x, y) = ((cur.x - pos.x as f64) / scale, (cur.y - pos.y as f64) / scale);
+                let rects = HIT.lock().ok()?;
+                Some(hits(&rects, x, y))
+            })()
+            .unwrap_or(true);
+            if through != Some(!inside) {
+                let _ = w.set_ignore_cursor_events(!inside);
+                through = Some(!inside);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        let _ = w.set_ignore_cursor_events(false);
+    });
+}
+
+/// The page reports where it draws (buttons, text, the Spark, diagrams).
+#[tauri::command]
+pub fn forge_hit_rects(rects: Vec<[f64; 4]>) {
+    if let Ok(mut h) = HIT.lock() {
+        *h = rects.into_iter().take(400).collect();
+    }
+}
+
+/// Stay above other windows (off while a browser sign-in is open).
+#[tauri::command]
+pub fn forge_front(app: AppHandle, on: bool) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.set_always_on_top(on);
+        if on { let _ = main.set_focus(); }
+    }
 }
 
 /// Back to a normal, centred app window that fits the screen.
@@ -46,24 +108,17 @@ fn restore(win: &WebviewWindow) {
     let _ = win.center();
 }
 
-/// Step out of full screen (a browser sign-in is opening) and back in.
-#[tauri::command]
-pub fn forge_fullscreen(app: AppHandle, on: bool) {
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.set_fullscreen(on);
-        if on { let _ = main.set_focus(); }
-    }
-}
-
-/// The forge's finale (or Esc): leave full screen and become the normal app
-/// window, with the desktop blur the app uses.
+/// The forge's finale (or Esc): become the normal app window again, with the
+/// desktop blur the app uses.
 #[tauri::command(async)]
 pub fn forge_window_done(app: AppHandle) {
     let Some(main) = app.get_webview_window("main") else { return };
-    let was_full = main.is_fullscreen().unwrap_or(false);
-    let _ = main.set_fullscreen(false);
-    // macOS animates out of full screen; size the window once it has
-    if was_full { std::thread::sleep(std::time::Duration::from_millis(750)); }
+    OVERLAY.store(false, Ordering::SeqCst);
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    let _ = main.set_ignore_cursor_events(false);
+    let _ = main.set_always_on_top(false);
+    let _ = main.set_decorations(true);
+    let _ = main.set_shadow(true);
     restore(&main);
     crate::apply_glass(&main);
     let _ = main.set_focus();
@@ -117,6 +172,15 @@ mod tests {
         std::fs::write(dir.join("c.png"), b"x").unwrap();
         assert_eq!(free_name(&dir, "c", "png"), dir.join("c-2.png"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn click_areas() {
+        let r = [[10.0, 10.0, 100.0, 40.0], [500.0, 0.0, 20.0, 20.0]];
+        assert!(hits(&r, 50.0, 30.0));
+        assert!(hits(&r, 510.0, 5.0));
+        assert!(!hits(&r, 200.0, 200.0));
+        assert!(!hits(&[], 1.0, 1.0));
     }
 
     #[test]

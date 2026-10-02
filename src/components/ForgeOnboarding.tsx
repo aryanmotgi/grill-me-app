@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../store";
-import { ForgeWorld, type PathPoint } from "../forge/engine";
+import { ForgeWorld } from "../forge/engine";
 import { constellationFromScan, stageIndexOf } from "../forge/constellation";
 import "../forge/forge.css";
 import { LOGO_TEXT } from "../brand";
@@ -18,8 +18,10 @@ import { MAX_PAINS, PAINS, STAGES, STYLE, TEAM, emptyProfile, profileOf, suggest
 
 // ---------------------------------------------------------------------------
 // First run: "stepping into the forge where your workspace gets made." The
-// forge takes over the screen (macOS full screen), pure black, lit only by
-// the Spark and its embers (GPU, src/forge). Same steps and logic as before:
+// forge floats over the user's own apps with no background at all: only the
+// Spark, its words, the options and the (3D) diagrams. Clicks on empty space
+// go through to the apps behind (src-tauri/src/forge.rs). Same steps and
+// logic as before:
 // check → connect your AI → project → scan → interview, workflow, upgrades,
 // card → consent → team. Esc leaves from anywhere. Reduce Motion gets a still
 // version; slow machines drop to fewer embers on their own.
@@ -29,7 +31,7 @@ const native = () => "__TAURI_INTERNALS__" in window;
 const REQUIRED = ["claude", "git", "python3"];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const STEP_NAMES: Record<string, string> = { welcome: "Arrival", check: "Your machine", connect: "Your AI", project: "Your project", scan: "Your tools", workflow: "Your workflow", consent: "Files", team: "Your team" };
-const INTRO = "For the next few minutes, the forge takes over your screen. We'll learn how you work and shape Grill Me around it. Press Esc anytime to leave.";
+const INTRO = "For the next few minutes, the forge rests on top of your screen. We'll learn how you work and shape Grill Me around it. Press Esc anytime to leave.";
 
 interface Forge {
   world: ForgeWorld;
@@ -43,8 +45,8 @@ interface Forge {
   /** an answer is absorbed into the Spark */
   absorb: (el: Element | null) => void;
   finish: (fast: boolean) => void;
-  /** step out of full screen (e.g. while a browser sign-in is open) and back */
-  fullscreen: (on: boolean) => void;
+  /** stay above other windows (off while a browser sign-in is open) */
+  front: (on: boolean) => void;
 }
 interface SceneProps { f: Forge }
 
@@ -84,6 +86,8 @@ export function ForgeOnboarding() {
   const step = useApp((s) => firstRunStepOf(s.appSettings.firstRunStep));
   const setAppSetting = useApp((s) => s.setAppSetting);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const shadeRef = useRef<HTMLCanvasElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sayRef = useRef<HTMLDivElement>(null);
   const toastRef = useRef<HTMLDivElement>(null);
@@ -99,7 +103,7 @@ export function ForgeOnboarding() {
     // ?reduce-motion forces the still version (handy to check it in a browser)
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches || location.search.includes("reduce-motion");
     let world: ForgeWorld;
-    try { world = new ForgeWorld(canvasRef.current!, labelsRef.current!, reduce); }
+    try { world = new ForgeWorld(canvasRef.current!, shadeRef.current!, labelsRef.current!, reduce); }
     catch { setAppSetting("firstRunStep", "done"); return; } // no WebGL: straight to the app
     const wait = (ms: number) => sleep(reduce ? Math.min(ms, 200) : ms);
     let toastT = 0;
@@ -146,27 +150,42 @@ export function ForgeOnboarding() {
         world.feed();
       },
       finish: (fast) => { if (!finaleRef.current) setFinale(fast ? "fast" : "full"); },
-      fullscreen: (on) => { if (native()) void invoke("forge_fullscreen", { on }).catch(() => {}); },
+      front: (on) => { if (native()) void invoke("forge_front", { on }).catch(() => {}); },
     };
     world.onFrame = (sp) => { if (sayRef.current) sayRef.current.style.top = `${sayTop(sp.y, sp.r)}px`; };
     world.onLite = () => toast("Fewer embers: this computer is busy right now");
     world.start();
-    // take over the screen once we're actually on it (asking while the
-    // window is still appearing is ignored by macOS)
-    forge.fullscreen(true);
+    // only what's drawn is clickable: tell the app where that is, so clicks
+    // on empty space fall through to the apps behind
+    let lastHit = "";
+    const hitTimer = window.setInterval(() => {
+      if (!native() || !rootRef.current) return;
+      const rects: number[][] = [];
+      const add = (r: DOMRect | readonly [number, number, number, number]) => {
+        const [x, y, w, h] = r instanceof DOMRect ? [r.left, r.top, r.width, r.height] : r;
+        if (w > 0 && h > 0) rects.push([Math.round(x - 6), Math.round(y - 6), Math.round(w + 12), Math.round(h + 12)]);
+      };
+      rootRef.current.querySelectorAll(".forge-ui *, .forge-hud *, .forge-say, .forge-star, .forge-stage").forEach((el) => {
+        const he = el as HTMLElement;
+        if (he.offsetParent === null || getComputedStyle(he).opacity === "0") return;
+        add(he.getBoundingClientRect());
+      });
+      if (world.spark.born && world.spark.alpha > 0) add(world.sparkRect());
+      const key = JSON.stringify(rects);
+      if (key !== lastHit) { lastHit = key; void invoke("forge_hit_rects", { rects }).catch(() => {}); }
+    }, 120);
     void probeFps("forge-intro", 9000, () => ({ cpuMsPerFrame: world.workAvg(), ambientEmbers: world.gl.ambientCount }));
     setF(forge);
     // first time in: embers rise into the wordmark, burst, and the Spark is
     // born. Resuming mid-setup (opening a project reloads the app) skips it.
     void (async () => {
       const first = firstRunStepOf(useApp.getState().appSettings.firstRunStep) === "welcome";
-      // let macOS finish sliding into full screen before the wordmark forms
-      await sleep(reduce ? 0 : 1100);
+      await sleep(reduce ? 0 : 500);
       if (first) await world.logoBurst(LOGO_TEXT, wait);
       else world.sparkBorn(world.W / 2, world.H * .34);
       setReady(true);
     })();
-    return () => { world.stop(); document.documentElement.classList.remove("forge-on"); };
+    return () => { clearInterval(hitTimer); world.stop(); document.documentElement.classList.remove("forge-on"); };
   }, []);
 
   // Esc / "Leave": always works, from anywhere
@@ -205,7 +224,8 @@ export function ForgeOnboarding() {
 
   const n = stepNumber(step);
   return (
-    <div className="forge" role="dialog" aria-label="Set up Grill Me">
+    <div ref={rootRef} className="forge" role="dialog" aria-label="Set up Grill Me">
+      <canvas ref={shadeRef} />
       <canvas ref={canvasRef} />
       <div ref={labelsRef} className="forge-labels" aria-hidden />
       <div className="forge-ui">{f && ready && !finale ? <Scene step={step} f={f} /> : null}</div>
@@ -344,13 +364,13 @@ function Connect({ f }: SceneProps) {
   const signIn = async (r: AiStatus) => {
     setWaiting(r.id);
     if (!native()) { await sleep(1400); ignite({ ...r, signedIn: true }); setWaiting(""); return; }
-    // the browser opens for the sign-in: step out of full screen meanwhile
-    f.fullscreen(false);
+    // the browser opens for the sign-in: let it come to the front meanwhile
+    f.front(false);
     const started = Date.now();
     const poll = window.setInterval(() => {
-      if (Date.now() - started > 10 * 60_000) { window.clearInterval(poll); setWaiting(""); f.fullscreen(true); return; }
+      if (Date.now() - started > 10 * 60_000) { window.clearInterval(poll); setWaiting(""); f.front(true); return; }
       void invoke<AiStatus[]>("ai_status", { ids: [r.id] }).then(([now]) => {
-        if (now?.signedIn === true) { window.clearInterval(poll); setWaiting(""); f.fullscreen(true); setTimeout(() => ignite(now), 700); }
+        if (now?.signedIn === true) { window.clearInterval(poll); setWaiting(""); f.front(true); setTimeout(() => ignite(now), 400); }
       }).catch(() => {});
     }, 3000);
     invoke("ai_login", { id: r.id }).catch((e) => f.toast(`${e}`));
@@ -672,12 +692,12 @@ function Forged({ f, scan, catalog, profile, phase, setPhase }: SceneProps & { s
   const y = H * .46;
   const slots = STAGES.map((_, i) => ({ x: W * .15 + (W * .7) * (i / (STAGES.length - 1)), y }));
 
-  // stage lights + the path between them, drawn on the GPU
+  // the stages live in the 3D scene (engine): lights, diamonds, path, labels
   useEffect(() => {
-    nodes.forEach((n, i) => f.world.setBeacon(`stage:${n.id}`, { x: n.x, y: n.y, lit: n.lit ? 1 : .12, size: 30, pulse: target === i }));
-    f.world.setPath(nodes.length ? nodes.map((n): PathPoint => ({ x: n.x, y: n.y, lit: n.lit })) : null);
-  }, [nodes, target]);
-  useEffect(() => () => { f.world.clearBeacons(); f.world.setPath(null); }, []);
+    f.world.setStages(nodes.map((n) => ({ id: n.id, name: n.name, lit: n.lit, sub: n.lit ? n.tools.slice(0, 2).join(", ") + (n.tools.length > 2 ? ` +${n.tools.length - 2}` : "") : "Dark" })));
+  }, [nodes]);
+  useEffect(() => { f.world.pulseStage(target); }, [target]);
+  useEffect(() => () => { f.world.clearStages(); }, []);
 
   // the stars pull into a line and are forged into the five stages
   useEffect(() => {
@@ -709,12 +729,7 @@ function Forged({ f, scan, catalog, profile, phase, setPhase }: SceneProps & { s
     setFocus(p);
   };
 
-  const labels = nodes.map((n) => (
-    <div key={n.id} className={`forge-stage ${n.lit ? "" : "gap"}`} style={{ left: n.x, top: n.y + 30 }}>
-      <b>{n.name}</b>
-      <small>{n.lit ? n.tools.slice(0, 2).join(", ") + (n.tools.length > 2 ? ` +${n.tools.length - 2}` : "") : "Dark"}</small>
-    </div>
-  ));
+  const labels = null;
 
   if (phase === "path") {
     return (
@@ -749,7 +764,7 @@ function Forged({ f, scan, catalog, profile, phase, setPhase }: SceneProps & { s
           <div className="forge-ups" style={{ top: H * .64 }}>
             {upgrades.filter((u) => !placed.some((p) => p.id === u.id)).map((u, i) => (
               <UpgradeCard key={u.id} u={u} index={i} reduce={f.world.reduce}
-                stagePos={() => { const at = STAGES.findIndex((s) => s.id === u.stage); return { x: nodes[at]?.x ?? 0, y: nodes[at]?.y ?? 0, at }; }}
+                stagePos={() => { const at = STAGES.findIndex((s) => s.id === u.stage); const p = f.world.stagePos(at); return { x: p?.x ?? 0, y: p?.y ?? 0, at }; }}
                 onTarget={setTarget} onPlace={() => { setTarget(-1); light(u); }} onMiss={(stage) => f.toast(`Drop it on ${stage}`)} />
             ))}
           </div>
@@ -808,8 +823,7 @@ function ShareCard({ f, nodes, scan, profile }: SceneProps & { nodes: NodeView[]
   const [top, setTop] = useState<number | null>(null);
   const card = useMemo(() => drawCard(nodes, scan, profile), []);
   useEffect(() => {
-    f.world.clearBeacons();
-    f.world.setPath(null);
+    f.world.clearStages();
     f.world.sparkTo(f.world.W / 2, f.world.H * .1, 13);
     void f.say("Your workflow, as a card. Share it if you like.").then(() => setTop(f.below(18)));
   }, []);

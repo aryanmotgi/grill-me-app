@@ -1,36 +1,40 @@
-/* The forge (ForgeOnboarding.tsx). Pure black; the only light is the Spark
-   and the embers (drawn on the GPU). One typeface, small and precise. No
-   boxes, no washes, no glowing pills: text floats, controls are thin lines. */
+/* The forge (ForgeOnboarding.tsx). It floats over the user's own apps with
+   no background at all. Everything must read on any app, light or dark: text
+   and lines carry a soft dark halo (no boxes); controls are quiet glass. */
 .forge {
   --f-ink: rgba(255, 255, 255, .92);
-  --f-dim: rgba(255, 255, 255, .58);
-  --f-faint: rgba(255, 255, 255, .34);
+  --f-dim: rgba(255, 255, 255, .7);
+  --f-faint: rgba(255, 255, 255, .5);
   --f-line: rgba(255, 255, 255, .2);
   --f-ember: #ff9a52;
-  position: fixed; inset: 0; overflow: hidden; background: #000; color: var(--f-ink);
+  /* a tight dark outline + a soft falloff: white text reads on white and black */
+  --f-halo: 0 0 1px #000, 0 0 1px #000, 0 1px 2px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.7), 0 0 18px rgba(0,0,0,.45);
+  /* small labels: tight only, so they stay crisp on white */
+  --f-halo-sm: 0 0 1px #000, 0 0 1px #000, 0 0 2px rgba(0,0,0,.85), 0 0 5px rgba(0,0,0,.45);
+  position: fixed; inset: 0; overflow: hidden; background: transparent; color: var(--f-ink); text-shadow: var(--f-halo);
   font: 400 14px/1.6 -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
   letter-spacing: -.003em; -webkit-font-smoothing: antialiased; font-feature-settings: "tnum";
   cursor: default; user-select: none; -webkit-user-select: none;
 }
-html.forge-on, html.forge-on body, html.forge-on #root { background: #000 !important; background-image: none !important; }
+html.forge-on, html.forge-on body, html.forge-on #root { background: transparent !important; background-image: none !important; }
 .forge canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .forge-labels { position: absolute; inset: 0; pointer-events: none; }
 .forge-ui { position: absolute; inset: 0; }
 
 /* HUD: a quiet frame like a camera viewfinder */
-.forge-hud { position: absolute; left: 32px; right: 32px; top: 26px; display: flex; align-items: center; gap: 18px; z-index: 9;
+.forge-hud { position: absolute; left: 32px; right: 32px; top: 26px; display: flex; align-items: center; gap: 18px; z-index: 9; text-shadow: var(--f-halo-sm); font-weight: 600;
   font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--f-faint); }
 .forge-hud b { color: var(--f-dim); font-weight: 500; }
 .forge-hud .grow { flex: 1; }
 .forge-hud button { all: unset; cursor: pointer; color: var(--f-faint); letter-spacing: .22em; transition: color .2s; }
 .forge-hud button:hover, .forge-hud button:focus-visible { color: var(--f-ink); }
-.forge-progress { position: absolute; left: 32px; right: 32px; bottom: 28px; height: 1px; background: rgba(255,255,255,.08); z-index: 9; }
+.forge-progress { position: absolute; left: 32px; right: 32px; bottom: 28px; height: 2px; background: rgba(0,0,0,.25); z-index: 9; border-radius: 2px; }
 .forge-progress i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255, 170, 110, .7); transition: width .8s cubic-bezier(.2, .8, .2, 1); }
 
 /* the Spark speaks: text floats under it and types itself out */
 .forge-say { position: absolute; left: 50%; transform: translateX(-50%); width: min(560px, calc(100vw - 64px)); text-align: center;
   font-size: 17px; line-height: 1.6; font-weight: 400; color: var(--f-ink); letter-spacing: -.01em; text-wrap: balance;
-  opacity: 0; transition: opacity .4s; pointer-events: none; z-index: 4; text-shadow: 0 0 12px #000, 0 0 2px #000; }
+  opacity: 0; transition: opacity .4s; pointer-events: none; z-index: 4; text-shadow: var(--f-halo); font-weight: 500; }
 .forge-say.on { opacity: 1; }
 .forge-say .caret { display: inline-block; width: 1px; height: 1.05em; margin-left: 2px; vertical-align: -2px; background: var(--f-ember); animation: forge-caret 1s steps(1) infinite; }
 @keyframes forge-caret { 50% { opacity: 0; } }
@@ -44,26 +48,31 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: #000 !impor
 
 /* controls: plain text with a hairline */
 .forge-btn { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 10px;
-  padding: 11px 20px; border: 1px solid var(--f-line); border-radius: 2px;
-  font-size: 11px; font-weight: 500; letter-spacing: .2em; text-transform: uppercase; color: var(--f-dim);
-  transition: border-color .25s, color .25s, background .25s; }
-.forge-btn:hover, .forge-btn:focus-visible { border-color: rgba(255,255,255,.62); color: #fff; }
-.forge-btn.primary { color: var(--f-ink); border-color: rgba(255, 196, 150, .45); }
+  padding: 10px 18px; border: 1px solid rgba(255,255,255,.18); border-radius: 10px;
+  background: rgba(16, 12, 14, .66); -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 6px 24px rgba(0,0,0,.28);
+  font-size: 13px; font-weight: 500; letter-spacing: .01em; color: rgba(255,255,255,.82); text-shadow: none;
+  transition: border-color .25s, color .25s, background .25s, box-shadow .25s; }
+.forge-btn:hover, .forge-btn:focus-visible { border-color: rgba(255,255,255,.45); color: #fff; background: rgba(22, 16, 19, .78); }
+.forge-btn.primary { color: #fff; border-color: rgba(255, 150, 90, .6); box-shadow: 0 6px 24px rgba(0,0,0,.28), 0 0 22px rgba(255, 120, 50, .16); }
+.forge-btn.primary:hover { border-color: rgba(255, 170, 110, .9); box-shadow: 0 6px 24px rgba(0,0,0,.28), 0 0 28px rgba(255, 120, 50, .3); }
 .forge-btn.primary::after { content: "→"; letter-spacing: 0; font-size: 13px; color: var(--f-ember); transition: transform .25s; }
 .forge-btn.primary:hover::after { transform: translateX(3px); }
 .forge-btn:disabled, .forge-btn[aria-disabled="true"] { opacity: .35; cursor: default; }
-.forge-btn.small { padding: 7px 13px; font-size: 10px; }
-.forge-link { all: unset; cursor: pointer; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--f-faint); padding: 4px 0; border-bottom: 1px solid transparent; transition: color .2s, border-color .2s; }
+.forge-btn.small { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+.forge-link { all: unset; cursor: pointer; font-size: 12.5px; letter-spacing: .01em; color: rgba(255,255,255,.7); padding: 4px 0; border-bottom: 1px solid transparent; transition: color .2s, border-color .2s; }
 .forge-link:hover, .forge-link:focus-visible { color: var(--f-ink); border-bottom-color: var(--f-line); }
 
 /* answer options: words, not pills */
-.forge-opts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 30px; max-width: 680px; }
-.forge-opt { all: unset; cursor: pointer; font-size: 15px; color: var(--f-dim); padding: 6px 0; border-bottom: 1px solid transparent; display: inline-flex; align-items: center; gap: 8px; transition: color .2s, border-color .2s; }
-.forge-opt:hover, .forge-opt:focus-visible { color: #fff; border-bottom-color: var(--f-line); }
-.forge-opt.on { color: #fff; border-bottom-color: rgba(255, 170, 110, .7); }
+.forge-opts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 700px; }
+.forge-opt { all: unset; cursor: pointer; font-size: 14px; font-weight: 500; color: rgba(255,255,255,.85); padding: 8px 15px; border-radius: 10px; display: inline-flex; align-items: center; gap: 8px; text-shadow: none;
+  border: 1px solid rgba(255,255,255,.14); background: rgba(16, 12, 14, .6); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  transition: color .2s, border-color .2s, background .2s; }
+.forge-opt:hover, .forge-opt:focus-visible { color: #fff; border-color: rgba(255,255,255,.4); }
+.forge-opt.on { color: #fff; border-color: rgba(255, 150, 90, .75); background: rgba(60, 26, 12, .7); box-shadow: 0 0 18px rgba(255, 120, 50, .2); }
 .forge-opt .n { font-size: 10px; color: var(--f-ember); letter-spacing: .1em; }
 .forge-type { display: flex; align-items: center; gap: 16px; width: min(440px, 100%); }
-.forge-type input { all: unset; box-sizing: border-box; flex: 1; min-width: 0; font-size: 15px; color: var(--f-ink); padding: 8px 0; border-bottom: 1px solid var(--f-line); transition: border-color .2s; user-select: text; -webkit-user-select: text; cursor: text; }
+.forge-type input { all: unset; box-sizing: border-box; flex: 1; min-width: 0; font-size: 14px; color: var(--f-ink); padding: 9px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.16); background: rgba(16, 12, 14, .66); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); text-shadow: none; transition: border-color .2s; user-select: text; -webkit-user-select: text; cursor: text; }
 .forge-type input:focus { border-bottom-color: rgba(255, 170, 110, .7); }
 .forge-type input::placeholder { color: var(--f-faint); }
 .forge-note { font-size: 12.5px; color: var(--f-dim); text-align: center; max-width: 520px; }
@@ -82,7 +91,7 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: #000 !impor
 .forge-check small { font-size: 12px; color: var(--f-dim); }
 
 /* labels that sit on GPU-drawn lights (AI orbs, stars, stages) */
-.forge-tag { position: absolute; transform: translate(-50%, 0); text-align: center; white-space: nowrap; pointer-events: none; text-shadow: 0 0 10px #000, 0 0 2px #000; }
+.forge-tag { position: absolute; transform: translate(-50%, 0); text-align: center; white-space: nowrap; pointer-events: none; text-shadow: var(--f-halo-sm); }
 .forge-tag b { display: block; font-size: 13px; font-weight: 500; color: var(--f-ink); }
 .forge-tag small { display: block; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--f-faint); margin-top: 3px; }
 .forge-tag.dark b { color: var(--f-faint); }
@@ -90,34 +99,39 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: #000 !impor
 .forge-hit:focus-visible { outline: 1px solid rgba(255,255,255,.5); outline-offset: 4px; }
 .forge-orb-act { position: absolute; transform: translate(-50%, 0); pointer-events: auto; }
 
-.forge-star { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11.5px; color: var(--f-dim); transition: opacity .6s; text-shadow: 0 0 10px #000, 0 0 2px #000; }
+.forge-star { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: #fff; transition: opacity .6s; text-shadow: var(--f-halo-sm); transform-origin: 50% 0; }
 .forge-star.agent { font-size: 13px; font-weight: 500; color: var(--f-ink); letter-spacing: .01em; }
 .forge-star em { font-style: normal; font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--f-faint); margin-left: 6px; }
 .forge-star.mate { color: #c9f0d4; }
 .forge-labels.recede .forge-star { opacity: 0 !important; }
 
 /* stages on the forged path */
-.forge-stage { position: absolute; transform: translate(-50%, 0); width: 160px; text-align: center; pointer-events: none; text-shadow: 0 0 10px #000; }
+.forge-stage { position: absolute; left: 0; top: 0; width: 170px; text-align: center; pointer-events: none; text-shadow: var(--f-halo-sm); }
 .forge-stage b { display: block; font-size: 10.5px; font-weight: 500; letter-spacing: .26em; text-transform: uppercase; color: var(--f-ink); }
 .forge-stage small { display: block; font-size: 12px; color: var(--f-dim); margin-top: 6px; line-height: 1.4; }
 .forge-stage.gap b { color: var(--f-faint); }
-.forge-stage.gap small { color: rgba(255,255,255,.22); }
+.forge-stage.gap small { color: rgba(255,255,255,.4); }
 
 /* upgrades: quiet cards with a hairline; drag one onto its stage */
 .forge-ups { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; width: min(900px, calc(100vw - 64px)); z-index: 5; }
-.forge-up { position: relative; width: 250px; box-sizing: border-box; padding: 16px 18px 14px; border: 1px solid rgba(255,255,255,.14); border-radius: 2px; background: #000;
-  cursor: grab; touch-action: none; transition: border-color .25s, opacity .35s; }
+.forge-up { position: relative; width: 256px; box-sizing: border-box; padding: 14px 16px 12px 50px; border: 1px solid rgba(255, 170, 120, .26); border-radius: 14px;
+  background: rgba(18, 12, 14, .74); -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 10px 34px rgba(0,0,0,.35), 0 0 26px rgba(255, 100, 30, .1); text-shadow: none;
+  cursor: grab; touch-action: none; transition: border-color .25s, opacity .35s, box-shadow .25s; }
+.forge-up::before { content: ""; position: absolute; left: 17px; top: 17px; width: 18px; height: 18px; border-radius: 5px; transform: rotate(45deg);
+  background: radial-gradient(circle at 35% 30%, #fff2d6, #ffb347 35%, #ff6a2a 70%, #7a2410); box-shadow: 0 0 12px #ff8a3a, 0 0 26px rgba(255, 100, 30, .45); }
 .forge-up:hover, .forge-up:focus-visible { border-color: rgba(255, 196, 150, .5); outline: none; }
 .forge-up.dragging { cursor: grabbing; border-color: rgba(255, 196, 150, .8); z-index: 9; }
 .forge-up .kind { font-size: 9.5px; letter-spacing: .24em; text-transform: uppercase; color: var(--f-faint); }
-.forge-up .kind i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--f-ember); margin-right: 8px; vertical-align: 1px; }
+.forge-up .kind i { display: none; }
 .forge-up .name { font-size: 15px; font-weight: 500; margin-top: 8px; color: var(--f-ink); }
 .forge-up .why { font-size: 12.5px; color: var(--f-dim); margin-top: 4px; line-height: 1.45; }
 .forge-up .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--f-faint); }
 .forge-up .foot b { color: var(--f-ember); font-weight: 500; }
 .forge-up .foot button { all: unset; cursor: pointer; color: var(--f-dim); letter-spacing: .2em; }
 .forge-up .foot button:hover, .forge-up .foot button:focus-visible { color: #fff; }
-.forge-placed { position: absolute; transform: translateX(-50%); width: min(380px, calc(100vw - 64px)); text-align: center; z-index: 6; animation: forge-in .45s cubic-bezier(.2, .8, .2, 1) both; }
+.forge-placed { position: absolute; transform: translateX(-50%); width: min(400px, calc(100vw - 64px)); text-align: center; z-index: 6; animation: forge-in .45s cubic-bezier(.2, .8, .2, 1) both;
+  padding: 16px 20px; border-radius: 14px; border: 1px solid rgba(255, 170, 120, .26); background: rgba(18, 12, 14, .78); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); text-shadow: none; }
 .forge-placed .head { font-size: 15px; font-weight: 500; }
 .forge-placed p { font-size: 12.5px; color: var(--f-dim); margin: 6px 0 0; }
 .forge-placed code { display: block; margin: 14px auto 0; font: 12px ui-monospace, "SF Mono", Menlo, monospace; color: #ffd2ad; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.1); border-bottom: 1px solid rgba(255,255,255,.1); overflow-x: auto; white-space: nowrap; user-select: text; -webkit-user-select: text; }
@@ -131,7 +145,7 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: #000 !impor
 .forge-files code { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--f-faint); align-self: center; grid-row: 1; grid-column: 2; }
 
 /* share card */
-.forge-card { width: min(640px, 100%); border: 1px solid rgba(255,255,255,.12); }
+.forge-card { width: min(640px, 100%); border: 1px solid rgba(255,255,255,.16); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,.45); }
 
 /* finale: the glass box (hairline cube, filled by light) */
 .forge-box { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; perspective: 700px; opacity: 0; pointer-events: none; z-index: 6; transition: opacity .35s, transform .7s cubic-bezier(.6, 0, .2, 1); }
@@ -159,3 +173,13 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: #000 !impor
   .forge-grain, .forge-say .caret { animation: none; }
   .forge-content, .forge-row, .forge-placed { animation: none; }
 }
+
+/* the Spark's words and the small notes sit on a soft, edgeless pool of
+   shade (not a box), so long text stays readable over busy, bright apps */
+.forge-say::before, .forge-note::before, .forge-micro::before {
+  content: ""; position: absolute; inset: -26px -60px; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(0,0,0,.6), rgba(0,0,0,.32) 55%, rgba(0,0,0,0));
+  filter: blur(6px);
+}
+.forge-note, .forge-micro { position: relative; z-index: 0; }
+.forge-say { isolation: isolate; }
