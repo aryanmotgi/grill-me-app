@@ -4658,6 +4658,7 @@ pub fn run() {
             forge::save_share_card,
             forge::forge_front,
             forge::forge_hit_rects,
+            forge::forge_window_enter,
             blur::forge_blur_mask,
             forge::perf_enabled,
             forge::perf_report,

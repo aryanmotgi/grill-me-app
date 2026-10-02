@@ -1070,6 +1070,11 @@ function pinFirstRun(settings: Record<string, unknown>) {
   const st = useApp.getState();
   if (settings.uiLayout == null) st.setAppSetting("uiLayout", uiLayoutOf(settings));
   if (settings.firstRunStep == null) st.setAppSetting("firstRunStep", initialFirstRunStep(settings));
+  // "Finish later" last time: setup picks up where it left off
+  if (typeof settings.firstRunPaused === "string") {
+    st.setAppSetting("firstRunStep", settings.firstRunPaused);
+    st.setAppSetting("firstRunPaused", null);
+  }
   // a random id for this install: team summaries carry it so each Mac can
   // tell its own sessions from teammates' (local session ids repeat — "me")
   if (typeof settings.installId !== "string") st.setAppSetting("installId", crypto.randomUUID());

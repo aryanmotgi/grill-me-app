@@ -109,7 +109,7 @@ function Stage({ f, step, title, body, children, primary, secondary, skip, back 
   // Enter presses the main button (unless typing in a field)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Enter" || !primary || primary.disabled) return;
+      if (e.key !== "Enter" || !primary || primary.disabled || document.querySelector(".forge-confirm")) return;
       if ((e.target as HTMLElement).tagName === "INPUT") return;
       e.preventDefault();
       press(panelRef.current?.querySelector<HTMLElement>(".forge-btn.primary") ?? null);
@@ -236,7 +236,7 @@ export function ForgeOnboarding() {
       if (!native() || !rootRef.current) return;
       const rects: number[][] = [];
       const add = (x: number, y: number, w: number, h: number) => { if (w > 0 && h > 0) rects.push([Math.round(x - 8), Math.round(y - 8), Math.round(w + 16), Math.round(h + 16)]); };
-      rootRef.current.querySelectorAll(".forge-panel, .forge-hud, .forge-toast.on").forEach((el) => { const r = el.getBoundingClientRect(); add(r.left, r.top, r.width, r.height); });
+      rootRef.current.querySelectorAll(".forge-panel, .forge-hud, .forge-toast.on, .forge-confirm").forEach((el) => { const r = el.getBoundingClientRect(); add(r.left, r.top, r.width, r.height); });
       const card = cardRef.current?.rect();
       if (card) add(...card);
       if (world.spark.born && world.spark.alpha > 0) add(...world.sparkRect());
@@ -296,17 +296,24 @@ export function ForgeOnboarding() {
     return () => { ro.disconnect(); mo.disconnect(); clearInterval(t); removeEventListener("resize", follow); removeEventListener("forge-stage", flare); card.stop(); cardRef.current = null; };
   }, []);
 
-  // Esc / "Leave": always works, from anywhere
-  const leave = () => {
+  // Esc / "Esc to leave": always works, from anywhere, but asks first.
+  // "Finish later" opens the app and remembers the step: setup picks up
+  // there on the next launch, or from the app's "Finish setup" button.
+  const [asking, setAsking] = useState(false);
+  const askingRef = useRef(asking);
+  askingRef.current = asking;
+  const later = () => {
     const st = useApp.getState();
-    st.setAppSetting("onboarded", true);
+    st.setAppSetting("firstRunPaused", firstRunStepOf(st.appSettings.firstRunStep));
     if (st.appMode === null) st.setAppMode("solo");
+    setAsking(false);
     f?.finish(true);
   };
+  const leave = () => { if (!finaleRef.current) setAsking(!askingRef.current); };
   const leaveRef = useRef(leave);
   leaveRef.current = leave;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); leaveRef.current(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); leaveRef.current(); } };
     addEventListener("keydown", onKey);
     let un: (() => void) | undefined;
     if (native()) void import("@tauri-apps/api/event").then(({ listen }) => listen("forge-escape", () => leaveRef.current())).then((u) => { un = u; });
@@ -352,6 +359,19 @@ export function ForgeOnboarding() {
       <div ref={labelsRef} className="forge-labels" aria-hidden />
       <div className="forge-ui">{f && ready && !finale ? <Scene step={step} f={f} /> : null}</div>
       <div ref={flashRef} className="forge-flash" aria-hidden />
+      {asking && !finale ? (
+        <div className="forge-confirm-veil">
+          <div className="forge-confirm" role="alertdialog" aria-labelledby="forge-leave-t">
+            <h2 id="forge-leave-t">Leave setup?</h2>
+            <p>You can finish it later. It'll pick up at step {stepNumber(step)} of {FIRST_RUN_STEPS.length}, {STEP_NAMES[step].toLowerCase()}.</p>
+            <div className="acts">
+              <button type="button" className="forge-btn" onClick={later}>Finish later</button>
+              <button type="button" className="forge-btn primary" autoFocus onClick={() => setAsking(false)}><span>Keep going</span></button>
+            </div>
+            <small>Esc again to keep going</small>
+          </div>
+        </div>
+      ) : null}
       {!finale ? (
         <div className="forge-hud">
           <b>Grill Me</b><span>Setup</span>
@@ -420,6 +440,24 @@ function startBlurMask(root: HTMLElement): () => void {
 }
 
 /** Show first-run setup? Waits for settings so existing users never see a flash. */
+/** In the app, after "Finish later": one button back into setup, where it left off. */
+export function FinishSetupPill() {
+  const paused = useApp((s) => s.appSettings.firstRunPaused);
+  if (typeof paused !== "string") return null;
+  const step = firstRunStepOf(paused);
+  const resume = () => {
+    const st = useApp.getState();
+    st.setAppSetting("firstRunPaused", null);
+    st.setAppSetting("firstRunStep", step);
+    if (native()) void invoke("forge_window_enter").catch(() => {});
+  };
+  return (
+    <button type="button" className="gm-finish-setup" onClick={resume}>
+      <span className="dot" aria-hidden />Finish setup<em>step {stepNumber(step)} of {FIRST_RUN_STEPS.length}</em>
+    </button>
+  );
+}
+
 export function useFirstRunActive(): boolean {
   const loaded = useApp((s) => s.settingsLoaded);
   const step = useApp((s) => s.appSettings.firstRunStep);
@@ -1131,6 +1169,7 @@ function Finish({ f, step }: SceneProps) {
   const open = () => {
     const st = useApp.getState();
     st.setAppSetting("installConsent", files ? true : "declined");
+    st.setAppSetting("firstRunPaused", null);
     st.setAppSetting("onboarded", true);
     st.setAppMode(team);
     st.setView("new");

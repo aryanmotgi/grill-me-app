@@ -5,7 +5,7 @@ import { DragHandle } from "./components/DragHandle";
 import { SimpleShell } from "./components/simple/SimpleShell";
 import { CenterStage, Overlays } from "./components/ShellParts";
 import { uiLayoutOf } from "./lib/uiLayout";
-import { ForgeOnboarding, useFirstRunActive } from "./components/ForgeOnboarding";
+import { FinishSetupPill, ForgeOnboarding, useFirstRunActive } from "./components/ForgeOnboarding";
 import { applyTheme, themes } from "./theme/themes";
 import { NavRail } from "./components/NavRail";
 import { WorkspacePanel } from "./components/WorkspacePanel";
@@ -299,7 +299,7 @@ export default function App() {
     );
   }
 
-  if (uiLayout === "simple") return <SimpleShell active={active} split={split} />;
+  if (uiLayout === "simple") return <><SimpleShell active={active} split={split} /><FinishSetupPill /></>;
 
   return (
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
@@ -334,6 +334,7 @@ export default function App() {
         {focusMode ? null : dockSide("right")}
       </div>
       <Overlays />
+      <FinishSetupPill />
     </div>
   );
 }

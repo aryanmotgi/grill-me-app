@@ -327,3 +327,24 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
   .forge-stagebody, .forge-footer { transition: none; }
   .forge-body .caret { animation: none; }
 }
+
+/* "Leave setup?": asked before Esc ends anything */
+.forge-confirm-veil { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; pointer-events: none;
+  background: radial-gradient(circle at 50% 45%, rgba(0,0,0,.28), transparent 60%); animation: forge-panel-in .25s both; }
+.forge-confirm { pointer-events: auto; width: min(400px, calc(100vw - 48px)); box-sizing: border-box; padding: 22px 22px 16px; border-radius: 18px;
+  background: linear-gradient(160deg, rgba(44, 28, 22, .94), rgba(16, 12, 16, .94)); border: 1px solid rgba(255, 170, 110, .35);
+  box-shadow: 0 24px 70px rgba(0,0,0,.5), 0 0 40px rgba(255, 110, 40, .15); text-shadow: none;
+  animation: forge-rise .35s cubic-bezier(.2, .8, .2, 1) both; }
+.forge-confirm h2 { margin: 0 0 6px; font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
+.forge-confirm p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: rgba(255,255,255,.82); }
+.forge-confirm .acts { display: flex; justify-content: flex-end; gap: 10px; }
+.forge-confirm small { display: block; margin-top: 12px; text-align: right; font-size: 11.5px; color: var(--f-faint); }
+
+/* in the app: back into a paused setup */
+.gm-finish-setup { all: unset; position: fixed; right: 18px; bottom: 40px; z-index: 60; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 14px; border-radius: 999px; font: 600 13px -apple-system, "SF Pro Text", system-ui, sans-serif; color: #1d0f06;
+  background: linear-gradient(100deg, #ff5a24, #ff8a3a 55%, #f2a04a); box-shadow: 0 8px 24px rgba(0,0,0,.3), 0 0 24px rgba(255, 110, 40, .35);
+  transition: transform .18s cubic-bezier(.2, .8, .2, 1), box-shadow .25s; }
+.gm-finish-setup:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(0,0,0,.32), 0 0 36px rgba(255, 120, 50, .55); }
+.gm-finish-setup .dot { width: 8px; height: 8px; border-radius: 50%; background: #fff4dc; box-shadow: 0 0 8px #fff; }
+.gm-finish-setup em { font-style: normal; font-weight: 500; opacity: .7; }
