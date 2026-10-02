@@ -13,6 +13,8 @@ import { PreviewPage } from "../PreviewPage";
 import { kTokens, money, sessionStats } from "../../lib/coach";
 import { submitToAgent } from "../../lib/ptyReady";
 import { ptyIdFor } from "../../store";
+import { useTests } from "../../lib/testsStore";
+import { automationOn, withAutomation } from "../../lib/automations";
 import { rightTabOf, type RightTab } from "../../lib/uiLayout";
 import type { Teammate } from "../../types";
 
@@ -30,6 +32,35 @@ function Stat({ label, value, tone, title }: { label: string; value: string; ton
       <div className={`num text-[15px] leading-tight ${tone === "warn" ? "text-warn" : "text-ink"}`}>{value}</div>
       <div className="text-[10.5px] text-faint truncate">{label}</div>
     </div>
+  );
+}
+
+/** Did its last change pass the tests? Off by default; one click turns it on. */
+function TestsLine({ id }: { id: string }) {
+  const settings = useApp((s) => s.appSettings);
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const toast = useApp((s) => s.toast);
+  const r = useTests((t) => t.results[id]);
+  if (!automationOn(settings, "auto-test")) {
+    return (
+      <button className="flex items-center gap-1.5 text-[11.5px] text-dim hover:text-ink cursor-pointer text-left"
+        title="Runs the project's tests after each reply that changed something, and shows the result here"
+        onClick={() => { const [k, v] = withAutomation(settings, "auto-test", true); setAppSetting(k, v); }}>
+        <Icon name="check" size={11} /> Check tests after every reply
+      </button>
+    );
+  }
+  if (!r) return <span className="flex items-center gap-1.5 text-[11.5px] text-faint"><Icon name="check" size={11} /> Tests run after its next change</span>;
+  if (r.running) return <span className="flex items-center gap-1.5 text-[11.5px] text-dim"><span className="spinner" /> Running tests…</span>;
+  if (r.ok) return <span className="flex items-center gap-1.5 text-[11.5px] text-ok" title={r.cmd}><Icon name="check" size={11} /> Tests pass</span>;
+  const send = () => void submitToAgent(ptyIdFor(id), `The tests fail after your last change (${r.cmd}). Find the cause, tell me in one line, then fix it:\n\n${r.tail.slice(-1500)}`)
+    .catch((e) => toast(`Couldn't send: ${e}`, "warn"));
+  return (
+    <span className="flex items-center gap-1.5 text-[11.5px] text-danger" title={r.tail.slice(-600)}>
+      <Icon name="cross" size={11} /> Tests fail
+      <span className="flex-1" />
+      <button className="btn" onClick={send}>Ask it to fix</button>
+    </span>
   );
 }
 
@@ -71,6 +102,7 @@ function SessionCard({ active }: { active: Teammate | undefined }) {
           </button>
         ) : null}
       </div>
+      <TestsLine id={active.id} />
       <div className="flex items-center gap-1.5 text-[10.5px] text-faint"
         title="Risky commands (force-push to main, rm -rf, DROP TABLE…) are blocked even with permissions skipped. You get a ping when the agent needs you.">
         <Icon name="lock" size={10} /> Risky commands blocked · pinged when it needs you
