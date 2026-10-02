@@ -77,11 +77,19 @@ export function onSessionFinished(memberId: string) {
   void maybeDrift();
 }
 
+/** Teammates' sessions on other Macs seen in the last 90 s. */
+function activeTeammates(now: number): number {
+  const app = useApp.getState();
+  const machine = app.appSettings.installId;
+  const self = app.roomSelf?.memberId;
+  return app.teamSessions.filter((d) => now - d.ts < 90_000 && d.machine !== machine && d.member !== self).length;
+}
+
 async function maybeDrift() {
   if (!native() || !on("drift-alarm")) return;
   const now = Date.now();
   const st = useDrift.getState();
-  if (st.running || !driftDue(finishedAt, now, st.lastRun)) return;
+  if (st.running || !driftDue(finishedAt, now, st.lastRun, activeTeammates(now))) return;
   useDrift.setState({ running: true, lastRun: now });
   try {
     const r = await invoke<{ conflicts: DriftConflict[] }>("brain_drift");

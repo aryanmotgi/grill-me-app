@@ -17,10 +17,19 @@ export const DRIFT_EVERY_MS = 10 * 60_000;
 /** A dismissed warning stays quiet this long. */
 export const DRIFT_DISMISS_MS = 2 * 3_600_000;
 
-/** Due when ≥ 2 sessions finished a turn in the last 30 min and the last check was ≥ 10 min ago. */
-export function driftDue(finishedAt: Record<string, number>, now: number, lastRun: number | undefined): boolean {
+/** Due when there's something to compare and the last check was ≥ 10 min ago:
+ *  2+ of this Mac's sessions finished a turn in the last 30 min, or 1 did and
+ *  a teammate's session is active on another Mac (the usual team setup:
+ *  one session per person). */
+export function driftDue(
+  finishedAt: Record<string, number>,
+  now: number,
+  lastRun: number | undefined,
+  teammatesActive = 0,
+): boolean {
   if (lastRun !== undefined && now - lastRun < DRIFT_EVERY_MS) return false;
-  return Object.values(finishedAt).filter((t) => now - t <= DRIFT_WINDOW_MS).length >= 2;
+  const recent = Object.values(finishedAt).filter((t) => now - t <= DRIFT_WINDOW_MS).length;
+  return recent >= 2 || (recent >= 1 && teammatesActive >= 1);
 }
 
 /** "a ⇄ b" with the names sorted, so A-vs-B and B-vs-A are one pair. */
