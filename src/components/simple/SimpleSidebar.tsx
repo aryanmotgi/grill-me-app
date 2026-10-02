@@ -71,7 +71,8 @@ export function SimpleSidebar() {
   const setView = useApp((s) => s.setView);
   const selfId = useApp((s) => s.roomSelf?.memberId);
   const teamSessions = useApp((s) => s.teamSessions);
-  const others = teamSessions.filter((d) => d.member !== selfId);
+  const appMode = useApp((s) => s.appMode);
+  const others = appMode === "team" ? teamSessions.filter((d) => d.member !== selfId) : [];
 
   return (
     <aside className="w-[264px] flex-none border-r border-line bg-panel flex flex-col overflow-hidden" aria-label="Sessions">

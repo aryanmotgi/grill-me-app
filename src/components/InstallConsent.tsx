@@ -7,7 +7,7 @@ import { GrillFlame } from "./GrillMark";
 
 const native = () => "__TAURI_INTERNALS__" in window;
 
-const ITEMS: { title: string; detail: string; file: string }[] = [
+export const CONSENT_ITEMS: { title: string; detail: string; file: string }[] = [
   {
     title: "Watches your sessions",
     detail: "So you can see when each one is working, waiting, or done. Grill Me adds one small settings file to each project. It stays on this Mac, never in git.",
@@ -26,11 +26,13 @@ const ITEMS: { title: string; detail: string; file: string }[] = [
 ];
 
 export function InstallConsent() {
-  const consent = useApp((s) => s.appSettings.installConsent === true);
+  // answered either way (onboarding's "Add it" or "Skip") → never nag again
+  const consent = useApp((s) => s.appSettings.installConsent === true || s.appSettings.installConsent === "declined");
+  const firstRun = useApp((s) => s.appSettings.firstRunStep !== "done");
   const activeProject = useApp((s) => s.activeProject);
   const pickerOpen = useApp((s) => s.pickerOpen);
   const setAppSetting = useApp((s) => s.setAppSetting);
-  if (!native() || consent || !activeProject || pickerOpen) return null;
+  if (!native() || consent || firstRun || !activeProject || pickerOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 scrim flex items-center justify-center p-4">
@@ -41,7 +43,7 @@ export function InstallConsent() {
         </div>
         <div className="text-dim text-[12.5px]">Grill Me does three things to work. That's all:</div>
         <div className="flex flex-col gap-2">
-          {ITEMS.map((it) => (
+          {CONSENT_ITEMS.map((it) => (
             <div key={it.title} className="bg-raised/60 hairline rounded-md px-3 py-2.5">
               <div className="text-[12.5px] font-semibold">{it.title}</div>
               <div className="text-dim text-[11.5px] mt-1 leading-relaxed">{it.detail}</div>

@@ -36,6 +36,7 @@ import { deliverBriefWhenReady, hasIdlePrompt, isMidGeneration, tailText, type P
 import { DEFAULT_TERM_SETTINGS, type TermSettings } from "./theme/termPalettes";
 import type { AppMode } from "./lib/soloVisibility";
 import { uiLayoutOf } from "./lib/uiLayout";
+import { initialFirstRunStep } from "./lib/firstRun";
 
 export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "preview";
 
@@ -279,6 +280,9 @@ interface AppState {
   /** Solo/team mode. null = not chosen yet → ModeSelect screen. Persisted. */
   appMode: AppMode;
   setAppMode: (m: AppMode) => void;
+  /** true once settings.json has been read — first-run screens wait for it so
+   *  an existing user never sees a flash of onboarding. */
+  settingsLoaded: boolean;
   /** Set when Team is picked this session — routes to the TeamFlow screens
    *  (create/join → lobby → setup) until the flow completes. */
   teamFlowNeeded: boolean;
@@ -873,6 +877,7 @@ export const useApp = create<AppState>((set, get) => ({
   setClaudeMissing: (missing) => set({ claudeMissing: missing }),
 
   appMode: null,
+  settingsLoaded: false,
   teamFlowNeeded: false,
   teamSetupDone: false,
   roomPresence: {},
@@ -1041,6 +1046,15 @@ function emptyTeammate(id: string): Teammate {
   };
 }
 
+/** First boot with these settings: decide layout + whether to show first-run
+ *  setup, and save both so later choices (mode, project) can't flip them. */
+function pinFirstRun(settings: Record<string, unknown>) {
+  const st = useApp.getState();
+  if (settings.uiLayout == null) st.setAppSetting("uiLayout", uiLayoutOf(settings));
+  if (settings.firstRunStep == null) st.setAppSetting("firstRunStep", initialFirstRunStep(settings));
+  useApp.setState({ settingsLoaded: true });
+}
+
 // Phase 2: live feeds replace fake data when running inside Tauri.
 // In plain browser dev the fake seed stays so the UI is still browsable.
 let restoreReady = false;
@@ -1052,8 +1066,8 @@ let firedBudgetLevel: BudgetLevel = 0;
   if (!isTauri()) {
     // browser dev: fake data, no feeds
     useApp.setState({ activeProject: "default" });
-    // pin the layout choice up front, same as the native boot below
-    if (useApp.getState().appSettings.uiLayout == null) useApp.getState().setAppSetting("uiLayout", uiLayoutOf(useApp.getState().appSettings));
+    // pin first-run choices up front, same as the native boot below
+    pinFirstRun(useApp.getState().appSettings);
     // …including a live team room with chat, so Team Chat is browsable. The
     // sample room is already set up, so picking "team" skips the setup flow.
     void import("./data/fakeTeamChat").then((f) => {
@@ -1096,7 +1110,8 @@ let firedBudgetLevel: BudgetLevel = 0;
   // first launch with the layout toggle: pin the choice now, so a new user who
   // then picks a mode/project doesn't get flipped to classic mid-session
   // (never on a corrupt file: writing would clobber what's left of it)
-  if (appSettings.uiLayout == null && !settingsCorrupt) useApp.getState().setAppSetting("uiLayout", uiLayoutOf(appSettings));
+  if (!settingsCorrupt) pinFirstRun(appSettings);
+  else useApp.setState({ settingsLoaded: true });
   // team mode: install the room poller. It no-ops until TeamStart sets
   // roomSelf (create/join), so this is only live when a room actually exists.
   if (appSettings.appMode === "team") startRoomFeed(useApp);

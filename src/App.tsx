@@ -5,6 +5,7 @@ import { DragHandle } from "./components/DragHandle";
 import { SimpleShell } from "./components/simple/SimpleShell";
 import { CenterStage, Overlays } from "./components/ShellParts";
 import { uiLayoutOf } from "./lib/uiLayout";
+import { FirstRun, useFirstRunActive } from "./components/FirstRun";
 import { applyTheme, themes } from "./theme/themes";
 import { NavRail } from "./components/NavRail";
 import { WorkspacePanel } from "./components/WorkspacePanel";
@@ -275,10 +276,14 @@ export default function App() {
   useRemoteAutostart();
   useDoctorOnLaunch();
   const uiLayout = useApp((s) => uiLayoutOf(s.appSettings));
+  const settingsLoaded = useApp((s) => s.settingsLoaded);
+  const firstRun = useFirstRunActive();
   const showEditor = !focusMode && view === "session" && !!active && openFileCount > 0;
 
   // mode routing: no mode chosen → ModeSelect (before ProjectPicker);
   // team just picked → TeamFlow screens until the setup flow completes
+  if (!settingsLoaded) return <div className="h-full ground" />;
+  if (firstRun) return <FirstRun />;
   if (appMode === null) return <ModeSelect />;
   if (appMode === "team" && teamFlowNeeded) return <TeamFlow />;
 

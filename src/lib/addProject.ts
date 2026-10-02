@@ -55,7 +55,7 @@ async function ensureGitRepo(path: string, warn: (msg: string) => void): Promise
 }
 
 /** Open (or switch to) a project at `path`: register it if new, make it
- *  active, and reload into it. */
+ *  active, and reload into it (~150ms later, so callers can still save). */
 export async function openProjectAt(path: string, warn: (msg: string) => void): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   const raw = await invoke<string>("projects_list").catch(() => "[]");
@@ -85,9 +85,11 @@ export async function openProjectAt(path: string, warn: (msg: string) => void): 
   setTimeout(() => location.reload(), 150);
 }
 
-/** Finder → pick or create a folder → ensure git → open it as a project. */
-export async function addProjectFromFinder(warn: (msg: string) => void): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) { warn("Adding a project needs the native app"); return; }
+/** Finder → pick or create a folder → ensure git → open it as a project.
+ *  Resolves true when a project is opening (reload pending), false if the
+ *  user cancelled or git setup failed. */
+export async function addProjectFromFinder(warn: (msg: string) => void): Promise<boolean> {
+  if (!("__TAURI_INTERNALS__" in window)) { warn("Adding a project needs the native app"); return false; }
   const { open } = await import("@tauri-apps/plugin-dialog");
   const dir = await open({
     directory: true,
@@ -95,7 +97,8 @@ export async function addProjectFromFinder(warn: (msg: string) => void): Promise
     canCreateDirectories: true,
     title: "Choose a project folder — or make a new one",
   });
-  if (typeof dir !== "string") return; // cancelled
-  if (!(await ensureGitRepo(dir, warn))) return;
+  if (typeof dir !== "string") return false; // cancelled
+  if (!(await ensureGitRepo(dir, warn))) return false;
   await openProjectAt(dir, warn);
+  return true;
 }
