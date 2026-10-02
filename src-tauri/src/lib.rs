@@ -123,6 +123,24 @@ fn git(repo: &str, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// The repo's default branch: what `origin/HEAD` points at, else a local
+/// `main` or `master`, else "main". Strangers' repos aren't all on `main`.
+fn default_branch(repo: &str) -> String {
+    if let Ok(r) = git(repo, &["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]) {
+        if let Some(b) = r.trim().strip_prefix("origin/") {
+            if !b.is_empty() {
+                return b.to_string();
+            }
+        }
+    }
+    for b in ["main", "master"] {
+        if git(repo, &["rev-parse", "--verify", "--quiet", b]).is_ok() {
+            return b.to_string();
+        }
+    }
+    "main".to_string()
+}
+
 #[tauri::command]
 fn git_state(repo_path: String) -> GitState {
     let branch = match git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]) {
@@ -2360,7 +2378,8 @@ fn events_tail() -> Vec<String> {
 
 #[tauri::command]
 fn worktree_add(base_repo: String, branch: String, path: String) -> Result<(), String> {
-    git(&base_repo, &["worktree", "add", "-b", &branch, &path, "main"]).map(|_| ())
+    let base = default_branch(&base_repo);
+    git(&base_repo, &["worktree", "add", "-b", &branch, &path, &base]).map(|_| ())
 }
 
 #[tauri::command]
@@ -2464,9 +2483,11 @@ fn fs_write_file(root: String, rel: String, content: String) -> Result<(), Strin
 /// One-shot claude -p over the working diff — returns a drafted PR body.
 #[tauri::command]
 fn pr_draft(repo_path: String) -> Result<String, String> {
+    // the base goes in as $1 (argv), never spliced into the shell string
+    let base = default_branch(&repo_path);
     let out = no_prompt(
         Command::new("/bin/zsh")
-            .args(["-lc", "git diff main 2>/dev/null | head -c 60000 | claude -p 'Write a concise PR title and body (markdown) for this diff. No preamble.'"])
+            .args(["-lc", "git diff \"$1\" 2>/dev/null | head -c 60000 | claude -p 'Write a concise PR title and body (markdown) for this diff. No preamble.'", "pr_draft", &base])
             .current_dir(&repo_path),
     )
     .output()
@@ -3714,9 +3735,10 @@ struct ReviewData {
 #[tauri::command]
 fn git_review(repo_path: String) -> Result<ReviewData, String> {
     let branch = git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
-    let log = git(&repo_path, &["log", "--oneline", "main..HEAD"]).unwrap_or_default();
-    let diffstat = git(&repo_path, &["diff", "--stat", "main"]).unwrap_or_default();
-    let mut diff = git(&repo_path, &["diff", "main"]).unwrap_or_default();
+    let base = default_branch(&repo_path);
+    let log = git(&repo_path, &["log", "--oneline", &format!("{base}..HEAD")]).unwrap_or_default();
+    let diffstat = git(&repo_path, &["diff", "--stat", &base]).unwrap_or_default();
+    let mut diff = git(&repo_path, &["diff", &base]).unwrap_or_default();
     if diff.len() > 120_000 {
         truncate_at_char_boundary(&mut diff, 120_000);
         diff.push_str("\n… diff truncated at 120KB …");
@@ -4001,7 +4023,8 @@ fn git_conflict_radar() -> Vec<ConflictPair> {
                 .ok()?
                 .trim()
                 .to_string();
-            let files: Vec<String> = git(&m.repo_path, &["diff", "--name-only", "main...HEAD"])
+            let range = format!("{}...HEAD", default_branch(&m.repo_path));
+            let files: Vec<String> = git(&m.repo_path, &["diff", "--name-only", &range])
                 .ok()?
                 .lines()
                 .map(str::trim)
@@ -4073,7 +4096,9 @@ fn branch_overview(repo_path: String) -> BranchOverview {
         Ok(b) => b.trim().to_string(),
         Err(e) => return err(e),
     };
-    let on_main = branch == "main";
+    let base = default_branch(&repo_path);
+    let range = format!("{base}...HEAD");
+    let on_main = branch == base;
 
     // Last commit subject + committer time — same %x1f-separated shape as
     // git_state's log parsing, so a subject with pipes/tabs is still safe.
@@ -4092,7 +4117,7 @@ fn branch_overview(repo_path: String) -> BranchOverview {
     } else {
         git(
             &repo_path,
-            &["rev-list", "--left-right", "--count", "main...HEAD"],
+            &["rev-list", "--left-right", "--count", &range],
         )
         .map(|out| parse_left_right(&out))
         .unwrap_or((0, 0))
@@ -4100,7 +4125,7 @@ fn branch_overview(repo_path: String) -> BranchOverview {
     let changed_files = if on_main {
         0
     } else {
-        git(&repo_path, &["diff", "--name-only", "main...HEAD"])
+        git(&repo_path, &["diff", "--name-only", &range])
             .map(|out| {
                 out.lines()
                     .map(str::trim)
@@ -4220,7 +4245,8 @@ fn normalize_likelihood(raw: &str) -> String {
 
 /// Changed files on this worktree's branch vs the shared merge-base with main.
 fn branch_changed_files(repo: &str) -> Result<Vec<String>, String> {
-    Ok(git(repo, &["diff", "--name-only", "main...HEAD"])?
+    let range = format!("{}...HEAD", default_branch(repo));
+    Ok(git(repo, &["diff", "--name-only", &range])?
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
@@ -4281,13 +4307,15 @@ fn predict_conflict(member_a: String, member_b: String) -> Result<ConflictPredic
     // Per-file diffs from each branch, individually capped, then a total cap.
     let mut file_entries: Vec<serde_json::Value> = Vec::new();
     let mut budget = PREDICT_TOTAL_CAP;
+    let range_a = format!("{}...HEAD", default_branch(&a.repo_path));
+    let range_b = format!("{}...HEAD", default_branch(&b.repo_path));
     for f in &overlap {
         if budget == 0 {
             break;
         }
         let per = PREDICT_PER_FILE_CAP.min(budget);
-        let mut da = git(&a.repo_path, &["diff", "main...HEAD", "--", f]).unwrap_or_default();
-        let mut db = git(&b.repo_path, &["diff", "main...HEAD", "--", f]).unwrap_or_default();
+        let mut da = git(&a.repo_path, &["diff", &range_a, "--", f]).unwrap_or_default();
+        let mut db = git(&b.repo_path, &["diff", &range_b, "--", f]).unwrap_or_default();
         truncate_at_char_boundary(&mut da, per);
         truncate_at_char_boundary(&mut db, per);
         budget = budget.saturating_sub(da.len() + db.len());
@@ -5664,5 +5692,45 @@ mod pure_fn_tests {
     fn rotate_keep_from_giant_single_line_drops_all() {
         let data = b"one enormous line without any newline at all";
         assert_eq!(rotate_keep_from(data, 8), data.len());
+    }
+}
+
+#[cfg(test)]
+mod default_branch_tests {
+    use super::default_branch;
+    use std::path::Path;
+    use std::process::Command;
+
+    fn git(repo: &Path, args: &[&str]) {
+        let ok = Command::new("git").arg("-C").arg(repo)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"])
+            .args(args).output().unwrap().status.success();
+        assert!(ok, "git {args:?}");
+    }
+
+    fn repo_on(branch: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("grillme-defbranch-{branch}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q", "-b", branch]);
+        git(&dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        dir
+    }
+
+    #[test]
+    fn finds_master_when_there_is_no_main() {
+        let dir = repo_on("master");
+        assert_eq!(default_branch(dir.to_str().unwrap()), "master");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn origin_head_wins_over_local_names() {
+        let dir = repo_on("main");
+        git(&dir, &["branch", "trunk"]);
+        git(&dir, &["update-ref", "refs/remotes/origin/trunk", "HEAD"]);
+        git(&dir, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"]);
+        assert_eq!(default_branch(dir.to_str().unwrap()), "trunk");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

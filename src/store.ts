@@ -44,6 +44,10 @@ export type RailTab = "files" | "tasks" | "inbox" | "activity" | "team" | "previ
  *  panels are full center views now, not a right-rail sidebar). */
 export type MainView = "home" | "flow" | "new" | "brain" | "automations" | "session" | "tasks" | "inbox" | "feed" | "team" | "preview";
 
+const RAIL_TAB_VIEW: Record<RailTab, MainView> = {
+  files: "session", tasks: "tasks", inbox: "inbox", activity: "feed", team: "team", preview: "preview",
+};
+
 /** One registered project workspace (projects.json via projects_list). */
 export interface ProjectInfo {
   id: string;
@@ -332,7 +336,9 @@ export const useApp = create<AppState>((set, get) => ({
 
   setActive: (id) => set({ activeId: id, switcherOpen: false, view: "session", navSelId: null }),
   setSplit: (id) => set({ splitId: id }),
-  setRailTab: (railTab) => set({ railTab }),
+  // The right rail is gone; every rail tab is now a center view, so "go to
+  // <tab>" navigates there (files has no view of its own → the session).
+  setRailTab: (railTab) => set({ railTab, view: RAIL_TAB_VIEW[railTab] }),
   toggleFocus: () => set((s) => ({ focusMode: !s.focusMode, splitId: null })),
   toggleDemo: () => set((s) => ({ demoMode: !s.demoMode })),
   // entering cinema forces the session view — there's no terminal to full-bleed

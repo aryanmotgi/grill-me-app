@@ -53,7 +53,7 @@ export function QuickSwitcher() {
     teammates, switcherOpen, setSwitcherOpen, setActive,
     shipSession, activeId, setPickerOpen, setSettingsOpen,
     setTheme, themeName, toggleDense, toggleFocus, setMergePilotOpen, setRailTab,
-    setView, setDraftReply, patchTeammate, toast, appSettings, setAppSetting,
+    setDraftReply, patchTeammate, toast, appSettings, setAppSetting,
     setHandoffFor, messages, requestHelp, resolveHelp,
     setWatchOpen, members, clearCap,
   } = useApp();
@@ -72,8 +72,8 @@ export function QuickSwitcher() {
     { label: "toggle dense mode", hint: "compact layout", run: toggleDense },
     { label: "focus mode", hint: "collapse to your pane", run: toggleFocus },
     { label: "merge pilot", hint: "run the merge in a terminal", run: () => setMergePilotOpen(true) },
-    { label: "go to inbox", hint: "right rail", run: () => setRailTab("inbox") },
-    { label: "go to activity", hint: "right rail", run: () => setRailTab("activity") },
+    { label: "go to inbox", hint: "view", run: () => setRailTab("inbox") },
+    { label: "go to activity", hint: "view", run: () => setRailTab("activity") },
     ...CATALOG_ACTIONS,
   ], [activeId, themeName, shipSession, setPickerOpen, setSettingsOpen, setTheme, toggleDense, toggleFocus, setMergePilotOpen, setRailTab]);
 
@@ -162,7 +162,6 @@ export function QuickSwitcher() {
   const dmTo = (mate: Teammate) => {
     setDraftReply({ to: mate.id, threadId: `dm-${Date.now()}`, mention: mate.id });
     setRailTab("inbox");
-    setView("session");
   };
   const inlineActionsFor = (mate: Teammate): { id: string; label: string; run: () => void }[] => {
     const helpPending = isHelpPending(messages, mate.id);

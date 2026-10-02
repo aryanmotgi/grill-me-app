@@ -28,7 +28,6 @@ function NeedsYouHero() {
   const solo = useApp(isSolo);
   const setActive = useApp((s) => s.setActive);
   const setRailTab = useApp((s) => s.setRailTab);
-  const setView = useApp((s) => s.setView);
   const setMergePilotOpen = useApp((s) => s.setMergePilotOpen);
   const respondProposal = useApp((s) => s.respondProposal);
   const resolveHelp = useApp((s) => s.resolveHelp);
@@ -85,7 +84,7 @@ function NeedsYouHero() {
             </button>
             <button
               className="btn"
-              onClick={() => { setRailTab("tasks"); setView("session"); }}
+              onClick={() => { setRailTab("tasks"); }}
             >
               <Icon name="branch" size={11} /> task board
             </button>
@@ -150,7 +149,7 @@ function NeedsYouHero() {
               key={m.id}
               className="flex items-center gap-3 px-4 py-2.5 bg-raised rounded-md text-left hover:brightness-110 transition-all cursor-pointer border-l-2 border-l-danger"
               title={m.text}
-              onClick={() => { setRailTab("inbox"); setView("session"); }}
+              onClick={() => { setRailTab("inbox"); }}
             >
               <Icon name="warn" size={12} className="text-danger" />
               <span className="text-[12px]"><b>{nameOf(m.from)}</b> is blocked: {clip(m.text, 70)}</span>
@@ -171,7 +170,7 @@ function NeedsYouHero() {
               key={m.id}
               className="flex items-center gap-3 px-4 py-2.5 bg-raised rounded-md text-left hover:brightness-110 transition-all cursor-pointer border-l-2 border-l-warn"
               title={m.text}
-              onClick={() => { setRailTab("inbox"); setView("session"); }}
+              onClick={() => { setRailTab("inbox"); }}
             >
               <Icon name="mail" size={12} className="text-warn" />
               <span className="text-[12px]"><b>{nameOf(m.from)}</b> asks: {clip(m.text, 70)}</span>
@@ -661,7 +660,6 @@ function ActivityFeed() {
   const activity = useApp((s) => s.activity);
   const teammates = useApp((s) => s.teammates);
   const setRailTab = useApp((s) => s.setRailTab);
-  const setView = useApp((s) => s.setView);
 
   const nameOf = (id: string) => teammates.find((t) => t.id === id)?.name ?? id;
   const recent = activity.slice(0, FEED_LIMIT);
@@ -673,7 +671,7 @@ function ActivityFeed() {
         {activity.length > FEED_LIMIT ? (
           <button
             className="text-faint text-[10px] hover:text-data transition-colors cursor-pointer"
-            onClick={() => { setRailTab("activity"); setView("session"); }}
+            onClick={() => { setRailTab("activity"); }}
           >
             view all <span className="num">{activity.length}</span>
           </button>
@@ -763,7 +761,6 @@ function RecentDecisions() {
 function QuickActions() {
   const appMode = useApp((s) => s.appMode);
   const setRailTab = useApp((s) => s.setRailTab);
-  const setView = useApp((s) => s.setView);
   const shipSession = useApp((s) => s.shipSession);
   const setPickerOpen = useApp((s) => s.setPickerOpen);
   const showInbox = surfaceVisible(appMode, "rail-inbox-tab");
@@ -781,12 +778,12 @@ function QuickActions() {
           <Icon name="push" size={16} />
           <span className="text-[12px] font-semibold">review &amp; ship</span>
         </button>
-        <button className={tile} onClick={() => { setRailTab("tasks"); setView("session"); }}>
+        <button className={tile} onClick={() => { setRailTab("tasks"); }}>
           <Icon name="branch" size={16} className="text-data" />
           <span className="text-[12px]">task board</span>
         </button>
         {showInbox ? (
-          <button className={tile} onClick={() => { setRailTab("inbox"); setView("session"); }}>
+          <button className={tile} onClick={() => { setRailTab("inbox"); }}>
             <Icon name="mail" size={16} className="text-data" />
             <span className="text-[12px]">inbox</span>
           </button>
