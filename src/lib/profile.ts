@@ -169,12 +169,24 @@ const hasInstructions = (scan?: ScanResult | null) => (scan?.instructions ?? [])
 export interface Upgrade {
   id: string;
   name: string;
+  /** the workflow stage it lights up */
+  stage: StageId;
+  /** catalog kind, for the card's badge ("tip" for built-in advice) */
+  kind: string;
   /** why it's suggested to *this* person */
   why: string;
   /** what it does */
   what: string;
   command?: string;
   docs?: string;
+}
+
+/** The stage an upgrade lights: the one its top need belongs to. */
+export function stageFor(need: SolveTag, e?: CatalogEntry): StageId {
+  const hit = STAGES.find((st) => st.tags.includes(need) || st.gap === need)
+    ?? STAGES.find((st) => e?.solves.some((t) => st.tags.includes(t)));
+  // needs outside the five stages (debugging, ui, database…) belong to Build
+  return hit?.id ?? "build";
 }
 
 /** Tags where the right tool depends on the vendor you already use: only
@@ -239,7 +251,7 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
   // a missing instruction file is the cheapest, biggest win for any agent
   if (scan?.instructions && !hasInstructions(scan) && agents.size > 0) {
     out.push({
-      id: "instructions-file", name: agents.has("claude") ? "A CLAUDE.md for this project" : "An AGENTS.md for this project",
+      id: "instructions-file", stage: "build", kind: "tip", name: agents.has("claude") ? "A CLAUDE.md for this project" : "An AGENTS.md for this project",
       why: "Your agents start every session without knowing your project's rules.",
       what: "One short file with how to run, test and style the code. Every session reads it first.",
       docs: agents.has("claude") ? "https://code.claude.com/docs/en/memory" : "https://agents.md",
@@ -266,7 +278,7 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
     if (!best) break;
     for (const t of best.covers) met.add(t);
     out.push({
-      id: best.e.id, name: best.e.name, why: whyFor(best.covers), what: best.e.what,
+      id: best.e.id, name: best.e.name, stage: stageFor(best.covers[0], best.e), kind: best.e.kind, why: whyFor(best.covers), what: best.e.what,
       command: best.e.install?.command, docs: best.e.install?.docs ?? best.e.source,
     });
   }

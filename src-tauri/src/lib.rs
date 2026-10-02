@@ -14,6 +14,9 @@ mod doctor;
 mod ai_connect;
 mod interview;
 mod splash;
+mod forge;
+mod boot;
+mod blur;
 mod catalog;
 pub mod mcp;
 
@@ -147,7 +150,7 @@ fn default_branch(repo: &str) -> String {
     "main".to_string()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn git_state(repo_path: String) -> GitState {
     let branch = match git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]) {
         Ok(b) => b.trim().to_string(),
@@ -539,7 +542,7 @@ static CLAUDE_PATH: OnceLock<Option<String>> = OnceLock::new();
 /// environment pty_ensure spawns it in). Returns its resolved path, or an
 /// actionable error the frontend can surface instead of letting the pane
 /// enter a spawn/die/respawn loop.
-#[tauri::command]
+#[tauri::command(async)]
 fn preflight_claude() -> Result<String, String> {
     if let Some(Some(path)) = CLAUDE_PATH.get() {
         return Ok(path.clone());
@@ -614,7 +617,7 @@ fn login_shell_probe(cmd: &str) -> Option<String> {
 
 /// Detect which agent CLIs are installed and authenticated on this machine.
 /// The session-create UI only offers agents where installed && authed.
-#[tauri::command]
+#[tauri::command(async)]
 fn detect_agents() -> Vec<AgentAvailability> {
     let mut result = Vec::new();
 
@@ -662,7 +665,7 @@ fn detect_agents() -> Vec<AgentAvailability> {
 /// Mirrors preflight_claude (which stays for the one-shot `claude -p` helpers:
 /// standup, PR drafts, explain — those always use Claude regardless of what
 /// agent the session itself runs).
-#[tauri::command]
+#[tauri::command(async)]
 fn preflight_agent(agent: Option<String>) -> Result<String, String> {
     let agent = agent.unwrap_or_else(|| "claude".into());
     validate_agent(&agent)?;
@@ -1418,7 +1421,7 @@ fn rotate_log_if_large(path: &std::path::Path) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn standup_tail() -> Vec<String> {
     std::fs::read_to_string(grillme_dir().join("standup.log"))
         .map(|s| {
@@ -1753,7 +1756,7 @@ struct UsageStatsInner {
 
 static USAGE_CACHE: OnceLock<Mutex<HashMap<String, UsageCacheEntry>>> = OnceLock::new();
 
-#[tauri::command]
+#[tauri::command(async)]
 fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
     use std::io::{Read as _, Seek as _};
     let Some(path) = newest_transcript(&repo_path) else {
@@ -1837,7 +1840,7 @@ fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn ci_state(repo_path: String) -> Result<String, String> {
     let out = no_prompt(
         Command::new("gh")
@@ -1965,7 +1968,7 @@ fn sh_quote(s: &str) -> String {
 /// this Mac's absolute paths. (Older builds wrote the shared settings.json,
 /// which leaked those paths into teammates' clones; `strip_ours` cleans
 /// that up.) The user's own hooks in either file are never touched.
-#[tauri::command]
+#[tauri::command(async)]
 fn install_hooks(repo_path: String, member_id: String) -> Result<String, String> {
     validate_member_id(&member_id)?;
     let repo = PathBuf::from(&repo_path);
@@ -2369,7 +2372,7 @@ fn cleanup_legacy_delegation(repo: &Path) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn events_tail() -> Vec<String> {
     let path = grillme_dir().join("events.jsonl");
     rotate_log_if_large(&path);
@@ -3271,7 +3274,7 @@ fn blocklist_write(content: String) -> Result<(), String> {
     std::fs::write(grillme_root().join("blocklist.json"), content).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn audit_tail(member: Option<String>) -> Vec<String> {
     let path = grillme_dir().join("audit.jsonl");
     rotate_log_if_large(&path);
@@ -3666,7 +3669,7 @@ struct SessionResources {
 }
 
 /// CPU% + RSS summed over each session's process tree.
-#[tauri::command]
+#[tauri::command(async)]
 fn pty_resources() -> Vec<SessionResources> {
     let roots: Vec<(String, u32)> = lock_or_recover(ptys())
         .iter()
@@ -3940,7 +3943,7 @@ fn pty_screen(id: String, lines: Option<usize>) -> Result<Vec<String>, String> {
 static GIT_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static GIT_POLLER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-#[tauri::command]
+#[tauri::command(async)]
 fn git_state_cached(repo_path: String) -> String {
     if !GIT_POLLER.swap(true, std::sync::atomic::Ordering::SeqCst) {
         std::thread::spawn(|| loop {
@@ -4013,7 +4016,7 @@ fn overlap_pairs(members: &[(String, String, Vec<String>)]) -> Vec<ConflictPair>
 
 static CONFLICT_CACHE: OnceLock<Mutex<Option<(Instant, Vec<ConflictPair>)>>> = OnceLock::new();
 
-#[tauri::command]
+#[tauri::command(async)]
 fn git_conflict_radar() -> Vec<ConflictPair> {
     let cache = CONFLICT_CACHE.get_or_init(|| Mutex::new(None));
     if let Some((at, pairs)) = lock_or_recover(cache).as_ref() {
@@ -4084,7 +4087,7 @@ fn parse_left_right(raw: &str) -> (u32, u32) {
     (behind, ahead)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn branch_overview(repo_path: String) -> BranchOverview {
     let err = |e: String| BranchOverview {
         ok: false,
@@ -4260,7 +4263,7 @@ fn branch_changed_files(repo: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn predict_conflict(member_a: String, member_b: String) -> Result<ConflictPrediction, String> {
     // Honest claude-missing handling: same preflight the panes use.
     preflight_claude()?;
@@ -4585,6 +4588,16 @@ fn suggest_assignee(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Native macOS under-window blur behind the app's translucent chrome.
+pub(crate) fn apply_glass(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window_vibrancy::apply_vibrancy(window, window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground, None, None);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
 pub fn run() {
     tauri::Builder::default()
         .on_window_event(|window, event| {
@@ -4606,16 +4619,15 @@ pub fn run() {
             // in-app `.vibrant` class (toggled by the Translucent-background
             // setting, default on) decides whether surfaces are translucent;
             // when off they go solid and simply cover the transparent window.
+            // (not during the first-run forge: it's opaque black, and the
+            // blur would only cost frames; it's applied when the forge ends)
             #[cfg(target_os = "macos")]
             {
                 use tauri::Manager;
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window_vibrancy::apply_vibrancy(
-                        &window,
-                        window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
-                        None,
-                        None,
-                    );
+                    if !forge::first_run(&splash::read_settings()) {
+                        apply_glass(&window);
+                    }
                 }
             }
             // launch animation (or straight to the app when it's off)
@@ -4627,6 +4639,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             catalog::catalog_lookup,
             catalog::catalog_fetch_remote,
@@ -4638,6 +4651,15 @@ pub fn run() {
             interview::interview_turn,
             splash::splash_reveal,
             splash::splash_close,
+            forge::forge_window_done,
+            forge::save_share_card,
+            forge::forge_front,
+            forge::forge_hit_rects,
+            blur::forge_blur_mask,
+            forge::perf_enabled,
+            forge::perf_report,
+            boot::boot_wait,
+            boot::boot_release,
             uninstall_all,
             doctor::diagnostics,
             team_config,

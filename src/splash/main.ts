@@ -17,15 +17,18 @@ import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.j
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import fontJson from "./chakra-bold.typeface.json";
+import { probeFps } from "../lib/perf";
 import { LOGO_TEXT } from "../brand";
 import { GIVE_UP_S, MAX_STEP_S, PACE, REVEAL_AT, TIMELINE, WELCOME_HOLD_S, clamp, modeOf, nextFill, shouldExpand, skipOffset, span, stalled, welcomeLine } from "./timeline";
 
 // the app passes these in (src-tauri/src/splash.rs); a browser preview uses ?mode=back&name=…
 const boot = (window as { __GRILLME_SPLASH__?: { mode?: string; name?: string } }).__GRILLME_SPLASH__;
+
 const params = new URLSearchParams(location.search);
 const mode = modeOf(boot?.mode ?? params.get("mode"));
 const tl = TIMELINE[mode];
 const userName = boot?.name ?? params.get("name") ?? "";
+
 const native = "__TAURI_INTERNALS__" in window;
 
 
@@ -281,7 +284,19 @@ function setWelcome() {
 }
 
 let lastFrame = performance.now();
+let loadReleased = false;
+async function releaseLoad() {
+  if (!native) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("boot_release").catch(() => {});
+}
+let workMs = 0, workN = 0;
 function tick(now: number) {
+  const w0 = performance.now();
+  tickInner(now);
+  workMs += performance.now() - w0; workN++;
+}
+function tickInner(now: number) {
   lastFrame = performance.now();
   const dt = Math.min(MAX_STEP_S, Math.max(0, (now - last) / 1000));
   last = now;
@@ -295,6 +310,8 @@ function tick(now: number) {
     return;
   }
   const t = clock + offset;
+  // the logo has formed: let the app start loading behind us
+  if (!loadReleased && t >= (mode === "first" ? tl.inEnd : tl.fold[0])) { loadReleased = true; void releaseLoad(); }
   shownFill = nextFill(shownFill, progress, t, dt, tl);
   if (expandAt === null && shouldExpand(t, shownFill, tl)) { expandAt = t; if (mode === "back") setWelcome(); }
   const e = expandAt === null ? 0 : span(t, expandAt, expandAt + tl.expand);
@@ -317,6 +334,7 @@ function tick(now: number) {
 renderer.compile(scene, camera);
 renderer.render(scene, camera);
 requestAnimationFrame(() => { t0 = last = performance.now(); requestAnimationFrame(tick); });
+void probeFps(`splash-${mode}`, (tl.minReady + tl.expand) * 1000, () => ({ cpuMsPerFrame: Math.round((workMs / Math.max(1, workN)) * 100) / 100 }));
 
 // if macOS isn't drawing us (another Space, covered window), nobody can see
 // the animation: open the app as soon as it's loaded instead of waiting

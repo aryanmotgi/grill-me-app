@@ -46,15 +46,27 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// settings.json, or {} for a brand-new install (or an unreadable file).
+pub fn read_settings() -> Value {
+    std::fs::read_to_string(settings_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}))
+}
+
 /// Called from `setup`: open the splash, or just show the app.
 pub fn start(app: &AppHandle) {
     let path = settings_path();
-    // a missing or unreadable file means a brand-new install
     let raw = std::fs::read_to_string(&path).ok();
-    let settings: Value = raw.as_deref().and_then(|t| serde_json::from_str(t).ok()).unwrap_or_else(|| json!({}));
+    let settings = read_settings();
     let (enabled, mode, name) = plan(&settings);
     let Some(main) = app.get_webview_window("main") else { return };
+    // first run: no splash. The forge takes over the whole screen and plays
+    // its own arrival (embers rise into the wordmark), so the app loads now.
+    if crate::forge::first_run(&settings) {
+        crate::boot::release();
+        crate::forge::enter(&main);
+        return;
+    }
     if !enabled {
+        crate::boot::release();
         show_main(app);
         return;
     }
@@ -82,6 +94,7 @@ pub fn start(app: &AppHandle) {
         .focused(true);
     b = match pos { Some(p) => b.position(p.x, p.y), None => b.center() };
     if b.build().is_err() {
+        crate::boot::release();
         show_main(app);
         return;
     }

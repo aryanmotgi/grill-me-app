@@ -37,6 +37,7 @@ base64 = "0.22"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 # reads Codex/Cargo/pyproject TOML for the workflow scan
 toml = "0.8"
+tauri-plugin-global-shortcut = "2"
 
 
 [profile.dev]
@@ -59,3 +60,11 @@ opt-level = 3
 panic = "abort"
 strip = true
 incremental = true
+
+# the forge's soft blur behind its own text and diagrams (macOS vibrancy,
+# masked to where things are drawn); same versions window-vibrancy uses
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSView", "NSVisualEffectView", "NSImage", "NSGraphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSGeometry", "NSThread"] }
+raw-window-handle = "0.6"

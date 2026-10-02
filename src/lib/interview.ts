@@ -15,7 +15,8 @@ export interface Turn { who: "ai" | "you"; text: string }
 export const BRAIN_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", cursor: "Cursor", gemini: "Gemini" };
 
 /** The first question is fixed, so the chat opens instantly with no AI call. */
-export const OPENING = "Hi! What are you building, and is it just you or a team?";
+export const OPENING = "Is it just you, or are you building with a team?";
+export const OPENING_OPTIONS = ["Just me", "2–4 people", "5 or more"];
 /** After this many answers we wrap up, whatever's left goes unasked. */
 export const MAX_ANSWERS = 6;
 export const MAX_ANSWER_CHARS = 1000;
@@ -30,6 +31,7 @@ export const REPLY_SCHEMA = {
   additionalProperties: false,
   properties: {
     say: { type: "string", description: "Your next message to the developer: one short question, or a one-line thanks when done." },
+    options: { type: "array", items: { type: "string" }, maxItems: 6, description: "2 to 6 short answers they can tap for your question (empty when done)." },
     building: oneOf(BUILDING),
     team: oneOf(TEAM),
     style: oneOf(STYLE),
@@ -37,7 +39,7 @@ export const REPLY_SCHEMA = {
     agents: { type: "array", items: { type: "string", enum: ids(AGENTS) } },
     done: { type: "boolean" },
   },
-  required: ["say", "building", "team", "style", "pains", "agents", "done"],
+  required: ["say", "options", "building", "team", "style", "pains", "agents", "done"],
 } as const;
 
 const describe = (list: { id: string; label: string }[]) => list.map((c) => `${c.id} (${c.label})`).join(", ");
@@ -45,6 +47,7 @@ const describe = (list: { id: string; label: string }[]) => list.map((c) => `${c
 export const SYSTEM_PROMPT = [
   "You are Grill Me's setup interviewer. Have a short, friendly chat with a developer to learn how they work.",
   "Ask ONE question at a time, under 25 words, casual and specific. Never repeat a question or ask about something already known.",
+  "With each question give 2 to 6 short tap-able answers in `options` (a few words each). They can also type their own.",
   "Never give advice or recommend tools: Grill Me does that after the chat.",
   "Fill the fields from everything the developer has said so far. Use null or [] when unknown; never guess.",
   `building: ${describe(BUILDING)}.`,
@@ -81,7 +84,7 @@ export function buildPrompt(turns: Turn[], profile: WorkflowProfile, scan?: Scan
   ].filter(Boolean).join("\n\n");
 }
 
-export interface Reply { say: string; done: boolean; profile: WorkflowProfile }
+export interface Reply { say: string; options: string[]; done: boolean; profile: WorkflowProfile }
 
 /** Validate the AI's reply and fold it into the profile. Fields the AI left
  *  empty keep what we had; anything outside the allowed values is dropped. */
@@ -98,7 +101,10 @@ export function mergeReply(profile: WorkflowProfile, raw: unknown): Reply {
     updated: profile.updated,
   };
   const say = typeof r.say === "string" && r.say.trim() ? r.say.trim().slice(0, 400) : "Got it. Anything else that slows you down?";
-  return { say, done: r.done === true, profile: next };
+  const options = Array.isArray(r.options)
+    ? r.options.filter((o): o is string => typeof o === "string" && o.trim().length > 0).map((o) => o.trim().slice(0, 48)).slice(0, 6)
+    : [];
+  return { say, options: r.done === true ? [] : options, done: r.done === true, profile: next };
 }
 
 /** Which fields are filled, for the live checklist above the chat. */
