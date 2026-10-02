@@ -13,6 +13,7 @@ mod remote;
 mod doctor;
 mod ai_connect;
 mod interview;
+mod splash;
 mod catalog;
 pub mod mcp;
 
@@ -4586,9 +4587,13 @@ fn suggest_assignee(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .on_window_event(|_window, event| {
+        .on_window_event(|window, event| {
             // Closing the window (red button / ⌘W on the last window) must reap
             // the pty children too — not just ⌘Q — so no `claude` is orphaned.
+            // Only the app window: the launch splash closes itself every start.
+            if window.label() != "main" {
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
                 kill_all_ptys();
                 remote::shutdown();
@@ -4613,6 +4618,8 @@ pub fn run() {
                     );
                 }
             }
+            // launch animation (or straight to the app when it's off)
+            splash::start(app.handle());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -4629,6 +4636,8 @@ pub fn run() {
             ai_connect::ai_status,
             ai_connect::ai_login,
             interview::interview_turn,
+            splash::splash_reveal,
+            splash::splash_close,
             uninstall_all,
             doctor::diagnostics,
             team_config,

@@ -1,0 +1,38 @@
+import { describe, expect, it } from "vitest";
+import { TIMELINE, modeOf, nextFill, shouldExpand, skipOffset, stalled, welcomeLine } from "./timeline";
+
+describe("launch timeline", () => {
+  it("first launch runs about 2.5–3 s, later launches about 1 s", () => {
+    expect(TIMELINE.first.minReady + TIMELINE.first.expand).toBeGreaterThan(2.5);
+    expect(TIMELINE.first.minReady + TIMELINE.first.expand).toBeLessThan(3.3);
+    expect(TIMELINE.back.minReady + TIMELINE.back.expand).toBeLessThan(1.4);
+    expect(modeOf("back")).toBe("back");
+    expect(modeOf(null)).toBe("first");
+  });
+  it("the box only fills after it exists, and only opens when loading is done", () => {
+    const tl = TIMELINE.first;
+    expect(nextFill(0, 1, 1.0, 0.016, tl)).toBe(0);
+    let f = 0;
+    for (let i = 0; i < 60; i++) f = nextFill(f, 1, 2.5, 0.05, tl);
+    expect(f).toBe(1);
+    expect(shouldExpand(2.6, 0.9, tl)).toBe(false);
+    expect(shouldExpand(2.0, 1, tl)).toBe(false);
+    expect(shouldExpand(2.6, 1, tl)).toBe(true);
+  });
+  it("click skips to the box, never backwards", () => {
+    const tl = TIMELINE.first;
+    expect(0.5 + skipOffset(0.5, 0, tl)).toBeCloseTo(tl.fold[1]);
+    expect(skipOffset(3, 0.2, tl)).toBe(0.2);
+  });
+  it("welcome line uses the first name and teammate count", () => {
+    expect(welcomeLine("Aryan Motgi", 2)).toEqual({ hello: "Welcome back, Aryan", online: "2 teammates online" });
+    expect(welcomeLine("", 1)).toEqual({ hello: "Welcome back", online: "1 teammate online" });
+    expect(welcomeLine("Sam", 0).online).toBe("No teammates online yet");
+    expect(welcomeLine("Sam", null).online).toBeNull();
+  });
+  it("notices when macOS stops drawing the splash", () => {
+    expect(stalled(1000, 1200, false)).toBe(false);
+    expect(stalled(1000, 2000, false)).toBe(true);
+    expect(stalled(1000, 1001, true)).toBe(true);
+  });
+});

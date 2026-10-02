@@ -8,6 +8,12 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
+  // two pages: the app, and the launch animation's see-through splash window
+  build: {
+    rollupOptions: {
+      input: { main: "index.html", splash: "splash.html" },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

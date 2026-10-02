@@ -1,3 +1,4 @@
+import { bootMates, bootStep, matesOnline } from "./lib/bootProgress";
 import { create } from "zustand";
 import {
   activity,
@@ -1127,6 +1128,7 @@ let firedBudgetLevel: BudgetLevel = 0;
     });
   }
   restoreReady = true;
+  bootStep("settings");
   // first launch with the layout toggle: pin the choice now, so a new user who
   // then picks a mode/project doesn't get flipped to classic mid-session
   // (never on a corrupt file: writing would clobber what's left of it)
@@ -1147,6 +1149,7 @@ let firedBudgetLevel: BudgetLevel = 0;
     }
     startRoomFeed(useApp);
   }
+  bootStep("restore");
   const project = typeof appSettings.activeProject === "string" ? appSettings.activeProject : null;
   if (!project) return; // ProjectPicker shows; feeds start after selection reload
   await invoke("set_active_project", { id: project }).catch(() => {});
@@ -1370,4 +1373,13 @@ export function attentionSessions(teammates: Teammate[]): Teammate[] {
 
 export function attentionCount(teammates: Teammate[]): number {
   return attentionSessions(teammates).length;
+}
+
+// launch animation: "Welcome back · N teammates online" (first ~15 s only)
+{
+  const until = Date.now() + 15_000;
+  const unsub = useApp.subscribe((st) => {
+    if (Date.now() > until) { unsub(); return; }
+    if (st.room) bootMates(matesOnline(st.room.members ?? [], st.roomSelf?.memberId, Date.now()));
+  });
 }

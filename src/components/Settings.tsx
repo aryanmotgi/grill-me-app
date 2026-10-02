@@ -35,7 +35,7 @@ const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
 const SEARCH_INDEX: Record<Tab, string[]> = {
   setup: ["setup", "doctor", "install", "missing", "node", "claude", "git", "gh", "github", "tailscale", "health"],
   team: ["team", "solo", "mode", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
-  appearance: ["layout", "simple", "classic", "theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "backup", "restore", "export", "import"],
+  appearance: ["layout", "simple", "classic", "theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "launch", "animation", "splash", "backup", "restore", "export", "import"],
   terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
   notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat", "budget", "token", "rate", "limit", "cap"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
@@ -354,6 +354,9 @@ export function SettingsModal() {
                       <button key={b} className={`btn ${((appSettings.background as string | undefined) ?? "gradient") === b ? "active" : ""}`}
                         onClick={() => setAppSetting("background", b)}>{b}</button>
                     ))}
+                  </Row>
+                  <Row label="Launch animation" hint="The 3D logo when Grill Me opens. Takes effect next launch">
+                    <Toggle checked={appSettings.launchAnimation !== false} onChange={(v) => setAppSetting("launchAnimation", v)} />
                   </Row>
                   <Row label="Session details strip" hint="Show cpu, memory and token counts under each session">
                     <Toggle checked={appSettings.showVitals === true} onChange={(v) => setAppSetting("showVitals", v)} />
