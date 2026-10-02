@@ -373,5 +373,27 @@
         }
       }
     }
+  },
+  {
+    "name": "coding_dna",
+    "description": "The user's Coding DNA: how they build software, kept by Grill Me on this Mac. Strands: Flow (idea to ship), Toolkit (what they use, and how much), Rules (what AIs should always / never do), Habits (level, team, prompting, models), Pains (what slows them down, in their words), Wins (what got better), plus Evolutions (tools Grill Me suggested and what happened). Read it before planning work or giving advice, and follow its Rules. Read-only; the user edits it in Grill Me → DNA.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "strand": {
+          "type": "string",
+          "enum": [
+            "flow",
+            "toolkit",
+            "rules",
+            "habits",
+            "pains",
+            "wins",
+            "evolutions"
+          ],
+          "description": "Only this strand (omit for all)"
+        }
+      }
+    }
   }
 ]
