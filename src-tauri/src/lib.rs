@@ -57,11 +57,37 @@ fn config_path() -> PathBuf {
     grillme_dir().join("config.json")
 }
 
+/// The folder of the active project, from projects.json.
+fn active_project_path() -> Option<String> {
+    let active = lock_or_recover(&ACTIVE_PROJECT).clone();
+    let raw = std::fs::read_to_string(grillme_root().join("projects.json")).ok()?;
+    project_path_in(&raw, if active.is_empty() { "default" } else { &active })
+}
+
+/// `path` of the project with this id in a projects.json document.
+fn project_path_in(raw: &str, id: &str) -> Option<String> {
+    let list: Vec<serde_json::Value> = serde_json::from_str(raw).ok()?;
+    list.iter()
+        .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(id))
+        .and_then(|p| p.get("path")?.as_str().map(str::to_string))
+        .filter(|p| !p.trim().is_empty())
+}
+
+/// Where a project's first session works when it has no config yet: the
+/// project's own folder. A launch from Finder has "/" as its working
+/// directory, which must never become a session's folder.
+fn default_repo_path(project: Option<String>, cwd: Option<PathBuf>, home: Option<PathBuf>) -> String {
+    if let Some(p) = project {
+        return p;
+    }
+    match cwd {
+        Some(c) if c != Path::new("/") => c.to_string_lossy().into_owned(),
+        _ => home.map(|h| h.to_string_lossy().into_owned()).unwrap_or_else(|| ".".into()),
+    }
+}
+
 fn default_config() -> TeamConfig {
-    // Best guess for a fresh install: this repo is the first member's worktree.
-    let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| ".".into());
+    let cwd = default_repo_path(active_project_path(), std::env::current_dir().ok(), std::env::var("HOME").ok().map(PathBuf::from));
     TeamConfig {
         teammates: vec![TeamMember {
             id: "me".into(),
@@ -5836,5 +5862,28 @@ mod default_branch_tests {
         git(&dir, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"]);
         assert_eq!(default_branch(dir.to_str().unwrap()), "trunk");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod default_repo_tests {
+    use super::{default_repo_path, project_path_in};
+    use std::path::PathBuf;
+
+    #[test]
+    fn first_session_works_in_the_project_folder() {
+        let raw = r#"[{"id":"default","name":"a","path":"/code/a"},{"id":"demo","name":"d","path":"/code/demo"}]"#;
+        assert_eq!(project_path_in(raw, "demo").as_deref(), Some("/code/demo"));
+        assert_eq!(project_path_in(raw, "nope"), None);
+        assert_eq!(project_path_in("not json", "demo"), None);
+        assert_eq!(default_repo_path(Some("/code/demo".into()), Some(PathBuf::from("/")), None), "/code/demo");
+    }
+
+    #[test]
+    fn a_finder_launch_never_puts_a_session_in_root() {
+        let home = Some(PathBuf::from("/Users/me"));
+        assert_eq!(default_repo_path(None, Some(PathBuf::from("/")), home.clone()), "/Users/me");
+        assert_eq!(default_repo_path(None, None, home), "/Users/me");
+        assert_eq!(default_repo_path(None, Some(PathBuf::from("/code/x")), None), "/code/x");
     }
 }

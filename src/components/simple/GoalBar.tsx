@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../../store";
 import { useBridge } from "../BridgePanel";
+import { pendingCount } from "../../lib/bridge";
 import { Icon } from "../Icon";
 import type { Teammate } from "../../types";
 
@@ -22,6 +23,9 @@ export function GoalBar({ active, rightOpen, onToggleRight }: {
   const shipSession = useApp((s) => s.shipSession);
   const toast = useApp((s) => s.toast);
   const [draft, setDraft] = useState<string | null>(null);
+  const waiting = useBridge((b) => pendingCount(b.state));
+  const bridgeOpen = useBridge((b) => b.open);
+  const setBridgeOpen = useBridge((b) => b.setOpen);
 
   const save = async () => {
     const g = (draft ?? "").trim();
@@ -65,6 +69,13 @@ export function GoalBar({ active, rightOpen, onToggleRight }: {
           {goal ? <><span className="text-faint">Goal · </span>{goal}</> : "Set a team goal so every agent stays on track…"}
         </button>
       )}
+      <button
+        className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12.5px] cursor-pointer flex-none whitespace-nowrap ${waiting ? "text-warn bg-warn/10" : bridgeOpen ? "text-ink bg-raised" : "text-dim hover:text-ink hover:bg-raised"}`}
+        title="The Bridge: plans, hand-offs and questions between the Claude app, your sessions and teammates"
+        onClick={() => setBridgeOpen(!bridgeOpen)}
+      >
+        <Icon name="swap" size={12} /> Bridge{waiting ? <span className="num">{waiting}</span> : null}
+      </button>
       {active && view === "session" ? (
         <button
           className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent text-accent-ink text-[12.5px] font-medium cursor-pointer hover:brightness-110 flex-none whitespace-nowrap"

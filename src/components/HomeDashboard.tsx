@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "./Icon";
+import { kTokens, money, sessionStats } from "../lib/coach";
 import { TickNumber } from "./TickNumber";
 import { Sparkline } from "./SessionList";
 import { attentionSessions, isSolo, ptyIdFor, useApp } from "../store";
@@ -306,7 +307,14 @@ function BurnBars({ burn }: { burn: TokenBurn }) {
 // when nothing has real token tallies yet — never a fabricated curve.
 function TokenBurnTile() {
   const teammates = useApp((s) => s.teammates);
+  const setActive = useApp((s) => s.setActive);
   const burn = useMemo(() => tokenBurn(teammates), [teammates]);
+  // dollars at each session's own model, and the one session worth slimming
+  const spend = useMemo(() => {
+    const rows = teammates.map((t) => ({ t, st: sessionStats(t) })).filter((r) => r.st);
+    const heavy = rows.filter((r) => r.st!.heavy).sort((a, b) => b.st!.perTurn - a.st!.perTurn)[0];
+    return { cost: rows.reduce((n, r) => n + r.st!.cost, 0), heavy };
+  }, [teammates]);
 
   if (burn.total === 0) {
     return (
@@ -325,8 +333,15 @@ function TokenBurnTile() {
         format={fmtTokens}
         className="block text-[22px] font-display font-bold text-data"
       />
-      <div className="text-faint text-[10px] mt-0.5">tokens spent · {label}</div>
+      <div className="text-faint text-[10px] mt-0.5">tokens spent · {label}{spend.cost > 0 ? ` · ≈ ${money(spend.cost)}` : ""}</div>
       <BurnBars burn={burn} />
+      {spend.heavy ? (
+        <button className="mt-2 text-left text-[10.5px] text-warn hover:underline cursor-pointer"
+          title="Open it, then use Compact in the session card"
+          onClick={() => setActive(spend.heavy!.t.id)}>
+          {spend.heavy.t.name} re-reads {kTokens(spend.heavy.st!.perTurn)} tokens a message. Compact it to cut cost.
+        </button>
+      ) : null}
     </div>
   );
 }

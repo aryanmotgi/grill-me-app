@@ -5,6 +5,8 @@ import { useApp, ptyIdFor } from "../store";
 import { isTauri } from "../data/sources/git";
 import { Icon } from "./Icon";
 import { activeToken } from "../lib/composer";
+import { QUICK_ASKS, promptHints, sessionStats, type Hint } from "../lib/coach";
+import { useFanOutDraft } from "./FanOut";
 
 // ---------------------------------------------------------------------------
 // Monocode-style composer under the terminal. Multiline prompt (Enter sends,
@@ -40,6 +42,7 @@ export function Composer({ mateId }: { mateId: string }) {
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0); // highlighted suggestion index
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [hushed, setHushed] = useState<Set<string>>(new Set());
 
   const member = members.find((m) => m.id === mateId);
   const mate = teammates.find((t) => t.id === mateId);
@@ -63,6 +66,10 @@ export function Composer({ mateId }: { mateId: string }) {
       .map((f) => ({ insert: "@" + f + " ", label: "@" + (f.split("/").pop() ?? f), hint: f }));
   }, [token, fileRefs]);
 
+  // the coach: quiet unless the draft would waste a turn, time or money
+  const stats = useMemo(() => sessionStats(mate), [mate]);
+  const hints = useMemo(() => promptHints(draft, stats).filter((h) => !hushed.has(h.id)), [draft, stats, hushed]);
+
   if (!member || !isTauri()) return null;
   const viewOnly = mate?.permission === "view";
 
@@ -81,21 +88,41 @@ export function Composer({ mateId }: { mateId: string }) {
     });
   };
 
-  const send = async () => {
-    const text = draft.trim();
+  const send = async (quick?: string) => {
+    const text = (quick ?? draft).trim();
     if (!text || sending || viewOnly) return;
     setSending(true);
     try {
       // show it in the chat now; the transcript catches up a moment later
       usePendingChat.getState().add(mateId, text);
       await submitToAgent(ptyIdFor(mateId), text);
+      if (quick) return;
       setDraft("");
       setCaret(0);
+      setHushed(new Set());
     } catch (e) {
       toast(`Send failed: ${e}`, "warn");
     } finally {
       setSending(false);
       inputRef.current?.focus();
+    }
+  };
+
+  const applyHint = async (h: Hint) => {
+    const fix = h.fix;
+    if (!fix) return;
+    setHushed((x) => new Set(x).add(h.id));
+    if (fix.kind === "append") {
+      const next = draft.trimEnd() + fix.value;
+      setDraft(next);
+      requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(next.length, next.length); });
+    } else if (fix.kind === "split") {
+      useFanOutDraft.getState().set(fix.value);
+      useApp.getState().setView("tasks");
+      setDraft("");
+    } else {
+      await submitToAgent(ptyIdFor(mateId), fix.value).catch((e) => toast(`Couldn't send ${fix.value}: ${e}`, "warn"));
+      toast(`Sent ${fix.value}. Your message is still here, send it when you're ready.`);
     }
   };
 
@@ -132,6 +159,24 @@ export function Composer({ mateId }: { mateId: string }) {
         </div>
       )}
 
+      {hints.length > 0 && suggestions.length === 0 ? (
+        <div className="flex flex-col gap-1" aria-live="polite">
+          {hints.map((h) => (
+            <div key={h.id} className="coach-hint flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[11.5px] text-dim">
+              <Icon name="bulb" size={12} className="text-accent flex-none" />
+              <span className="flex-1 min-w-0">{h.text}</span>
+              {h.fix ? (
+                <button className="composer-btn h-6 text-[11px] flex-none" onClick={() => void applyHint(h)}>{h.fix.label}</button>
+              ) : null}
+              <button className="text-faint hover:text-ink cursor-pointer flex-none" title="Hide this tip"
+                aria-label="Hide this tip" onClick={() => setHushed((x) => new Set(x).add(h.id))}>
+                <Icon name="cross" size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <textarea
         ref={inputRef}
         rows={1}
@@ -150,20 +195,26 @@ export function Composer({ mateId }: { mateId: string }) {
           <Icon name="folder" size={10} /> {member.repoPath.split("/").pop()}
           <Icon name="branch" size={10} /> {mate?.branch ?? "main"}
         </span>
-        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim"
-          title="Which agent CLI runs in this session (chosen at session creation)">
-          <Icon name="spark" size={10} /> {AGENT_LABEL[member.agent ?? "claude"]}
-        </span>
-        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim"
-          title="Sessions run with permission prompts bypassed; the audit blocklist still applies">
-          <Icon name="lock" size={10} /> bypass on
-        </span>
+        {draft.trim() || viewOnly ? (
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim"
+            title="Which agent CLI runs in this session (chosen at session creation)">
+            <Icon name="spark" size={10} /> {AGENT_LABEL[member.agent ?? "claude"]}
+          </span>
+        ) : (
+          // empty box: the asks people type all day, one click each
+          QUICK_ASKS.map((q) => (
+            <button key={q.label} className="px-2 py-0.5 rounded-md bg-raised text-[10.5px] text-dim hover:text-ink hover:bg-raised/70 cursor-pointer disabled:opacity-40"
+              disabled={sending} title={q.prompt} onClick={() => void send(q.prompt)}>
+              {q.label}
+            </button>
+          ))
+        )}
         <span className="flex-1" />
         <button
           className="flex items-center gap-1 px-3 py-1 rounded-md bg-accent text-accent-ink text-[11px] font-semibold cursor-pointer hover:brightness-110 disabled:opacity-40"
           disabled={!draft.trim() || viewOnly || sending}
           title="Send to the agent (Enter)"
-          onClick={send}
+          onClick={() => void send()}
         >
           send ↵
         </button>

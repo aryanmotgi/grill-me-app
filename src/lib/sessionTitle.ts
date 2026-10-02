@@ -11,7 +11,9 @@ export function sessionTitle(
   titles: unknown,
 ): string {
   const custom = titles && typeof titles === "object" ? (titles as SessionTitles)[mate.id] : undefined;
-  return (typeof custom === "string" && custom.trim()) || mate.taskLabel || mate.name;
+  // "—" is the placeholder for "no task yet", never a title
+  const label = mate.taskLabel && !/^[\s—–-]*$/.test(mate.taskLabel) ? mate.taskLabel : "";
+  return (typeof custom === "string" && custom.trim()) || label || mate.name;
 }
 
 /** Next titles map after a rename; blank or unchanged-from-default clears it. */

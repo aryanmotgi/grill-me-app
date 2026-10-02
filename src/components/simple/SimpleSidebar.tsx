@@ -3,6 +3,7 @@ import { SessionList } from "../SessionList";
 import { Icon } from "../Icon";
 import { ProjectIcon } from "../ProjectIcon";
 import type { TeamSession } from "../../types";
+import type { MainView } from "../../store";
 
 // ---------------------------------------------------------------------------
 // Simple layout, left column: which project, your sessions (grouped by what
@@ -25,6 +26,31 @@ function TeammateSessions({ rows }: { rows: TeamSession[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Everything the classic rail had, in plain words, one click away. */
+const HUB: { view: MainView; icon: string; label: string; title: string }[] = [
+  { view: "home", icon: "layout", label: "Overview", title: "Every session at a glance: who's working, who needs you, what it cost (⌘H)" },
+  { view: "brain", icon: "note", label: "Brain", title: "What the project knows: goal, decisions, where you left off. Every agent reads it." },
+  { view: "flow", icon: "swap", label: "Flow", title: "Who's talking to whom: the Claude app, your sessions and teammates" },
+  { view: "dna", icon: "spark", label: "Coding DNA", title: "How you build, what Grill Me learned, and tools that would help (Evolutions)" },
+  { view: "automations", icon: "bolt", label: "Automations", title: "Things Grill Me does for you: tests, checks, reminders, phone pings" },
+];
+
+function Hub() {
+  const view = useApp((s) => s.view);
+  const setView = useApp((s) => s.setView);
+  return (
+    <nav className="flex-none border-t border-line px-2 py-2 flex flex-col gap-0.5" aria-label="Project hub">
+      {HUB.map((h) => (
+        <button key={h.view} title={h.title} aria-current={view === h.view ? "page" : undefined}
+          className={`flex items-center gap-2.5 h-8 px-2.5 rounded-lg text-[13px] text-left cursor-pointer transition-colors ${view === h.view ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`}
+          onClick={() => setView(view === h.view ? "session" : h.view)}>
+          <Icon name={h.icon} size={14} /> {h.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -64,10 +90,6 @@ function Footer() {
         </button>
       ) : null}
       <span className="flex-1" />
-      <button className="h-8 px-2 rounded-lg flex items-center gap-1.5 text-[12px] text-dim hover:text-ink hover:bg-raised cursor-pointer"
-        title="Your Coding DNA: how you build, what Grill Me learned" onClick={() => useApp.getState().setView("dna")}>
-        <Icon name="spark" size={13} /> DNA
-      </button>
       <button className="w-8 h-8 rounded-lg flex items-center justify-center text-dim hover:text-ink hover:bg-raised cursor-pointer"
         title="Settings (⌘,)" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
         <Icon name="gear" size={15} />
@@ -121,6 +143,7 @@ export function SimpleSidebar() {
         <SessionList bare />
       </div>
       <TeammateSessions rows={others} />
+      <Hub />
       <Footer />
     </aside>
   );

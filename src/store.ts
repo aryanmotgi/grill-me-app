@@ -1069,7 +1069,12 @@ function emptyTeammate(id: string): Teammate {
  *  setup, and save both so later choices (mode, project) can't flip them. */
 function pinFirstRun(settings: Record<string, unknown>) {
   const st = useApp.getState();
-  if (settings.uiLayout == null) st.setAppSetting("uiLayout", uiLayoutOf(settings));
+  // the simple layout got Brain, Flow, DNA and the Bridge: move everyone onto
+  // it once (an auto-pinned "classic" wasn't a choice); Settings switches back
+  if (settings.uiLayout == null || settings.layoutV2 !== true) {
+    st.setAppSetting("uiLayout", settings.layoutV2 === true ? uiLayoutOf(settings) : "simple");
+    st.setAppSetting("layoutV2", true);
+  }
   if (settings.firstRunStep == null) st.setAppSetting("firstRunStep", initialFirstRunStep(settings));
   // "Finish later" last time: setup picks up where it left off
   if (typeof settings.firstRunPaused === "string") {

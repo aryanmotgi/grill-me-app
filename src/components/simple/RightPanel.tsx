@@ -9,14 +9,107 @@ import { EditorPane } from "../EditorPane";
 import { TaskBoard } from "../TaskBoard";
 import { TeamChat } from "../TeamChat";
 import { Icon } from "../Icon";
+import { PreviewPage } from "../PreviewPage";
+import { kTokens, money, sessionStats } from "../../lib/coach";
+import { submitToAgent } from "../../lib/ptyReady";
+import { ptyIdFor } from "../../store";
+import { useTests } from "../../lib/testsStore";
+import { automationOn, withAutomation } from "../../lib/automations";
 import { rightTabOf, type RightTab } from "../../lib/uiLayout";
 import type { Teammate } from "../../types";
 
 // ---------------------------------------------------------------------------
-// Simple layout, right column: three tabs that replace ~a dozen classic
-// surfaces. Changes = the code (diffs + every file). Plan = what the team
-// agreed (tasks, decisions). Team = people (approvals, chat).
+// Simple layout, right column. On top, "This session": what it cost, how
+// heavy it's getting, a save point, and what Grill Me is guarding. Below,
+// four tabs that replace ~a dozen classic surfaces. Changes = the code
+// (diffs + every file). Preview = the app it's building. Plan = what the
+// team agreed (tasks, decisions). Team = people (approvals, chat).
 // ---------------------------------------------------------------------------
+
+function Stat({ label, value, tone, title }: { label: string; value: string; tone?: "warn"; title?: string }) {
+  return (
+    <div className="min-w-0" title={title}>
+      <div className={`num text-[15px] leading-tight ${tone === "warn" ? "text-warn" : "text-ink"}`}>{value}</div>
+      <div className="text-[10.5px] text-faint truncate">{label}</div>
+    </div>
+  );
+}
+
+/** Did its last change pass the tests? Off by default; one click turns it on. */
+function TestsLine({ id }: { id: string }) {
+  const settings = useApp((s) => s.appSettings);
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const toast = useApp((s) => s.toast);
+  const r = useTests((t) => t.results[id]);
+  if (!automationOn(settings, "auto-test")) {
+    return (
+      <button className="flex items-center gap-1.5 text-[11.5px] text-dim hover:text-ink cursor-pointer text-left"
+        title="Runs the project's tests after each reply that changed something, and shows the result here"
+        onClick={() => { const [k, v] = withAutomation(settings, "auto-test", true); setAppSetting(k, v); }}>
+        <Icon name="check" size={11} /> Check tests after every reply
+      </button>
+    );
+  }
+  if (!r) return <span className="flex items-center gap-1.5 text-[11.5px] text-faint"><Icon name="check" size={11} /> Tests run after its next change</span>;
+  if (r.running) return <span className="flex items-center gap-1.5 text-[11.5px] text-dim"><span className="spinner" /> Running tests…</span>;
+  if (r.ok) return <span className="flex items-center gap-1.5 text-[11.5px] text-ok" title={r.cmd}><Icon name="check" size={11} /> Tests pass</span>;
+  const send = () => void submitToAgent(ptyIdFor(id), `The tests fail after your last change (${r.cmd}). Find the cause, tell me in one line, then fix it:\n\n${r.tail.slice(-1500)}`)
+    .catch((e) => toast(`Couldn't send: ${e}`, "warn"));
+  return (
+    <span className="flex items-center gap-1.5 text-[11.5px] text-danger" title={r.tail.slice(-600)}>
+      <Icon name="cross" size={11} /> Tests fail
+      <span className="flex-1" />
+      <button className="btn" onClick={send}>Ask it to fix</button>
+    </span>
+  );
+}
+
+/** What a bare terminal never shows you: spend, weight, a save point, and the guard rails. */
+function SessionCard({ active }: { active: Teammate | undefined }) {
+  const checkpointNow = useApp((s) => s.checkpointNow);
+  const toast = useApp((s) => s.toast);
+  const [saving, setSaving] = useState(false);
+  if (!active) return null;
+  const st = sessionStats(active);
+  const changed = active.changes.length;
+  const save = async () => {
+    setSaving(true);
+    try { await checkpointNow(); } finally { setSaving(false); }
+  };
+  const compact = () => void submitToAgent(ptyIdFor(active.id), "/compact")
+    .then(() => toast("Compacting: the session keeps the gist and each message gets cheaper"))
+    .catch((e) => toast(`Couldn't compact: ${e}`, "warn"));
+  return (
+    <div className="flex-none border-b border-line px-3 py-3 flex flex-col gap-2.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] tracking-[0.12em] uppercase text-faint font-semibold flex-1 truncate">This session</span>
+        {st ? <span className="text-[10.5px] text-faint capitalize" title={active.usage.model}>{st.family === "other" ? active.usage.model : st.family}</span> : null}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <Stat label="spent (est.)" value={st ? money(st.cost) : "—"} title="Estimated from this session's real token counts at list prices" />
+        <Stat label={st?.heavy ? "per message · heavy" : "per message"} value={st ? kTokens(st.perTurn) : "—"} tone={st?.heavy ? "warn" : undefined}
+          title={st ? `Each message re-reads about ${kTokens(st.perTurn)} tokens (${money(st.nextMsg)}).` : "Shows after the first reply"} />
+        <Stat label={changed === 1 ? "file changed" : "files changed"} value={String(changed)} />
+      </div>
+      <div className="flex gap-1.5">
+        <button className="btn flex-1 justify-center" disabled={saving} onClick={() => void save()}
+          title="Commit everything now on this branch (never main, never pushed), so you can always get back here">
+          <Icon name="commit" size={11} /> {saving ? "Saving…" : "Save point"}
+        </button>
+        {st?.heavy ? (
+          <button className="btn flex-1 justify-center text-warn" onClick={compact} title="Summarize the conversation so each message costs less">
+            Compact
+          </button>
+        ) : null}
+      </div>
+      <TestsLine id={active.id} />
+      <div className="flex items-center gap-1.5 text-[10.5px] text-faint"
+        title="Risky commands (force-push to main, rm -rf, DROP TABLE…) are blocked even with permissions skipped. You get a ping when the agent needs you.">
+        <Icon name="lock" size={10} /> Risky commands blocked · pinged when it needs you
+      </div>
+    </div>
+  );
+}
 
 function ChangesPane({ active }: { active: Teammate | undefined }) {
   const members = useApp((s) => s.members);
@@ -120,11 +213,13 @@ export function RightPanel({ active, width }: { active: Teammate | undefined; wi
   const stored = useApp((s) => s.appSettings.rightTab);
   const setAppSetting = useApp((s) => s.setAppSetting);
   const tab = rightTabOf(stored);
+  const view = useApp((s) => s.view);
   const changed = active?.changes?.length ?? 0;
   const waiting = useBridge((b) => pendingCount(b.state));
   const unread = useChatUnread();
   const TABS: { id: RightTab; label: string; badge: number }[] = [
     { id: "changes", label: "Changes", badge: changed },
+    { id: "preview", label: "Preview", badge: 0 },
     { id: "plan", label: "Plan", badge: 0 },
     { id: "team", label: "Team", badge: waiting + unread },
   ];
@@ -133,15 +228,17 @@ export function RightPanel({ active, width }: { active: Teammate | undefined; wi
       <div data-tauri-drag-region className="h-12 flex-none border-b border-line flex items-center gap-1 px-2" role="tablist">
         {TABS.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id}
-            className={`flex-1 h-8 rounded-lg text-[13px] cursor-pointer transition-colors ${tab === t.id ? "bg-raised text-ink" : "text-dim hover:text-ink"}`}
+            className={`flex-1 h-8 rounded-lg text-[12.5px] cursor-pointer transition-colors ${tab === t.id ? "bg-raised text-ink" : "text-dim hover:text-ink"}`}
             onClick={() => setAppSetting("rightTab", t.id)}>
             {t.label}
             {t.badge ? <span className={`ml-1.5 num ${t.id === "team" ? "text-warn" : "text-faint"}`}>{t.badge}</span> : null}
           </button>
         ))}
       </div>
+      {view === "session" ? <SessionCard active={active} /> : null}
       <div key={tab} className="tab-fade flex-1 min-h-0 flex flex-col">
         {tab === "changes" ? <ChangesPane active={active} /> : null}
+        {tab === "preview" ? <PreviewPage /> : null}
         {tab === "plan" ? <PlanPane /> : null}
         {tab === "team" ? <TeamPane /> : null}
       </div>

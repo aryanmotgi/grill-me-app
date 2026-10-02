@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { create } from "zustand";
 import { Icon } from "./Icon";
 import { ptyIdFor, useApp } from "../store";
 import { deliverBriefWhenReady } from "../lib/ptyReady";
@@ -8,6 +9,13 @@ import type { Task } from "../types";
 function words(text: string): Set<string> {
   return new Set(text.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
 }
+
+/** A checklist handed over from elsewhere (the composer's "split into
+ *  parallel sessions"): FanOut opens with it filled in. */
+export const useFanOutDraft = create<{ text: string | null; set: (t: string | null) => void }>((set) => ({
+  text: null,
+  set: (text) => set({ text }),
+}));
 
 /**
  * Paste a checklist → independent tasks spawn their own worktree + session
@@ -20,6 +28,13 @@ export function FanOut() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const handed = useFanOutDraft((d) => d.text);
+  useEffect(() => {
+    if (handed === null) return;
+    setText(handed);
+    setOpen(true);
+    useFanOutDraft.getState().set(null);
+  }, [handed]);
 
   const parse = (): { title: string; dependsOn: number | null }[] => {
     const lines = text.split("\n")
