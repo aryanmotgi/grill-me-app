@@ -22,11 +22,22 @@ export interface WorkflowProfile {
   pains: SolveTag[];
   /** AI tools they use: "claude", "codex", "cursor"… */
   agents: string[];
+  /** what they actually said, kept in their words: "deploys to Vercel break (env vars?)" */
+  notes?: Note[];
+  /** tools and vendors they named ("vercel", "linear", "postgres"): evidence, like the scan */
+  mentions?: string[];
+  /** the read-back: how they work, in two sentences they've confirmed */
+  summary?: string;
   source: "form" | "interview";
   updated: number;
 }
 
 interface Choice<T extends string> { id: T; label: string }
+
+/** One thing they told us, and the pain it's about (if any). */
+export interface Note { text: string; about?: SolveTag }
+export const MAX_NOTES = 8;
+export const MAX_MENTIONS = 12;
 
 export const BUILDING: Choice<Building>[] = [
   { id: "web", label: "A web app" }, { id: "mobile", label: "A mobile app" }, { id: "backend", label: "A backend or API" },
@@ -79,9 +90,48 @@ export function profileOf(v: unknown): WorkflowProfile | null {
     style: pick(STYLE, o.style),
     pains: strs(o.pains).filter((p): p is SolveTag => PAINS.some((c) => c.id === p)).slice(0, MAX_PAINS),
     agents: strs(o.agents).filter((a) => AGENTS.some((c) => c.id === a)),
+    notes: notesOf(o.notes),
+    mentions: mentionsOf(o.mentions),
+    summary: typeof o.summary === "string" && o.summary.trim() ? o.summary.trim().slice(0, 500) : undefined,
     source: o.source === "interview" ? "interview" : "form",
     updated: typeof o.updated === "number" ? o.updated : 0,
   };
+}
+
+/** Notes, read defensively: short strings, an optional known pain. */
+export function notesOf(v: unknown): Note[] {
+  if (!Array.isArray(v)) return [];
+  const out: Note[] = [];
+  for (const n of v) {
+    const text = typeof n === "string" ? n : n && typeof n === "object" ? (n as Record<string, unknown>).text : null;
+    if (typeof text !== "string" || !text.trim()) continue;
+    const about = n && typeof n === "object" ? (n as Record<string, unknown>).about : undefined;
+    out.push({ text: text.trim().slice(0, 160), about: PAINS.some((c) => c.id === about) ? (about as SolveTag) : undefined });
+  }
+  return out.slice(0, MAX_NOTES);
+}
+
+/** Tool/vendor names, lowercased to plain words ("Vercel" → "vercel"). */
+export function mentionsOf(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const words = v.filter((x): x is string => typeof x === "string")
+    .map((x) => x.toLowerCase().replace(/[^a-z0-9.+-]/g, "").slice(0, 32)).filter((x) => x.length > 1);
+  return [...new Set(words)].slice(0, MAX_MENTIONS);
+}
+
+/** What they're building, worked out from the code (so we don't ask). */
+export function buildingFromScan(scan?: ScanResult | null): Building | undefined {
+  const all = [...(scan?.stack?.frameworks ?? []), ...(scan?.stack?.dependencies ?? []), ...(scan?.stack?.languages ?? [])].map((x) => x.toLowerCase());
+  const has = (...xs: string[]) => xs.some((x) => all.some((a) => a === x || a.startsWith(`${x}/`) || a.startsWith(`@${x}`)));
+  if (has("react-native", "expo", "flutter", "swiftui", "swift", "kotlin")) return "mobile";
+  // a full-stack web framework means a web app; a server language with a
+  // React admin on the side is still a backend
+  if (has("next.js", "next", "nuxt", "sveltekit", "remix", "astro")) return "web";
+  if (has("go", "rust", "elixir", "java", "pgx", "gin", "spring", "actix", "axum")) return "backend";
+  if (has("react", "vue", "svelte", "angular", "solid-js")) return "web";
+  if (has("pandas", "numpy", "torch", "tensorflow", "scikit-learn", "jupyter", "langchain")) return "data";
+  if (has("express", "fastify", "hono", "fastapi", "django", "flask", "rails")) return "backend";
+  return undefined;
 }
 
 /** Everything a scan saw, in the shape the catalog matcher wants. */
@@ -179,14 +229,18 @@ export interface Upgrade {
   what: string;
   command?: string;
   docs?: string;
+  /** the need it was picked for */
+  need?: SolveTag;
 }
 
 /** The stage an upgrade lights: the one its top need belongs to. */
 export function stageFor(need: SolveTag, e?: CatalogEntry): StageId {
-  const hit = STAGES.find((st) => st.tags.includes(need) || st.gap === need)
-    ?? STAGES.find((st) => e?.solves.some((t) => st.tags.includes(t)));
-  // needs outside the five stages (debugging, ui, database…) belong to Build
-  return hit?.id ?? "build";
+  const hit = STAGES.find((st) => st.tags.includes(need) || st.gap === need);
+  if (hit) return hit.id;
+  // needs outside the five stages (debugging, ui, database…) belong to Build;
+  // only a gap pick with no pain behind it follows the tool's own stage
+  if (PAINS.some((c) => c.id === need)) return "build";
+  return STAGES.find((st) => e?.solves.some((t) => st.tags.includes(t)))?.id ?? "build";
 }
 
 /** Tags where the right tool depends on the vendor you already use: only
@@ -194,17 +248,23 @@ export function stageFor(need: SolveTag, e?: CatalogEntry): StageId {
 const VENDOR_TAGS: SolveTag[] = ["deploy", "database", "payments", "auth", "monitoring", "analytics"];
 const KIND_BONUS: Record<string, number> = { mcp: 2, plugin: 2, skill: 2, cli: 1, app: 0, agent: -99 };
 
-/** Words in the scan that name a vendor: deps, commands, MCP names, packages. */
-function evidence(scan?: ScanResult | null): Set<string> {
+/** Words that name a vendor: from the scan (deps, commands, MCP names,
+ *  packages) and from what they told us ("we deploy on Vercel"). */
+function evidence(scan?: ScanResult | null, mentions: string[] = []): Set<string> {
   const d = detectionsFromScan(scan);
   const words = new Set<string>();
-  for (const list of Object.values(d)) {
+  for (const list of [...Object.values(d), mentions]) {
     for (const raw of list ?? []) {
       for (const w of raw.toLowerCase().split(/[^a-z0-9]+/)) if (w.length > 2) words.add(w);
     }
   }
   return words;
 }
+
+/** Needs where people pick one vendor: if they already have one, a rival
+ *  is noise (a Linear team doesn't want Atlassian). */
+const ONE_VENDOR: SolveTag[] = ["project-management", "deploy", "database", "monitoring", "analytics", "auth", "payments"];
+const vendorOf = (e: CatalogEntry) => e.id.split("-")[0];
 
 /** Vendors nearly everyone has, so their tools need no evidence. */
 const EVERYONE_HAS = new Set(["github", "gh", "docker"]);
@@ -222,7 +282,16 @@ function vendorOk(e: CatalogEntry, words: Set<string>): boolean {
  */
 export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: CatalogEntry[], scan?: ScanResult | null, max = 3): Upgrade[] {
   const haveIds = new Set(have.map((e) => e.id));
-  const words = evidence(scan);
+  const mentions = p.mentions ?? [];
+  const words = evidence(scan, mentions);
+  const named = new Set(mentions);
+  // per one-vendor need, the vendors they already use
+  const usedFor = new Map<SolveTag, Set<string>>();
+  for (const e of have) {
+    if (e.kind === "agent") continue;
+    for (const t of e.solves) if (ONE_VENDOR.includes(t)) usedFor.set(t, (usedFor.get(t) ?? new Set()).add(vendorOf(e)));
+  }
+  const rival = (e: CatalogEntry, t: SolveTag) => !!usedFor.get(t)?.size && !usedFor.get(t)!.has(vendorOf(e));
   const stages = workflowStages(have, scan, p);
   const say = (t: SolveTag) => PAINS.find((c) => c.id === t)?.say ?? t;
 
@@ -236,6 +305,9 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
   }
   const whyFor = (covers: SolveTag[]) => {
     const pains = covers.filter((t) => p.pains.includes(t));
+    // their own words beat a paraphrase
+    const note = (p.notes ?? []).find((n) => n.about && pains.includes(n.about));
+    if (note) return `You said: "${note.text}"`;
     if (pains.length) return `You said ${joinAnd(pains.map(say))} ${pains.length > 1 ? "slow" : "slows"} you down.`;
     return gapWhy.get(covers[0]) ?? "";
   };
@@ -248,39 +320,57 @@ export function suggestUpgrades(p: WorkflowProfile, catalog: Catalog, have: Cata
   const out: Upgrade[] = [];
   const met = new Set<SolveTag>();
 
-  // a missing instruction file is the cheapest, biggest win for any agent
+  // a missing instruction file is the cheapest, biggest win for any agent.
+  // CLAUDE.md only when Claude is the only agent; anything mixed (or a team)
+  // gets AGENTS.md, the one file every agent reads
   if (scan?.instructions && !hasInstructions(scan) && agents.size > 0) {
+    const claudeOnly = agents.size === 1 && agents.has("claude") && p.team !== "small" && p.team !== "large";
+    const team = p.team === "small" || p.team === "large";
     out.push({
-      id: "instructions-file", stage: "build", kind: "tip", name: agents.has("claude") ? "A CLAUDE.md for this project" : "An AGENTS.md for this project",
-      why: "Your agents start every session without knowing your project's rules.",
-      what: "One short file with how to run, test and style the code. Every session reads it first.",
-      docs: agents.has("claude") ? "https://code.claude.com/docs/en/memory" : "https://agents.md",
+      id: "instructions-file", stage: "build", kind: "tip", name: claudeOnly ? "A CLAUDE.md for this project" : "An AGENTS.md for this project",
+      why: team ? "Everyone's agents start without shared rules, so every PR looks different." : "Your agents start every session without knowing your project's rules.",
+      what: team ? "One shared file with how to run, test and style the code. Claude Code, Codex and Cursor all read it first." : "One short file with how to run, test and style the code. Every session reads it first.",
+      docs: claudeOnly ? "https://code.claude.com/docs/en/memory" : "https://agents.md",
     });
   }
 
-  while (out.length < max) {
-    let best: { e: CatalogEntry; score: number; covers: SolveTag[] } | null = null;
-    for (const e of pool) {
-      if (out.some((u) => u.id === e.id)) continue;
-      const covers = order.filter((t) => !met.has(t) && e.solves.includes(t));
-      if (!covers.length) continue;
-      const rank = order.indexOf(covers[0]);
-      // the top need decides; ties go to focused tools (it's their main job),
-      // tools made for your AI, the right kind, and ones that also cover more
-      const score = (order.length - rank) * 100
-        + (e.solves[0] === covers[0] ? 8 : 0)
-        + (e.agents.some((a) => a !== "any" && agents.has(a)) ? 4 : 0)
-        + (KIND_BONUS[e.kind] ?? 0)
-        + (covers.length - 1) * 3
-        + (e.verified ? 1 : 0);
-      if (!best || score > best.score) best = { e, score, covers };
+  // two passes: first each pick must cover a need no earlier pick covers;
+  // then (if there's room) the next best for needs already touched, so a
+  // clear answer still gets three suggestions
+  for (const strict of [true, false]) {
+    while (out.length < max) {
+      let best: { e: CatalogEntry; score: number; covers: SolveTag[] } | null = null;
+      for (const e of pool) {
+        if (out.some((u) => u.id === e.id)) continue;
+        const covers = order.filter((t) => (!strict || !met.has(t)) && e.solves.includes(t) && !rival(e, t));
+        if (!covers.length) continue;
+        const rank = order.indexOf(covers[0]);
+        // the top need decides; ties go to tools they named, focused tools
+        // (it's their main job), tools made for their AI, the right kind,
+        // and ones that also cover more
+        const score = (order.length - rank) * 100
+          // a tool they named wins, but only where the vendor is the point
+          // (they said Vercel: a Vercel deploy tool, not Vercel for "docs")
+          + (VENDOR_TAGS.includes(covers[0]) && (named.has(vendorOf(e)) || named.has(e.id)) ? 50 : 0)
+          + (e.solves[0] === covers[0] ? 8 : 0)
+          + (e.agents.some((a) => a !== "any" && agents.has(a)) ? 4 : 0)
+          + (KIND_BONUS[e.kind] ?? 0)
+          + (covers.length - 1) * 3
+          + (e.verified ? 1 : 0)
+          // a web app's bugs live in the browser: browser tools fit it
+          + (p.building === "web" && e.solves.includes("browser") ? 8 : 0)
+          - (p.building && p.building !== "web" && p.building !== "mobile" && e.solves.includes("browser") ? 40 : 0)
+          // second pass: don't stack two tools on the same need
+          - (strict ? 0 : out.filter((u) => u.need === covers[0]).length * 150);
+        if (!best || score > best.score) best = { e, score, covers };
+      }
+      if (!best) break;
+      for (const t of best.covers) met.add(t);
+      out.push({
+        id: best.e.id, name: best.e.name, stage: stageFor(best.covers[0], best.e), kind: best.e.kind, why: whyFor(best.covers), what: best.e.what,
+        command: best.e.install?.command, docs: best.e.install?.docs ?? best.e.source, need: best.covers[0],
+      });
     }
-    if (!best) break;
-    for (const t of best.covers) met.add(t);
-    out.push({
-      id: best.e.id, name: best.e.name, stage: stageFor(best.covers[0], best.e), kind: best.e.kind, why: whyFor(best.covers), what: best.e.what,
-      command: best.e.install?.command, docs: best.e.install?.docs ?? best.e.source,
-    });
   }
   return out.slice(0, max);
 }

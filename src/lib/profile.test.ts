@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import builtinDoc from "../data/catalog.json";
 import { parseCatalog } from "./catalog";
 import type { ScanResult } from "./scan";
-import { agentsFromScan, detectionsFromScan, emptyProfile, profileFacts, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type WorkflowProfile } from "./profile";
+import { agentsFromScan, buildingFromScan, detectionsFromScan, emptyProfile, profileFacts, profileOf, suggestUpgrades, toolsYouHave, workflowStages, type WorkflowProfile } from "./profile";
 
 const catalog = parseCatalog(builtinDoc)!;
 const scan = (over: Partial<ScanResult> = {}): ScanResult => ({ ts: 1, sources: [], checked: [], ...over });
@@ -91,5 +91,52 @@ describe("workflow and upgrades", () => {
       { label: "Stack", value: "TypeScript, React", from: "scan" },
       { label: "Slows you down", value: "Testing", from: "you" },
     ]));
+  });
+  it("counts what they said as evidence: a Vercel pain gets a Vercel tool", () => {
+    const s = scan({ agents: { bins: [], apps: ["Cursor.app"] }, stack: { dependencies: ["next"] } });
+    const p = profile({ agents: ["cursor"], pains: ["debugging", "deploy"], mentions: ["vercel"], notes: [{ text: "works on my laptop, breaks on Vercel", about: "deploy" }] });
+    const ups = suggestUpgrades(p, catalog, toolsYouHave(catalog, s), s);
+    const deploy = ups.find((u) => u.id.startsWith("vercel"));
+    expect(deploy).toBeTruthy();
+    expect(deploy!.why).toBe('You said: "works on my laptop, breaks on Vercel"');
+  });
+  it("never suggests a rival of a tool you already use", () => {
+    const s = scan({ agents: { bins: ["claude", "codex"], apps: [] }, extensions: { mcp: [{ name: "linear", agent: "claude", scope: "user" }], plugins: [], skills: [] } });
+    const ups = suggestUpgrades(profile({ agents: ["claude", "codex"], pains: ["project-management", "review"] }), catalog, toolsYouHave(catalog, s), s);
+    for (const rival of ["atlassian", "asana", "notion"]) expect(ups.some((u) => u.id.startsWith(rival))).toBe(false);
+  });
+  it("gives a mixed or team setup AGENTS.md, Claude alone CLAUDE.md", () => {
+    const s = scan({ agents: { bins: ["claude", "codex"], apps: [] }, instructions: [] });
+    const mixed = suggestUpgrades(profile({ agents: ["claude", "codex"], team: "large" }), catalog, toolsYouHave(catalog, s), s);
+    expect(mixed[0].name).toContain("AGENTS.md");
+    expect(mixed[0].why).toMatch(/shared rules/);
+  });
+  it("fills all three when one tool covers several needs", () => {
+    const s = scan({ agents: { bins: ["claude", "gh"], apps: [] }, git: { usesPullRequests: true }, instructions: [{ file: "CLAUDE.md", scope: "project", bytes: 900, headings: [] }] });
+    const ups = suggestUpgrades(profile({ style: "plan-first", pains: ["review", "database", "testing"] }), catalog, toolsYouHave(catalog, s), s);
+    expect(ups.length).toBe(3);
+    expect(new Set(ups.map((u) => u.id)).size).toBe(3);
+  });
+  it("puts a debugging pick in Build, not Plan", () => {
+    const ups = suggestUpgrades(profile({ agents: ["cursor"], pains: ["debugging"] }), catalog, [], null);
+    expect(ups[0].stage).toBe("build");
+  });
+  it("works out what you're building from the code", () => {
+    expect(buildingFromScan(scan({ stack: { frameworks: ["Next.js", "React"] } }))).toBe("web");
+    expect(buildingFromScan(scan({ stack: { languages: ["Go", "SQL"], dependencies: ["pgx"] } }))).toBe("backend");
+    expect(buildingFromScan(scan({ stack: { dependencies: ["expo", "react"] } }))).toBe("mobile");
+    expect(buildingFromScan(null)).toBeUndefined();
+  });
+  it("reads notes and mentions defensively", () => {
+    const p = profileOf({ notes: ["plain string", { text: "flaky testcontainers", about: "testing" }, { text: "", about: "x" }, { text: "y", about: "evil" }, 7], mentions: ["Vercel", "Linear!", "", 3] })!;
+    expect(p.notes).toEqual([{ text: "plain string", about: undefined }, { text: "flaky testcontainers", about: "testing" }, { text: "y", about: undefined }]);
+    expect(p.mentions).toEqual(["vercel", "linear"]);
+  });
+  it("doesn't push browser tools on a backend, or a named vendor for an unrelated need", () => {
+    const s = scan({ agents: { bins: ["claude"], apps: [] }, history: [{ cmd: "vercel", count: 3 }] });
+    const backend = suggestUpgrades(profile({ building: "backend", pains: ["testing", "review"] }), catalog, toolsYouHave(catalog, s), s);
+    for (const u of backend) expect(catalog.entries.find((e) => e.id === u.id)?.solves.includes("browser") ?? false).toBe(false);
+    const docs = suggestUpgrades(profile({ pains: ["docs"], mentions: ["vercel"] }), catalog, toolsYouHave(catalog, s), s);
+    expect(docs[0].id.startsWith("vercel")).toBe(false);
   });
 });

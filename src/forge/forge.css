@@ -199,6 +199,22 @@ html.forge-on, html.forge-on body, html.forge-on #root { background: transparent
 
 /* interview answers */
 .forge-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* the interview: your answer stays on screen while the AI thinks */
+.forge-said { display: flex; align-items: flex-start; gap: 10px; width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); animation: forge-panel-in .35s both; }
+.forge-said .who { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--f-faint); padding-top: 2px; }
+.forge-said p { margin: 0; flex: 1; font-size: 14px; line-height: 1.5; color: rgba(255,255,255,.92); }
+.forge-said .dots { display: inline-flex; gap: 4px; align-self: center; }
+.forge-said .dots i { width: 6px; height: 6px; border-radius: 50%; background: #ff9a52; animation: forge-think 1.1s ease-in-out infinite; }
+.forge-said .dots i:nth-child(2) { animation-delay: .15s; } .forge-said .dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes forge-think { 0%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+/* the read-back */
+.forge-heard { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+.forge-heard > div { display: flex; flex-direction: column; gap: 8px; }
+.forge-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.forge-tag { font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; color: #ffd2ad; background: rgba(255, 130, 60, .14); border: 1px solid rgba(255, 140, 70, .35); text-shadow: none; }
+.forge-quotes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.forge-quotes li { font-size: 13.5px; color: rgba(255,255,255,.86); padding-left: 12px; border-left: 2px solid rgba(255, 150, 80, .55); }
 .forge-opt { all: unset; cursor: pointer; font-size: 14px; font-weight: 550; color: #fff; padding: 9px 15px; border-radius: 10px; display: inline-flex; align-items: center; gap: 8px; text-shadow: none;
   border: 1px solid rgba(255,255,255,.18); background: rgba(16, 12, 14, .55); transition: border-color .2s, background .2s; }
 .forge-opt:hover, .forge-opt:focus-visible { border-color: rgba(255,255,255,.5); }
