@@ -3,11 +3,20 @@
 
 export type LaunchMode = "first" | "back";
 
+/** One knob for the whole animation's pace (1 = the original prototype,
+ *  which felt too fast). Everything below, particles included, scales by it. */
+export const PACE = 1.6;
+const at = (x: number) => x * PACE;
+
 /** Seconds. Later launches skip the particles and most of the spin. */
 export const TIMELINE = {
-  first: { inEnd: 1.1, spin: [1.0, 1.95] as const, fold: [1.95, 2.4] as const, minReady: 2.55, expand: 0.55 },
-  back: { inEnd: 0.3, spin: [0.0, 0.5] as const, fold: [0.4, 0.68] as const, minReady: 0.72, expand: 0.5 },
+  first: { inEnd: at(1.1), spin: [at(1.0), at(1.95)] as const, fold: [at(1.95), at(2.4)] as const, minReady: at(2.55), expand: at(0.55) },
+  back: { inEnd: at(0.3), spin: [0, at(0.5)] as const, fold: [at(0.4), at(0.68)] as const, minReady: at(0.72), expand: at(0.5) },
 };
+
+/** Largest step the clock takes per frame: after a hitch the animation
+ *  slows for a moment instead of jumping ahead. */
+export const MAX_STEP_S = 1 / 30;
 export type Timeline = (typeof TIMELINE)[LaunchMode];
 
 /** If the app never reports "ready", open anyway after this long. */

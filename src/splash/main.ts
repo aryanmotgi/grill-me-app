@@ -18,7 +18,7 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import fontJson from "./chakra-bold.typeface.json";
 import { LOGO_TEXT } from "../brand";
-import { GIVE_UP_S, REVEAL_AT, TIMELINE, WELCOME_HOLD_S, clamp, modeOf, nextFill, shouldExpand, skipOffset, span, stalled, welcomeLine } from "./timeline";
+import { GIVE_UP_S, MAX_STEP_S, PACE, REVEAL_AT, TIMELINE, WELCOME_HOLD_S, clamp, modeOf, nextFill, shouldExpand, skipOffset, span, stalled, welcomeLine } from "./timeline";
 
 // the app passes these in (src-tauri/src/splash.rs); a browser preview uses ?mode=back&name=…
 const boot = (window as { __GRILLME_SPLASH__?: { mode?: string; name?: string } }).__GRILLME_SPLASH__;
@@ -76,7 +76,8 @@ try {
   void call("splash_reveal").then(() => call("splash_close"));
   throw new Error("no webgl");
 }
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// 1.5× is sharp on Retina for soft glowing shapes and draws ~45% fewer pixels than 2×
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setClearColor(0x000000, 0);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -110,7 +111,7 @@ function edgePoint(margin = 0.6) {
 }
 
 // 3D logo with an ember → gold gradient, darker on the back for shading
-const textGeo = new TextGeometry(LOGO_TEXT, { font: FONT, size: 1, height: 0.32, curveSegments: 10, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.025, bevelSegments: 5 } as never);
+const textGeo = new TextGeometry(LOGO_TEXT, { font: FONT, size: 1, height: 0.32, curveSegments: 6, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.025, bevelSegments: 3 } as never);
 textGeo.computeBoundingBox();
 const w0 = textGeo.boundingBox!.max.x - textGeo.boundingBox!.min.x;
 const s = Math.min(4.8, visW() * 0.5) / w0;
@@ -127,38 +128,66 @@ const { min, max } = textGeo.boundingBox!;
   }
   textGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
-const textMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, metalness: 0.62, roughness: 0.24, clearcoat: 1, clearcoatRoughness: 0.1, envMapIntensity: 1.2, transparent: true, opacity: 0 });
+const textMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.65, roughness: 0.22, envMapIntensity: 1.35, transparent: true, opacity: 0 });
 const text = new THREE.Mesh(textGeo, textMat);
 const textGroup = new THREE.Group();
 textGroup.add(text);
 scene.add(textGroup);
 
-// particles that land on the logo's surface
-const N = mode === "first" ? 4200 : 0;
-const P = new Float32Array(N * 3), C = new Float32Array(N * 3), S = new Float32Array(N), A = new Float32Array(N);
-const parts: { start: THREE.Vector3; mid: THREE.Vector3; target: THREE.Vector3; delay: number; dur: number; size: number; wob: number }[] = [];
+// particles that land on the logo's surface. Each one's whole flight is
+// computed on the GPU from its start/curve/target and the clock, so the CPU
+// does no per-particle work per frame.
+const N = mode === "first" ? 3600 : 0;
+const START = new Float32Array(N * 3), MID = new Float32Array(N * 3), TARGET = new Float32Array(N * 3);
+const C = new Float32Array(N * 3), TIMING = new Float32Array(N * 4);
 {
   const sampler = new MeshSurfaceSampler(text).build();
   const tmp = new THREE.Vector3(), c = new THREE.Color(), cream = new THREE.Color(1, .93, .8);
   for (let i = 0; i < N; i++) {
     sampler.sample(tmp);
-    const target = tmp.clone(), start = edgePoint();
-    const mid = start.clone().lerp(target, 0.5);
+    const start = edgePoint();
+    const mid = start.clone().lerp(tmp, 0.5);
     mid.x += (Math.random() - .5) * 2.4; mid.y += (Math.random() - .5) * 2.4; mid.z += Math.random() * 2.5;
-    gradient((target.x - min.x) / (max.x - min.x), c).lerp(cream, Math.random() * .35);
+    START.set([start.x, start.y, start.z], i * 3);
+    MID.set([mid.x, mid.y, mid.z], i * 3);
+    TARGET.set([tmp.x, tmp.y, tmp.z], i * 3);
+    gradient((tmp.x - min.x) / (max.x - min.x), c).lerp(cream, Math.random() * .35);
     C.set([c.r, c.g, c.b], i * 3);
-    parts.push({ start, mid, target, delay: Math.random() * 0.3, dur: 0.6 + Math.random() * 0.2, size: 0.6 + Math.random() * 1.1, wob: Math.random() * 6.28 });
+    // delay, flight time, size, wobble phase
+    TIMING.set([Math.random() * 0.3 * PACE, (0.6 + Math.random() * 0.2) * PACE, 0.6 + Math.random() * 1.1, Math.random() * 6.28], i * 4);
   }
 }
 const pGeo = new THREE.BufferGeometry();
-pGeo.setAttribute("position", new THREE.BufferAttribute(P, 3));
+pGeo.setAttribute("position", new THREE.BufferAttribute(TARGET, 3));
+pGeo.setAttribute("aStart", new THREE.BufferAttribute(START, 3));
+pGeo.setAttribute("aMid", new THREE.BufferAttribute(MID, 3));
 pGeo.setAttribute("color", new THREE.BufferAttribute(C, 3));
-pGeo.setAttribute("size", new THREE.BufferAttribute(S, 1));
-pGeo.setAttribute("alpha", new THREE.BufferAttribute(A, 1));
+pGeo.setAttribute("aTiming", new THREE.BufferAttribute(TIMING, 4));
+const pUniforms = {
+  uTime: { value: 0 },
+  uFadeFrom: { value: tl.inEnd - 0.25 * PACE },
+  uFadeLen: { value: 0.4 * PACE },
+  uFadeIn: { value: 0.06 * PACE },
+  scale: { value: renderer.getPixelRatio() * innerHeight / 12 },
+};
 const points = new THREE.Points(pGeo, new THREE.ShaderMaterial({
-  uniforms: { scale: { value: renderer.getPixelRatio() * innerHeight / 12 } },
-  vertexShader: `attribute float size; attribute float alpha; attribute vec3 color; varying vec3 vC; varying float vA; uniform float scale;
-    void main(){ vC = color; vA = alpha; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = size * scale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+  uniforms: pUniforms,
+  vertexShader: `attribute vec3 aStart; attribute vec3 aMid; attribute vec4 aTiming; attribute vec3 color;
+    uniform float uTime, uFadeFrom, uFadeLen, uFadeIn, scale;
+    varying vec3 vC; varying float vA;
+    void main(){
+      float u = clamp((uTime - aTiming.x) / aTiming.y, 0.0, 1.0);
+      u = u < 0.5 ? 4.0 * u * u * u : 1.0 - pow(-2.0 * u + 2.0, 3.0) / 2.0;
+      float v = 1.0 - u, wob = v * 0.12;
+      vec3 p = v * v * aStart + 2.0 * v * u * aMid + u * u * position;
+      p.x += sin(uTime * 5.0 + aTiming.w) * wob;
+      p.y += cos(uTime * 4.0 + aTiming.w) * wob;
+      vC = color;
+      vA = clamp((uTime - aTiming.x) / uFadeIn, 0.0, 1.0) * (1.0 - clamp((uTime - uFadeFrom) / uFadeLen, 0.0, 1.0));
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_PointSize = aTiming.z * (0.55 + v * 1.1) * scale / -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
   fragmentShader: `varying vec3 vC; varying float vA;
     void main(){ float d = length(gl_PointCoord - .5); float a = smoothstep(.5, 0., d); a *= a; gl_FragColor = vec4(vC * (1.0 + 2.2 * a * a), a * vA); }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -169,7 +198,7 @@ textGroup.add(points);
 // the glass box and its molten fill
 const BOX = 1.5, inner = BOX * 0.86;
 const box = new THREE.Group();
-const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffd6bd, metalness: 0, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.04, transparent: true, opacity: 0.13, envMapIntensity: 1.6, depthWrite: false, side: THREE.DoubleSide });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0xffd6bd, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.13, envMapIntensity: 1.8, depthWrite: false, side: THREE.DoubleSide });
 const edgeMat = new THREE.LineBasicMaterial({ color: 0xffb27a, transparent: true, opacity: 0.85 });
 box.add(new THREE.Mesh(new RoundedBoxGeometry(BOX, BOX, BOX, 6, 0.14), glassMat));
 box.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(BOX * .985, BOX * .985, BOX * .985)), edgeMat));
@@ -184,19 +213,9 @@ scene.add(box);
 
 // ---- frame -------------------------------------------------------------------------
 function update(t: number, f: number, e: number) {
-  if (N) {
-    for (let i = 0; i < N; i++) {
-      const p = parts[i], u = eIO(span(t, p.delay, p.delay + p.dur)), v = 1 - u, wob = (1 - u) * 0.12;
-      P[i * 3] = v * v * p.start.x + 2 * v * u * p.mid.x + u * u * p.target.x + Math.sin(t * 5 + p.wob) * wob;
-      P[i * 3 + 1] = v * v * p.start.y + 2 * v * u * p.mid.y + u * u * p.target.y + Math.cos(t * 4 + p.wob) * wob;
-      P[i * 3 + 2] = v * v * p.start.z + 2 * v * u * p.mid.z + u * u * p.target.z;
-      S[i] = p.size * (0.55 + (1 - u) * 1.1);
-      A[i] = span(t, p.delay, p.delay + 0.06) * (1 - span(t, tl.inEnd - 0.25, tl.inEnd + 0.15));
-    }
-    pGeo.attributes.position.needsUpdate = pGeo.attributes.size.needsUpdate = pGeo.attributes.alpha.needsUpdate = true;
-  }
-  points.visible = N > 0 && t < tl.inEnd + 0.2;
-  textMat.opacity = N ? span(t, tl.inEnd - 0.35, tl.inEnd) : eOut(span(t, 0, 0.25));
+  pUniforms.uTime.value = t;
+  points.visible = N > 0 && t < tl.inEnd + 0.2 * PACE;
+  textMat.opacity = N ? span(t, tl.inEnd - 0.35 * PACE, tl.inEnd) : eOut(span(t, 0, 0.25 * PACE));
 
   const sp = span(t, tl.spin[0], tl.spin[1]);
   const turn = mode === "first" ? eIO(sp) * Math.PI * 2 : -Math.PI * 0.6 * (1 - eOut(sp));
@@ -230,13 +249,24 @@ function update(t: number, f: number, e: number) {
 
 // ---- run -------------------------------------------------------------------------------
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const t0 = performance.now();
-let last = t0, offset = 0, shownFill = 0, expandAt: number | null = null, shownAt: number | null = null;
+let t0 = performance.now();
+let last = t0, clock = 0, offset = 0, shownFill = 0, expandAt: number | null = null, shownAt: number | null = null;
 
+// only touch the page when something visible changed (DOM writes every
+// frame cost layout time and show up as stutter)
+let captionKey = "", captionAlpha = "";
+const capLabel = document.createElement("span"), capPct = document.createElement("b");
+caption.append(capLabel, capPct);
 function setCaption(f: number, alpha: number) {
-  caption.style.top = `${innerHeight / 2 + (BOX * 0.95) / wpp() + 18}px`;
-  caption.replaceChildren(Object.assign(document.createElement("span"), { textContent: `${label}  ` }), Object.assign(document.createElement("b"), { textContent: `${Math.round(f * 100)}%` }));
-  caption.style.opacity = String(alpha);
+  const key = `${label}|${Math.round(f * 100)}`;
+  if (key !== captionKey) {
+    captionKey = key;
+    caption.style.top = `${innerHeight / 2 + (BOX * 0.95) / wpp() + 18}px`;
+    capLabel.textContent = `${label}  `;
+    capPct.textContent = `${Math.round(f * 100)}%`;
+  }
+  const a = alpha.toFixed(2);
+  if (a !== captionAlpha) { captionAlpha = a; caption.style.opacity = a; }
 }
 function setWelcome() {
   const w = welcomeLine(userName, mates);
@@ -253,8 +283,9 @@ function setWelcome() {
 let lastFrame = performance.now();
 function tick(now: number) {
   lastFrame = performance.now();
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.min(MAX_STEP_S, Math.max(0, (now - last) / 1000));
   last = now;
+  clock += dt;
   const real = (now - t0) / 1000;
   if (real > GIVE_UP_S) progress = 1; // never trap anyone behind the animation
   if (reduce) {
@@ -263,7 +294,7 @@ function tick(now: number) {
     if (!revealed) requestAnimationFrame(tick);
     return;
   }
-  const t = real + offset;
+  const t = clock + offset;
   shownFill = nextFill(shownFill, progress, t, dt, tl);
   if (expandAt === null && shouldExpand(t, shownFill, tl)) { expandAt = t; if (mode === "back") setWelcome(); }
   const e = expandAt === null ? 0 : span(t, expandAt, expandAt + tl.expand);
@@ -281,7 +312,11 @@ function tick(now: number) {
   if (finished && !closed) { closed = true; void call("splash_close"); return; }
   requestAnimationFrame(tick);
 }
-requestAnimationFrame(tick);
+// compile every shader and upload every buffer before the clock starts, so
+// the first second isn't spent stuttering through first-use compiles
+renderer.compile(scene, camera);
+renderer.render(scene, camera);
+requestAnimationFrame(() => { t0 = last = performance.now(); requestAnimationFrame(tick); });
 
 // if macOS isn't drawing us (another Space, covered window), nobody can see
 // the animation: open the app as soon as it's loaded instead of waiting
@@ -296,5 +331,5 @@ setInterval(() => {
 // click anywhere to skip ahead to the box (it still waits for loading)
 addEventListener("click", () => {
   if (expandAt !== null) return;
-  offset = skipOffset((performance.now() - t0) / 1000 + offset, offset, tl);
+  offset = skipOffset(clock + offset, offset, tl);
 });
