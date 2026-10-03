@@ -2845,9 +2845,17 @@ fn standup_claude_pipe(input: &str, prompt: &str) -> Result<String, String> {
         let _ = stdin.write_all(input.as_bytes());
         // dropping stdin closes the pipe so claude sees EOF
     }
+    BG_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let guard = kill_after(child.id(), ONE_SHOT_TIMEOUT_SECS);
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    guard.store(true, std::sync::atomic::Ordering::Relaxed);
     if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if err.is_empty() {
+            format!("claude produced nothing within {ONE_SHOT_TIMEOUT_SECS}s")
+        } else {
+            err
+        });
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
@@ -3201,7 +3209,10 @@ fn claude_pipe_stdin(input: &str, prompt: &str) -> Result<String, String> {
         let _ = stdin.write_all(input.as_bytes());
         // dropping stdin closes the pipe so claude sees EOF
     }
+    BG_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let guard = kill_after(child.id(), ONE_SHOT_TIMEOUT_SECS);
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    guard.store(true, std::sync::atomic::Ordering::Relaxed);
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }

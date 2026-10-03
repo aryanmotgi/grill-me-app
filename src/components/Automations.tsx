@@ -103,8 +103,17 @@ export async function runTestsFor(memberId: string, force = false) {
 export function useAutomations() {
   const waitingSince = useRef<Record<string, number>>({});
   const reminded = useRef<Record<string, boolean>>({});
-  const bigSince = useRef<Record<string, number>>({});
-  const nudgedAt = useRef<Record<string, number>>({});
+  // Seeded from appSettings so a restart doesn't re-arm the nudge cooldown.
+  const bigSince = useRef<Record<string, number>>(
+    (useApp.getState().appSettings?.nudgeBigSince as Record<string, number>) ?? {});
+  const nudgedAt = useRef<Record<string, number>>(
+    (useApp.getState().appSettings?.nudgedAt as Record<string, number>) ?? {});
+  // Nudge once per pile: set when we ask a session to commit, cleared only
+  // when its change count actually drops back under the threshold. Repeating
+  // an instruction the agent has already declined costs a real turn and
+  // changes nothing, so we ask once and wait for the situation to change.
+  const askedAboutPile = useRef<Record<string, boolean>>(
+    (useApp.getState().appSettings?.nudgeAsked as Record<string, boolean>) ?? {});
 
   useEffect(() => {
     if (!native()) return;
@@ -167,13 +176,27 @@ export function useAutomations() {
           const m = st.members.find((x) => x.id === t.id);
           if (!m || (m.agent ?? "claude") !== "claude") continue;
           if (t.changes.length >= 10) {
-            bigSince.current[t.id] ??= now;
-            if (now - bigSince.current[t.id] > 30 * 60_000 && now - (nudgedAt.current[t.id] ?? 0) > 60 * 60_000 && t.status === "idle") {
+            if (bigSince.current[t.id] === undefined) {
+              bigSince.current[t.id] = now;
+              st.setAppSetting("nudgeBigSince", { ...bigSince.current });
+            }
+            if (!askedAboutPile.current[t.id]
+              && now - bigSince.current[t.id] > 30 * 60_000
+              && now - (nudgedAt.current[t.id] ?? 0) > 60 * 60_000
+              && t.status === "idle") {
               nudgedAt.current[t.id] = now;
+              askedAboutPile.current[t.id] = true;
+              st.setAppSetting("nudgedAt", { ...nudgedAt.current });
+              st.setAppSetting("nudgeAsked", { ...askedAboutPile.current });
               void deliverBriefWhenReady(ptyIdFor(t.id), "Please commit the work so far in small, clearly-described commits (don't push).\n");
               st.toast(`Asked ${titleOf(t.id)} to commit its ${t.changes.length} changed files`);
             }
           } else {
+            // the pile shrank below the threshold: the next one earns a fresh ask
+            if (askedAboutPile.current[t.id]) {
+              delete askedAboutPile.current[t.id];
+              st.setAppSetting("nudgeAsked", { ...askedAboutPile.current });
+            }
             delete bigSince.current[t.id];
           }
         }

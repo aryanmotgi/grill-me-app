@@ -123,7 +123,17 @@ export async function loadReviews() {
   useReviews.setState({ reviews: parseReviews(raw) });
 }
 
-const lastReview: Record<string, number> = {};
+// Throttles live in appSettings, not memory: a restart used to re-arm every
+// "at most every N minutes" guard, so six restarts in an afternoon meant six
+// extra reviews per session. Persisted, the guard means what it says.
+const THROTTLE_KEY = "automationThrottles";
+function throttles(): Record<string, number> {
+  const v = useApp.getState().appSettings?.[THROTTLE_KEY];
+  return v && typeof v === "object" ? (v as Record<string, number>) : {};
+}
+function markRun(key: string, at: number) {
+  useApp.getState().setAppSetting(THROTTLE_KEY, { ...throttles(), [key]: at });
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function runReview(memberId: string) {
@@ -131,8 +141,8 @@ async function runReview(memberId: string) {
   const m = st.members.find((x) => x.id === memberId);
   if (!on("auto-review") || !m || m.remote) return;
   const now = Date.now();
-  if (!reviewDue(lastReview[memberId], now)) return;
-  lastReview[memberId] = now;
+  if (!reviewDue(throttles()[`review:${memberId}`], now)) return;
+  markRun(`review:${memberId}`, now);
   // auto-test fires on the same transition — let it land so the review sees fresh results
   await sleep(2000);
   for (let i = 0; i < 60 && useTests.getState().results[memberId]?.running; i++) await sleep(5000);
