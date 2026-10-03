@@ -123,9 +123,12 @@ export function toChanges(state: GitState): FileChange[] {
 /** Patch of Teammate fields this slice owns. Everything else stays untouched. */
 export function toTeammatePatch(state: GitState): Partial<Teammate> {
   if (!state.ok) {
-    return { health: "disconnected", setup: "worktree", branch: "—", changes: [] };
+    // git says the folder itself is gone (a deleted worktree, an old setup)
+    const missing = /no such file or directory|cannot change to/i.test(state.error ?? "");
+    return { health: "disconnected", setup: "worktree", branch: "—", changes: [], missing };
   }
   return {
+    missing: false,
     branch: state.branch,
     taskLabel: branchToLabel(state.branch),
     changes: toChanges(state),

@@ -53,6 +53,8 @@ export interface Teammate {
   /** Claude is showing its "do you trust this folder?" screen (new
    *  worktrees). The chat offers a one-click "Yes, trust it". */
   trustPrompt?: boolean;
+  /** Its folder no longer exists (a deleted worktree, an old setup). */
+  missing?: boolean;
   /** Reset time parsed off the rate-limit banner when the screen shows one
    *  (e.g. "3pm"); undefined when none is printed. */
   rateLimitResetsAt?: string;

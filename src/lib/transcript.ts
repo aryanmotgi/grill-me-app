@@ -11,10 +11,28 @@
  * OSC, and lone escapes) but for the already-decoded JS string, plus it drops
  * carriage returns so spinner repaints don't leave `\r` artifacts.
  */
+/** Turn absolute-column jumps ("ESC[13G") into the spaces they stand for. */
+function padColumns(line: string): string {
+  let out = "";
+  let visible = 0;
+  let last = 0;
+  for (const m of line.matchAll(/\x1b\[(\d*)G/g)) {
+    const chunk = line.slice(last, m.index);
+    out += chunk;
+    visible += chunk.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").length;
+    const col = Math.min(400, (Number(m[1]) || 1) - 1);
+    if (col > visible) { out += " ".repeat(col - visible); visible = col; }
+    last = (m.index ?? 0) + m[0].length;
+  }
+  return out + line.slice(last);
+}
+
 export function stripAnsi(input: string): string {
   return input
     // cursor-forward ("ESC[3C") stands in for spaces in TUIs: keep the gap
     .replace(/\x1b\[(\d*)C/g, (_, n: string) => " ".repeat(Math.min(400, Number(n) || 1)))
+    // Claude Code places words by column ("ESC[13G"): pad the line out to it
+    .split("\n").map(padColumns).join("\n")
     // CSI sequences: ESC [ ... final-byte  (colors, cursor moves, erase, …)
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     // OSC sequences: ESC ] ... (BEL | ESC \)  (window titles, hyperlinks, …)

@@ -14,9 +14,10 @@ const base = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 export function sessionSentence(
-  t: Pick<Teammate, "status" | "currentFile" | "changes" | "flag" | "rateLimited" | "rateLimitResetsAt" | "capReached" | "lastActiveMin" | "trustPrompt" | "paused">,
+  t: Pick<Teammate, "status" | "currentFile" | "changes" | "flag" | "rateLimited" | "rateLimitResetsAt" | "capReached" | "lastActiveMin" | "trustPrompt" | "paused" | "missing">,
   testsOk: boolean | null = null,
 ): Sentence {
+  if (t.missing) return { text: "Its folder is gone. Remove it in Settings → Team", tone: "stopped" };
   if (t.trustPrompt) return { text: "Asking to trust its folder", tone: "needs" };
   if (t.capReached) return { text: "Stopped at its cost cap", tone: "stopped" };
   if (t.rateLimited) return { text: `Paused by the usage limit${t.rateLimitResetsAt ? `, back at ${t.rateLimitResetsAt}` : ""}`, tone: "stopped" };

@@ -60,3 +60,9 @@ describe("stripAnsi gaps", () => {
     expect(stripAnsi("Quick\x1b[1Csafety\x1b[Ccheck\x1b[3Cdone")).toBe("Quick safety check   done");
   });
 });
+
+describe("stripAnsi columns", () => {
+  it("pads to absolute columns the way Claude Code places words", () => {
+    expect(stripAnsi("the\x1b[5Gquick\x1b[11Gbrown\x1b[17Gfox")).toBe("the quick brown fox");
+  });
+});
