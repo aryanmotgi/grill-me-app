@@ -4053,6 +4053,15 @@ fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
                             if cur.len() < 8000 { cur.push(b' '); }
                         }
                     }
+                    // Claude Code places each word by jumping to a column
+                    // ("ESC[13G"): pad out to that column so words keep their gaps
+                    if b == b'G' {
+                        let col = param.max(1) as usize - 1;
+                        let have = String::from_utf8_lossy(&cur).chars().count();
+                        for _ in have..col.min(400) {
+                            if cur.len() < 8000 { cur.push(b' '); }
+                        }
+                    }
                     esc = 0;
                 }
             }
@@ -5689,6 +5698,9 @@ mod pure_fn_tests {
     fn strip_ansi_keeps_cursor_forward_gaps() {
         let raw = b"Quick\x1b[1Csafety\x1b[Ccheck\x1b[3Cdone";
         assert_eq!(super::strip_ansi_stateless(raw), vec!["Quick safety check   done".to_string()]);
+        // what Claude Code actually sends: words placed by absolute column
+        let raw = b"the\x1b[5Gquick\x1b[11Gbrown\x1b[17Gfox";
+        assert_eq!(super::strip_ansi_stateless(raw), vec!["the quick brown fox".to_string()]);
     }
 
     #[test]

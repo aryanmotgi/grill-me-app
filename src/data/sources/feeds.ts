@@ -118,7 +118,8 @@ export function startGitFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           cur.branch === (patch.branch ?? cur.branch) &&
           cur.changes.length === (patch.changes?.length ?? cur.changes.length) &&
           cur.setup === (patch.setup ?? cur.setup) &&
-          cur.health === (patch.health ?? cur.health)
+          cur.health === (patch.health ?? cur.health) &&
+          !!cur.missing === !!patch.missing
         ) {
           continue;
         }

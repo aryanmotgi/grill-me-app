@@ -33,3 +33,9 @@ describe("headline", () => {
     expect(headline([r("quiet")])).toMatch(/All quiet/);
   });
 });
+
+describe("missing folders", () => {
+  it("says when a session's folder is gone instead of 'ready'", () => {
+    expect(sessionSentence(t({ missing: true })).text).toMatch(/folder is gone/);
+  });
+});
