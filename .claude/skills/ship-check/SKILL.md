@@ -11,7 +11,7 @@ step, fix, and restart from step 1. Never merge with a red step.
 ## 1. Branch hygiene (fail fast)
 
 ```sh
-cd /Users/aryanmotgi/Terminal/grill-me
+cd "$(git rev-parse --show-toplevel)"   # the grill-me repo
 git branch --show-current           # MUST be a feature branch, never main
 git fetch origin && git merge origin/main   # resolve conflicts now, not in the PR
 git status --porcelain              # no stray files riding along

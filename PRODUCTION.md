@@ -20,7 +20,7 @@ Grill Me is **local-first**. Every session runs on the user's own Claude subscri
 | #147 | **Settings → Setup check**: claude, git, node, gh, tailscale, control API, each with a one-click copy of the fix command; launch toast when something required is missing | New users hit silent failures |
 | #148 | MCP tool annotations (`title`, `readOnlyHint`, …) plus a real stdio test | Clients skip permission prompts on reads and flag the writes |
 | #149 | Release workflow: bump version → tag → universal `.dmg` on a draft GitHub Release; signing turns on automatically once the secrets exist | There was no way to hand anyone a build |
-| #151 | Hooks moved to `.claude/settings.local.json` (git-excluded); the playbook comes through a SessionStart hook; old leaked files cleaned up | **Blocker**: we were committing `/Users/aryanmotgi/...` paths into people's repos and editing their `CLAUDE.md` |
+| #151 | Hooks moved to `.claude/settings.local.json` (git-excluded); the playbook comes through a SessionStart hook; old leaked files cleaned up | **Blocker**: we were committing `/Users/<you>/...` paths into people's repos and editing their `CLAUDE.md` |
 | #153 | Our hooks are recognized by the `~/.grillme` root | Hooks written under another project would otherwise run twice |
 | #154 | **Copy diagnostics** (versions + setup check; no chats, paths or secrets) | Bug reports people can actually send |
 | #155 | **Team brain**: goal and notes sync across the room (append-only `brain.json`; the newest goal wins) | Every teammate's Claude and claude.ai now see the same team goal |
