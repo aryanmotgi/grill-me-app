@@ -321,6 +321,7 @@ interface AppState {
 }
 
 let toastSeq = 0;
+const recentToasts = new Map<string, number>();
 
 // Sample data is a browser-dev seam only. The real app starts EMPTY — before
 // a project loads (or with none), Mei/Devon/"App shell" must never appear.
@@ -577,8 +578,13 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   toast: (text, kind = "info") => {
+    // the same message again within 10s shows once; at most 3 on screen
+    const now = Date.now();
+    if (recentToasts.get(text) && now - (recentToasts.get(text) ?? 0) < 10_000) return;
+    recentToasts.set(text, now);
+    if (recentToasts.size > 50) recentToasts.delete(recentToasts.keys().next().value as string);
     const id = ++toastSeq;
-    set((s) => ({ toasts: [...s.toasts, { id, text, kind }] }));
+    set((s) => ({ toasts: [...s.toasts, { id, text, kind }].slice(-3) }));
     setTimeout(
       () => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
       3800,

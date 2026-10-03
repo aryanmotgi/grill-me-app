@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { note } from "../lib/activity";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
 
@@ -22,7 +23,7 @@ export function useDoctorOnLaunch() {
     void runDoctor().then((checks) => {
       const missing = checks.filter((c) => c.required && !c.ok).map((c) => c.label);
       if (missing.length) {
-        useApp.getState().toast(`Missing: ${missing.join(", ")} — Settings → Setup check`, "warn");
+        note(`Missing: ${missing.join(", ")}. See Settings → Setup check.`, "warn");
       }
     });
   }, []);

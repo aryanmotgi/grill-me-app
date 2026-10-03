@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { note } from "../lib/activity";
 import { useApp } from "../store";
 import { useBridge } from "./BridgePanel";
 import { Markdown } from "./Markdown";
@@ -39,7 +40,7 @@ export function useWelcomeBack() {
     const onBlur = () => { blurredAt = Date.now(); };
     const onFocus = () => {
       if (blurredAt && Date.now() - blurredAt > AWAY_MS) {
-        useApp.getState().toast("Welcome back — open Brain for a “where was I?” catch-up");
+        note("Welcome back. Brain has a “where was I?” catch-up.");
       }
       blurredAt = 0;
     };

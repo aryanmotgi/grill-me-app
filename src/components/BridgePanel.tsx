@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { note } from "../lib/activity";
 import { create } from "zustand";
 import { useApp, ptyIdFor, upsertShared } from "../store";
 import { deliverBriefWhenReady } from "../lib/ptyReady";
@@ -42,7 +43,7 @@ async function refresh(announce: boolean) {
   const next = parseBridge(await invoke<string>("bridge_read").catch(() => ""));
   const prev = useBridge.getState().state;
   useBridge.setState({ state: next });
-  if (announce) for (const msg of newlyPending(prev, next)) useApp.getState().toast(`${msg} — open Flow`);
+  if (announce) for (const msg of newlyPending(prev, next)) note(`${msg}. Open Bridge to answer it.`);
   // drafted answers + approve-from-phone pings (BridgeLoop)
   void import("./BridgeLoop").then((l) => l.onBridgeState(prev, next, announce));
   void mirrorToTeam(next);
@@ -146,8 +147,7 @@ async function runBrainCheck(memberId: string) {
   if (!r) return;
   if (r.proposed) void import("./BrainWatch").then((w) => w.announceProposed(r.session, r.proposed ?? 0));
   if (r.mismatch) {
-    st.toast(`⚠ ${r.session} may be off-plan: ${r.reason}`, "warn");
-    void import("./Automations").then(({ alertEverywhere }) => alertEverywhere("Off-plan work", `${r.session}: ${r.reason}`));
+    note(`${r.session} may be off-plan: ${r.reason}`, "warn");
   }
   const done = new Set(r.doneTaskIds);
   const started = new Set(r.startedTaskIds);
@@ -159,7 +159,7 @@ async function runBrainCheck(memberId: string) {
   if (!changed.length) return;
   useApp.setState((s) => ({ tasks: s.tasks.map((t) => changed.find((c) => c.id === t.id) ?? t) }));
   await upsertShared("tasks.json", changed);
-  st.toast(`Board: ${changed.map((t) => `“${t.title}” → ${t.status === "done" ? "done" : "in progress"}`).join(", ")}`);
+  note(`Board: ${changed.map((t) => `“${t.title}” → ${t.status === "done" ? "done" : "in progress"}`).join(", ")}`);
 }
 
 /** Mount once (App): live bridge state + the "coder finished" ping. */
@@ -210,7 +210,7 @@ export function useBridgeFeed() {
           if (now - (lastPing.current[t.id] ?? 0) > 120_000) {
             lastPing.current[t.id] = now;
             const title = sessionTitle(t, s.appSettings.sessionTitles);
-            s.toast(`${title} finished — ask the Claude app: "what did ${title} just do?"`);
+            note(`${title} finished its turn`);
           }
         }
       }
