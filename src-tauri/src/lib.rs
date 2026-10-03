@@ -617,12 +617,15 @@ fn validate_agent(agent: &str) -> Result<(), String> {
 /// user-controlled values. Cursor's installer symlinks both `cursor-agent`
 /// and `agent` into ~/.local/bin; prefer the unambiguous name, fall back to
 /// the short one.
-fn agent_exec_line(agent: &str) -> &'static str {
+/// `resume`: this folder already has a Claude conversation, so pick it back
+/// up (after a restart, the agent remembers what it was doing).
+fn agent_exec_line(agent: &str, resume: bool) -> &'static str {
     match agent {
         "cursor" => {
             "if command -v cursor-agent >/dev/null 2>&1; then exec cursor-agent -f; else exec agent -f; fi"
         }
         "codex" => "exec codex --dangerously-bypass-approvals-and-sandbox",
+        _ if resume => "exec claude --continue --dangerously-skip-permissions",
         _ => "exec claude --dangerously-skip-permissions",
     }
 }
@@ -816,7 +819,8 @@ fn pty_ensure_inner(
                 // id is validated first — nothing user-controlled reaches zsh.
                 let agent = agent.as_deref().unwrap_or("claude");
                 validate_agent(agent)?;
-                c.args(["-lc", agent_exec_line(agent)]);
+                let resume = agent == "claude" && newest_transcript_exact(&cwd).is_some();
+                c.args(["-lc", agent_exec_line(agent, resume)]);
             }
             c
         }
@@ -935,7 +939,8 @@ fn can_write_session_with(pty_id: &str, teammates: &[TeamMember]) -> Result<(), 
         None => Ok(()),      // unknown id: local tool pane (shell/merge-pilot)
         Some((0, _)) => Ok(()), // local operator: always their own session
         Some((_, m)) => {
-            if m.permission.as_deref() == Some("edit") {
+            // view-only only when set on purpose: a session on this Mac is yours
+            if m.permission.as_deref() != Some("view") {
                 Ok(())
             } else {
                 Err(format!(
@@ -1081,6 +1086,25 @@ fn pty_record(id: String, on: bool) -> Result<Option<String>, String> {
 // ---------------------------------------------------------------------------
 
 static ACTIVE_PROJECT: Mutex<String> = Mutex::new(String::new());
+
+/// A session's terminal id, the same way the app names it (store.ts
+/// ptyIdFor): "<project>:<member>", or just the member in the default project.
+pub(crate) fn pty_id_for(member: &str) -> String {
+    pty_id_in(&lock_or_recover(&ACTIVE_PROJECT), member)
+}
+
+pub(crate) fn pty_id_in(project: &str, member: &str) -> String {
+    if project.is_empty() || project == "default" || member.contains(':') {
+        member.to_string()
+    } else {
+        format!("{project}:{member}")
+    }
+}
+
+/// The CLI and API take a session's short name ("seasons") or its full id.
+fn resolve_pty_id(id: &str) -> String {
+    if lock_or_recover(ptys()).contains_key(id) { id.to_string() } else { pty_id_for(id) }
+}
 
 /// Project ids become path components under ~/.grillme/projects; only allow
 /// safe filename characters and reject "." / ".." to block path traversal.
@@ -2439,11 +2463,27 @@ fn events_tail() -> Vec<String> {
 }
 
 #[tauri::command]
-fn worktree_add(base_repo: String, branch: String, path: String) -> Result<(), String> {
+fn worktree_add(base_repo: String, branch: String, path: String) -> Result<String, String> {
+    // no path: a tidy home in Grill Me's folder, not next to your projects
+    let path = if path.trim().is_empty() { default_worktree_path(&base_repo, &branch) } else { path };
+    if let Some(parent) = Path::new(&path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let base = default_branch(&base_repo);
     git(&base_repo, &["worktree", "add", "-b", &branch, &path, &base]).map(|_| ())?;
     remember_worktree(&path);
-    Ok(())
+    Ok(path)
+}
+
+/// ~/.grillme/worktrees/<project folder>/<branch, as a folder name>
+fn default_worktree_path(base_repo: &str, branch: &str) -> String {
+    worktree_path_in(&grillme_root(), base_repo, branch)
+}
+
+fn worktree_path_in(root: &Path, base_repo: &str, branch: &str) -> String {
+    let project = Path::new(base_repo.trim_end_matches('/')).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "project".into());
+    let leaf: String = branch.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' }).collect();
+    root.join("worktrees").join(project).join(leaf.trim_matches('-')).to_string_lossy().into_owned()
 }
 
 fn ours_path() -> PathBuf {
@@ -3636,7 +3676,7 @@ fn handle_api_conn(app: &tauri::AppHandle, token: &str, stream: std::net::TcpStr
                 .collect();
             let id = q.get("id").copied().unwrap_or("").to_string();
             let n: usize = q.get("lines").and_then(|v| v.parse().ok()).unwrap_or(40);
-            match pty_screen(id, Some(n)) {
+            match pty_screen(resolve_pty_id(&id), Some(n)) {
                 Ok(lines) => {
                     let out = serde_json::to_string(&lines).unwrap_or_else(|_| "[]".into());
                     respond(&mut stream, 200, &out);
@@ -3648,7 +3688,7 @@ fn handle_api_conn(app: &tauri::AppHandle, token: &str, stream: std::net::TcpStr
             let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let id = v["id"].as_str().unwrap_or("").to_string();
             let data = v["data"].as_str().unwrap_or("").to_string();
-            match pty_write(id, data) {
+            match pty_write(resolve_pty_id(&id), data) {
                 Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
                 Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
             }
@@ -3692,15 +3732,13 @@ fn handle_api_conn(app: &tauri::AppHandle, token: &str, stream: std::net::TcpStr
                     return;
                 }
             };
-            let parent = std::path::Path::new(&base)
-                .parent()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|| ".".into());
-            let path_new = format!("{parent}/worktrees-{id}");
-            if let Err(e) = worktree_add(base, branch, path_new.clone()) {
-                respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}"));
-                return;
-            }
+            let path_new = match worktree_add(base, branch, String::new()) {
+                Ok(p) => p,
+                Err(e) => {
+                    respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}"));
+                    return;
+                }
+            };
             cfg.teammates.push(TeamMember {
                 id: id.clone(),
                 name: id.clone(),
@@ -3711,7 +3749,9 @@ fn handle_api_conn(app: &tauri::AppHandle, token: &str, stream: std::net::TcpStr
                 agent: None,
             });
             let _ = team_config_write(cfg);
-            match pty_ensure_inner(app.clone(), id, path_new, false, None, None, None) {
+            // the same id the app uses, or it ignores this session and
+            // starts a second agent in the same worktree when you open it
+            match pty_ensure_inner(app.clone(), pty_id_for(&id), path_new, false, None, None, None) {
                 Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
                 Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
             }
@@ -5128,8 +5168,8 @@ mod tests {
         let t = team();
         assert!(can_write_session_with("vi", &t).is_err());
         assert!(can_write_session_with("project:vi", &t).is_err());
-        // unset permission is view-only too, matching the UI gate
-        assert!(can_write_session_with("ob", &t).is_err());
+        // unset permission: a session on this Mac is yours (matches the UI)
+        assert!(can_write_session_with("ob", &t).is_ok());
     }
 
     #[test]
@@ -5973,6 +6013,27 @@ mod default_repo_tests {
 
 #[cfg(test)]
 mod api_port_tests {
+    #[test]
+    fn a_restarted_claude_session_picks_its_conversation_back_up() {
+        assert_eq!(super::agent_exec_line("claude", true), "exec claude --continue --dangerously-skip-permissions");
+        assert_eq!(super::agent_exec_line("claude", false), "exec claude --dangerously-skip-permissions");
+        assert!(!super::agent_exec_line("codex", true).contains("--continue"));
+    }
+
+    #[test]
+    fn worktrees_get_a_tidy_home() {
+        let p = super::worktree_path_in(std::path::Path::new("/Users/me/.grillme"), "/code/farm-sim/", "feat/seasons");
+        assert_eq!(p, "/Users/me/.grillme/worktrees/farm-sim/feat-seasons");
+    }
+
+    #[test]
+    fn api_sessions_use_the_apps_ids() {
+        assert_eq!(super::pty_id_in("farm", "seasons"), "farm:seasons");
+        assert_eq!(super::pty_id_in("default", "me"), "me");
+        assert_eq!(super::pty_id_in("", "me"), "me");
+        assert_eq!(super::pty_id_in("farm", "farm:me"), "farm:me");
+    }
+
     #[test]
     fn the_cli_talks_to_this_instance() {
         let s = super::cli_script();

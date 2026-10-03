@@ -78,11 +78,9 @@ export function FanOut() {
     for (let i = 0; i < items.length; i++) {
       if (items[i].dependsOn !== null) continue; // dependents wait for done-click on blocker
       const sid = `agent-${stamp % 1000}-${i}`;
-      const parent = base.repoPath.replace(/\/[^/]+$/, "");
-      const path = `${parent}/worktrees-${sid}`;
       const branch = `fan/${sid}`;
       try {
-        await invoke("worktree_add", { baseRepo: base.repoPath, branch, path });
+        const path = await invoke<string>("worktree_add", { baseRepo: base.repoPath, branch, path: "" });
         const nextMembers = [...useApp.getState().members, { id: sid, name: sid, repoPath: path, permission: "edit" }];
         await invoke("team_config_write", { cfg: { teammates: nextMembers } });
         applyTeamConfig(nextMembers);
