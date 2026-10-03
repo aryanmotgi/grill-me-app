@@ -4,15 +4,16 @@ import { BottomTerminal } from "../BottomTerminal";
 import { DragHandle } from "../DragHandle";
 import { ConflictBanner } from "../Chrome";
 import { SimpleSidebar } from "./SimpleSidebar";
-import { GoalBar } from "./GoalBar";
+import { TopBar } from "./TopBar";
 import { RightPanel } from "./RightPanel";
 import type { Teammate } from "../../types";
 
 // ---------------------------------------------------------------------------
-// The simple layout: sessions on the left, the agent in the middle with the
-// team goal on top, Changes / Plan / Team on the right. Same shape as the
-// multi-agent tools developers already know. Classic stays one toggle away
-// (Settings → Appearance → Layout, or ⌘K).
+// The simple layout: sessions on the left, the conversation in the middle.
+// Every finished turn ends with a receipt (files, tests, cost, undo), and
+// the top bar carries the session's totals, so the Peek panel (changes,
+// preview, plan, team) stays closed until you want it. Classic stays one
+// toggle away (Settings → Appearance → Layout, or ⌘K).
 // ---------------------------------------------------------------------------
 
 export function SimpleShell({ active, split }: { active: Teammate | undefined; split: Teammate | undefined }) {
@@ -20,7 +21,9 @@ export function SimpleShell({ active, split }: { active: Teammate | undefined; s
   const focusMode = useApp((s) => s.focusMode);
   const width = useApp((s) => s.panelSizes.right);
   const setPanelSize = useApp((s) => s.setPanelSize);
-  const rightOpen = useApp((s) => s.appSettings.rightOpen !== false);
+  // Peek (changes, preview, plan, team) stays closed until you want it:
+  // the conversation already says what changed, what it cost, and undo
+  const rightOpen = useApp((s) => s.appSettings.peekOpen === true);
   const setAppSetting = useApp((s) => s.setAppSetting);
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
@@ -33,7 +36,7 @@ export function SimpleShell({ active, split }: { active: Teammate | undefined; s
         {focusMode ? null : <SimpleSidebar />}
         <main className="flex-1 min-w-0 flex flex-col">
           {focusMode ? null : (
-            <GoalBar active={active} rightOpen={rightOpen} onToggleRight={() => setAppSetting("rightOpen", !rightOpen)} />
+            <TopBar active={active} peekOpen={rightOpen} onTogglePeek={() => setAppSetting("peekOpen", !rightOpen)} />
           )}
           {onPage ? (
             <button className="flex-none flex items-center gap-1.5 h-8 px-3 text-[12px] text-dim hover:text-ink border-b border-line cursor-pointer"

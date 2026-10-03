@@ -138,3 +138,11 @@ export const QUICK_ASKS: { label: string; prompt: string }[] = [
   { label: "What changed?", prompt: "In 3 short bullets, what did you change since my last message, and why?" },
   { label: "Check before shipping", prompt: "Review your changes for bugs, missed edge cases and leftover debug code. List the problems first, then fix them." },
 ];
+
+/** What one turn cost: its API calls' tokens at the model's prices
+ *  (cache writes bill at 1.25× input). */
+export function turnCost(u: { input: number; output: number; cacheRead: number; cacheWrite: number } | undefined, model: string | undefined): number | null {
+  if (!u) return null;
+  const r = ratesForModel(model);
+  return ((u.input + u.cacheWrite * 1.25) * r.input + u.output * r.output + u.cacheRead * r.cacheRead) / 1_000_000;
+}

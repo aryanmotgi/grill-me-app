@@ -4,6 +4,10 @@ import { Icon } from "../Icon";
 import { ProjectIcon } from "../ProjectIcon";
 import type { TeamSession } from "../../types";
 import type { MainView } from "../../store";
+import { useDNA } from "../../lib/dnaStore";
+import { notices } from "../../lib/spark";
+import { useBridge } from "../BridgePanel";
+import { pendingCount } from "../../lib/bridge";
 
 // ---------------------------------------------------------------------------
 // Simple layout, left column: which project, your sessions (grouped by what
@@ -33,7 +37,7 @@ function TeammateSessions({ rows }: { rows: TeamSession[] }) {
 const HUB: { view: MainView; icon: string; label: string; title: string }[] = [
   { view: "home", icon: "layout", label: "Overview", title: "Every session at a glance: who's working, who needs you, what it cost (⌘H)" },
   { view: "brain", icon: "note", label: "Brain", title: "What the project knows: goal, decisions, where you left off. Every agent reads it." },
-  { view: "flow", icon: "swap", label: "Flow", title: "Who's talking to whom: the Claude app, your sessions and teammates" },
+  { view: "flow", icon: "broadcast", label: "Flow", title: "Who's talking to whom: the Claude app, your sessions and teammates" },
   { view: "dna", icon: "spark", label: "Coding DNA", title: "How you build, what Grill Me learned, and tools that would help (Evolutions)" },
   { view: "automations", icon: "bolt", label: "Automations", title: "Things Grill Me does for you: tests, checks, reminders, phone pings" },
 ];
@@ -41,15 +45,26 @@ const HUB: { view: MainView; icon: string; label: string; title: string }[] = [
 function Hub() {
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
+  // the Spark's notices show as a count on Coding DNA, not a floating pill
+  const spark = useDNA((s) => (s.dna ? notices(s.dna).length : 0));
+  const waiting = useBridge((b) => pendingCount(b.state));
+  const bridgeOpen = useBridge((b) => b.open);
+  const setBridgeOpen = useBridge((b) => b.setOpen);
+  const row = (on: boolean) => `flex items-center gap-2.5 h-8 px-2.5 rounded-lg text-[13px] text-left cursor-pointer transition-colors ${on ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`;
   return (
     <nav className="flex-none border-t border-line px-2 py-2 flex flex-col gap-0.5" aria-label="Project hub">
       {HUB.map((h) => (
         <button key={h.view} title={h.title} aria-current={view === h.view ? "page" : undefined}
-          className={`flex items-center gap-2.5 h-8 px-2.5 rounded-lg text-[13px] text-left cursor-pointer transition-colors ${view === h.view ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`}
-          onClick={() => setView(view === h.view ? "session" : h.view)}>
-          <Icon name={h.icon} size={14} /> {h.label}
+          className={row(view === h.view)} onClick={() => setView(view === h.view ? "session" : h.view)}>
+          <Icon name={h.icon} size={14} /> <span className="flex-1">{h.label}</span>
+          {h.view === "dna" && spark ? <span className="flex items-center gap-1 text-[11px] text-accent num" title="The Spark noticed something"><span className="w-1.5 h-1.5 rounded-full bg-accent" />{spark}</span> : null}
         </button>
       ))}
+      <button className={row(bridgeOpen)} title="The Bridge: plans, hand-offs and questions between the Claude app, your sessions and teammates"
+        onClick={() => setBridgeOpen(!bridgeOpen)}>
+        <Icon name="swap" size={14} /> <span className="flex-1">Bridge</span>
+        {waiting ? <span className="text-[11px] text-warn num">{waiting}</span> : null}
+      </button>
     </nav>
   );
 }
@@ -111,9 +126,9 @@ export function SimpleSidebar() {
   return (
     <aside className="w-[264px] flex-none border-r border-line bg-panel flex flex-col overflow-hidden" aria-label="Sessions">
       {/* project row doubles as the drag strip; clears the macOS traffic lights */}
-      <div data-tauri-drag-region className="h-12 flex-none flex items-center pl-[84px] pr-2">
+      <div data-drag-zone data-tauri-drag-region className="h-12 flex-none flex items-center pl-[84px] pr-2">
         <button
-          className="flex items-center gap-2 min-w-0 flex-1 h-8 px-2 rounded-lg hover:bg-raised text-left cursor-pointer"
+          className="flex items-center gap-2 min-w-0 max-w-full h-8 px-2 rounded-lg hover:bg-raised text-left cursor-pointer"
           title="Switch project (⌘P)"
           onClick={() => setPickerOpen(true)}
         >

@@ -1004,3 +1004,28 @@ select.btn, .btn[type] {
 @media (prefers-reduced-motion: reduce) {
   .coach-hint { animation: none; }
 }
+
+/* simple layout top bar: compact chips, so the rest of the bar is drag space */
+.topbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex: none;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+span.topbar-chip { cursor: default; }
+button.topbar-chip:hover,
+.topbar-chip.on { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+button.topbar-chip:disabled { opacity: 0.4; cursor: default; background: none; }
+
+/* a finished turn's receipt; undo shows on hover so the chat stays calm */
+.turn-receipt .turn-undo { opacity: 0; transition: opacity 120ms ease; }
+.turn-receipt:hover .turn-undo,
+.turn-receipt .turn-undo:focus-visible { opacity: 1; }
+@media (hover: none) { .turn-receipt .turn-undo { opacity: 1; } }

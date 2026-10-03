@@ -357,8 +357,11 @@ export function SessionPane({ mate }: { mate: Teammate }) {
   }, [jump, mate.id, member?.agent]);
 
   return (
-    <section className={`flex-1 min-w-0 flex flex-col ${tab === "chat" ? "" : "bg-term-bg"}`}>
-      <div className={`flex items-center gap-2 px-4 h-10 flex-none ${tab === "chat" ? "" : "border-b border-line bg-panel"}`}>
+    <section className={`relative flex-1 min-w-0 flex flex-col ${tab === "chat" ? "" : "bg-term-bg"}`}>
+      {/* simple layout, chat: the switcher floats top-right instead of taking a row */}
+      <div className={simple && tab === "chat"
+        ? "absolute right-3 top-2 z-10 flex items-center gap-2"
+        : `flex items-center gap-2 px-4 h-10 flex-none ${tab === "chat" ? "" : "border-b border-line bg-panel"}`}>
         {/* no title/status here — the pill tab above carries both. Just this
             pane's view switcher + tools, floating right (Monocode-style). */}
         {mate.recording ? <span className="tag danger"><Icon name="record" size={9} /> rec</span> : null}
