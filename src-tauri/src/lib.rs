@@ -3400,6 +3400,20 @@ fn project_export() -> Result<String, String> {
 
 const API_PORT: u16 = 4517;
 
+/// The control API's port: GRILLME_API_PORT, else 4517. A second copy of the
+/// app (a test instance with its own GRILLME_HOME) sets its own, so its CLI
+/// and sessions never talk to the app you're using.
+pub(crate) fn api_port() -> u16 {
+    std::env::var("GRILLME_API_PORT").ok().and_then(|p| p.parse::<u16>().ok()).filter(|p| *p != 0).unwrap_or(API_PORT)
+}
+
+/// The CLI with this instance's port and data folder baked in.
+fn cli_script() -> String {
+    CLI_SCRIPT
+        .replace("http://127.0.0.1:4517", &format!("http://127.0.0.1:{}", api_port()))
+        .replace("$HOME/.grillme/api-token", &grillme_root().join("api-token").to_string_lossy())
+}
+
 const CLI_SCRIPT: &str = r#"#!/bin/bash
 # grillme — control Grill Me sessions from any terminal or Claude Code agent.
 #   grillme sessions                  list sessions (id, alive, status)
@@ -3488,15 +3502,16 @@ fn start_api_server(app: tauri::AppHandle) {
     let bin = grillme_root().join("bin");
     let _ = std::fs::create_dir_all(&bin);
     let cli = bin.join("grillme");
-    if std::fs::read_to_string(&cli).map(|c| c != CLI_SCRIPT).unwrap_or(true) {
-        if std::fs::write(&cli, CLI_SCRIPT).is_ok() {
+    let script = cli_script();
+    if std::fs::read_to_string(&cli).map(|c| c != script).unwrap_or(true) {
+        if std::fs::write(&cli, &script).is_ok() {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755));
         }
     }
 
     std::thread::spawn(move || {
-        let listener = match std::net::TcpListener::bind(("127.0.0.1", API_PORT)) {
+        let listener = match std::net::TcpListener::bind(("127.0.0.1", api_port())) {
             Ok(l) => l,
             Err(e) => return eprintln!("[api] bind failed: {e}"),
         };
@@ -5904,5 +5919,16 @@ mod default_repo_tests {
         assert_eq!(default_repo_path(None, Some(PathBuf::from("/")), home.clone()), "/Users/me");
         assert_eq!(default_repo_path(None, None, home), "/Users/me");
         assert_eq!(default_repo_path(None, Some(PathBuf::from("/code/x")), None), "/code/x");
+    }
+}
+
+#[cfg(test)]
+mod api_port_tests {
+    #[test]
+    fn the_cli_talks_to_this_instance() {
+        let s = super::cli_script();
+        assert!(s.contains(&format!("http://127.0.0.1:{}", super::api_port())));
+        assert!(s.contains(&super::grillme_root().join("api-token").to_string_lossy().to_string()));
+        assert!(!s.contains("$HOME/.grillme/api-token"));
     }
 }
