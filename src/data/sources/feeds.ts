@@ -4,7 +4,7 @@ import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
 import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
 import { DEFAULT_STALL_MIN, LOOP_SAMPLES, isStalled, looksLooping } from "../../lib/stall";
-import { isTrustPrompt } from "../../lib/ptyReady";
+import { isTrustPrompt, TRUST_ACCEPT_KEYS } from "../../lib/ptyReady";
 import { parseResetHint } from "../../lib/ratelimit";
 import { sessionTokens, shouldCapPause } from "../../lib/cap";
 import { fmtTokens } from "../../lib/format";
@@ -12,6 +12,7 @@ import { playAlert } from "../sounds";
 import { notificationsSilenced } from "../../lib/quietHours";
 import { reconcileShared } from "../../lib/roomSync";
 import { mentionsMe, normalizeChat } from "../../lib/teamChat";
+
 import {
   fetchConflictRadar,
   fetchGitState,
@@ -22,6 +23,18 @@ import {
   type ConflictPair,
   type TeamMemberConfig,
 } from "./git";
+
+/** Sessions whose trust screen we already answered (cleared once it's gone). */
+const autoTrusted = new Set<string>();
+
+async function autoTrust(ptyId: string, repoPath: string) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  if (!(await invoke<boolean>("worktree_is_ours", { path: repoPath }).catch(() => false))) return;
+  for (const key of TRUST_ACCEPT_KEYS) {
+    await invoke("pty_write", { id: ptyId, data: key }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Feed bootstrap. Started by the store module when running inside Tauri;
@@ -490,6 +503,13 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         if (trustPrompt) status = "needs-input";
         const stg = store.getState();
         const member = stg.members.find((m) => m.id === memberId);
+        // a worktree Grill Me made is a copy of a project you already chose:
+        // answer Claude's "trust this folder?" for you (once per session start)
+        if (trustPrompt && member && !autoTrusted.has(st.id)) {
+          autoTrusted.add(st.id);
+          void autoTrust(st.id, member.repoPath);
+        }
+        if (!trustPrompt) autoTrusted.delete(st.id);
         const selfHealOn = stg.appSettings.selfHeal !== false;
         const tailText = st.tail.slice(-8).join(" ").toLowerCase();
         const rateLimited = /rate.?limit|usage limit reached|429|overloaded/.test(tailText);
