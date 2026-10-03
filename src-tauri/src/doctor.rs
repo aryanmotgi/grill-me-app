@@ -120,7 +120,7 @@ mod tests {
 #[tauri::command(async)]
 pub(crate) fn system_doctor() -> Vec<Value> {
     let api_up = std::net::TcpStream::connect_timeout(
-        &([127, 0, 0, 1], 4517).into(),
+        &([127, 0, 0, 1], crate::api_port()).into(),
         std::time::Duration::from_millis(300),
     )
     .is_ok();
@@ -140,7 +140,7 @@ pub(crate) fn system_doctor() -> Vec<Value> {
             "Opens and merges PRs from the Ship queue.", "brew install gh && gh auth login"),
         check("tailscale", "Tailscale", false, ts_detail,
             "Team rooms across Wi-Fis and the claude.ai connection.", "Install from tailscale.com/download/mac, then sign in"),
-        check("api", "Control API", true, api_up.then(|| "127.0.0.1:4517".to_string()),
+        check("api", "Control API", true, api_up.then(|| format!("127.0.0.1:{}", crate::api_port())),
             "The bridge and CLI talk to the app here.", "Quit anything else on port 4517 and relaunch Grill Me"),
     ]
 }
