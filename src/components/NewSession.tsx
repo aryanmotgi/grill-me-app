@@ -5,6 +5,7 @@ import { uiLayoutOf } from "../lib/uiLayout";
 import { promptHints } from "../lib/coach";
 import { useFanOutDraft } from "./FanOut";
 import { saveBeforeSend } from "../lib/savepoints";
+import { watchSend } from "../lib/goalWatchStore";
 import { ptyIdFor, useApp } from "../store";
 import { deliverBriefWhenReady } from "../lib/ptyReady";
 import type { AgentId } from "../data/sources/git";
@@ -158,6 +159,7 @@ export function NewSession() {
       useApp.getState().setActive(folderSession.id);
       usePendingChat.getState().add(folderSession.id, body);
       saveBeforeSend(folderSession.repoPath, body);
+      watchSend(folderSession.id, body);
       setText(""); setSkill(null); setBusy(false);
       void deliverBriefWhenReady(ptyIdFor(folderSession.id), brief0).then((ok) => { if (!ok) toast("The session didn't get ready in time. Try sending again from its chat.", "warn"); });
       return;
@@ -167,6 +169,7 @@ export function NewSession() {
     const brief = agent === "claude" && grill
       ? grillPrefix(grill, hoursLeft) + (plan ? PLAN_PREFIX : "") + playbook + body
       : (plan ? PLAN_PREFIX : "") + playbook + body;
+    watchSend(slug, body);
     await spawnFromTemplate(slug, slug, branch, brief, agent);
     setBusy(false);
     // spawn registered the member → it's now the active tab; else keep the draft

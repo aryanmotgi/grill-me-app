@@ -8,6 +8,9 @@ import { activeToken } from "../lib/composer";
 import { QUICK_ASKS, promptHints, sessionStats, type Hint } from "../lib/coach";
 import { useFanOutDraft } from "./FanOut";
 import { saveBeforeSend } from "../lib/savepoints";
+import { watchKey, watchLog, watchSend } from "../lib/goalWatchStore";
+import { summarize } from "../lib/goalWatch";
+import { useBridge } from "./BridgePanel";
 
 // ---------------------------------------------------------------------------
 // Monocode-style composer under the terminal. Multiline prompt (Enter sends,
@@ -69,7 +72,14 @@ export function Composer({ mateId }: { mateId: string }) {
 
   // the coach: quiet unless the draft would waste a turn, time or money
   const stats = useMemo(() => sessionStats(mate), [mate]);
-  const hints = useMemo(() => promptHints(draft, stats).filter((h) => !hushed.has(h.id)), [draft, stats, hushed]);
+  // the Spark's goal watch: say so when the last few prompts drifted off the goal
+  const goal = useBridge((b) => b.state.goal ?? "");
+  const log = useApp((s) => s.appSettings[watchKey()]);
+  const drift = useMemo(() => (goal ? summarize(watchLog({ k: log }, "k"), goal).nudge : null), [goal, log]);
+  const hints = useMemo(() => [
+    ...(drift && draft.trim() ? [{ id: "drift" as const, text: `${drift}. Is this message part of it?` }] : []),
+    ...promptHints(draft, stats),
+  ].filter((h) => !hushed.has(h.id)), [draft, stats, hushed, drift]);
 
   if (!member || !isTauri()) return null;
   const viewOnly = mate?.permission === "view";
@@ -98,6 +108,7 @@ export function Composer({ mateId }: { mateId: string }) {
       usePendingChat.getState().add(mateId, text);
       // a save point first, so this turn can be undone
       saveBeforeSend(member?.repoPath, text);
+      watchSend(mateId, text);
       await submitToAgent(ptyIdFor(mateId), text);
       if (quick) return;
       setDraft("");
