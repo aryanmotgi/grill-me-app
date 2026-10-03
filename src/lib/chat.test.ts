@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modelLabel, parseTranscript, toRows, toolSummary, userText } from "./chat";
+import { modelLabel, parseTranscript, toRows, toolSummary, userText, isTestCommand } from "./chat";
 
 const L = (o: unknown) => JSON.stringify(o);
 
@@ -90,5 +90,37 @@ describe("toRows", () => {
   });
   it("leaves the live turn open while working", () => {
     expect(toRows(parseTranscript(lines), true).some((r) => r.kind === "worked")).toBe(false);
+  });
+});
+
+describe("turn receipts", () => {
+  const L = (o: unknown) => JSON.stringify(o);
+  const t = (s: number) => new Date(1_790_000_000_000 + s * 1000).toISOString();
+  const lines = [
+    L({ type: "user", uuid: "u1", timestamp: t(0), message: { content: "add login" } }),
+    L({ type: "assistant", uuid: "a1", timestamp: t(2), message: { id: "m1", model: "claude-opus-4-8", usage: { input_tokens: 10, output_tokens: 50, cache_read_input_tokens: 1000 }, content: [{ type: "tool_use", id: "t1", name: "Edit", input: { file_path: "/x/src/Login.tsx" } }] } }),
+    L({ type: "assistant", uuid: "a1b", timestamp: t(3), message: { id: "m1", model: "claude-opus-4-8", usage: { input_tokens: 10, output_tokens: 50, cache_read_input_tokens: 1000 }, content: [{ type: "tool_use", id: "t2", name: "Write", input: { file_path: "/x/src/auth.ts" } }] } }),
+    L({ type: "user", uuid: "r1", timestamp: t(4), message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }, { type: "tool_result", tool_use_id: "t2", content: "ok" }] } }),
+    L({ type: "assistant", uuid: "a2", timestamp: t(6), message: { id: "m2", model: "claude-opus-4-8", usage: { input_tokens: 5, output_tokens: 20, cache_read_input_tokens: 2000 }, content: [{ type: "tool_use", id: "t3", name: "Bash", input: { command: "npm test" } }] } }),
+    L({ type: "user", uuid: "r2", timestamp: t(9), message: { content: [{ type: "tool_result", tool_use_id: "t3", content: "1 failed", is_error: true }] } }),
+    L({ type: "assistant", uuid: "a3", timestamp: t(12), message: { id: "m3", model: "claude-opus-4-8", usage: { input_tokens: 1, output_tokens: 30, cache_read_input_tokens: 2100 }, content: [{ type: "text", text: "Login added, one test fails." }] } }),
+  ];
+
+  it("closes a turn with the files, tests and tokens it used", () => {
+    const rows = toRows(parseTranscript(lines), false);
+    const r = rows.find((x) => x.kind === "worked");
+    if (r?.kind !== "worked") throw new Error("no receipt");
+    expect(r.ask).toBe("add login");
+    expect(r.files).toEqual(["Login.tsx", "auth.ts"]);
+    expect(r.tests).toBe("fail");
+    expect(r.seconds).toBe(12);
+    // the repeated usage of call m1 counts once
+    expect(r.usage).toEqual({ input: 16, output: 100, cacheRead: 5100, cacheWrite: 0 });
+    expect(r.modelId).toBe("claude-opus-4-8");
+  });
+
+  it("recognises test commands", () => {
+    for (const c of ["npm test", "npm run test -- --watch=false", "npx vitest run", "cargo test", "go test ./...", "pytest -q"]) expect(isTestCommand(c)).toBe(true);
+    for (const c of ["npm run build", "git status", "ls tests/"]) expect(isTestCommand(c)).toBe(false);
   });
 });

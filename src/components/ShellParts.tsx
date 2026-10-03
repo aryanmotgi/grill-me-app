@@ -16,6 +16,8 @@ import { FlowPage } from "./FlowPage";
 import { ReviewModal } from "./ReviewModal";
 import { SessionHandoff } from "./SessionHandoff";
 import { HomeDashboard } from "./HomeDashboard";
+import { SimpleOverview } from "./simple/SimpleOverview";
+import { uiLayoutOf } from "../lib/uiLayout";
 import { FeatureIndex } from "./FeatureIndex";
 import { DiffBoard } from "./DiffBoard";
 import { PrDashboard } from "./PrDashboard";
@@ -52,10 +54,11 @@ export function CenterStage({ active, split }: { active: Teammate | undefined; s
   const focusMode = useApp((s) => s.focusMode);
   const panelSizes = useApp((s) => s.panelSizes);
   const setPanelSize = useApp((s) => s.setPanelSize);
+  const simple = useApp((s) => uiLayoutOf(s.appSettings) === "simple");
   return (
     <>
     {view === "home" ? (
-      <HomeDashboard />
+      simple ? <SimpleOverview /> : <HomeDashboard />
     ) : view === "preview" ? (
       <PreviewPage />
     ) : view === "automations" ? (

@@ -7,6 +7,8 @@ import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { TRUST_ACCEPT_KEYS } from "../lib/ptyReady";
+import { money, turnCost } from "../lib/coach";
+import { beforeLabel, goBack, listSavePoints, useSavePoints, type SavePoint } from "../lib/savepoints";
 
 /** Claude Code asks once per new folder whether to trust it. A brand-new
  *  session's worktree always hits this, and the chat can't show Claude's
@@ -176,21 +178,47 @@ export function Working({ since, model }: { since: number | undefined; model: st
   );
 }
 
-/** The conversation rows (bubbles, replies, tool groups, "worked for") —
- *  shared by session chat and the Grill Me Chat panel. */
-export function ChatRows({ rows }: { rows: ChatRow[] }) {
+const dur = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
+
+/** The receipt under a finished turn: what it touched, whether the tests
+ *  passed, what it cost, and undo, all in one line. */
+function Receipt({ row, undo }: { row: Extract<ChatRow, { kind: "worked" }>; undo?: () => void }) {
+  const cost = turnCost(row.usage, row.modelId);
+  const shown = row.files.slice(0, 3);
+  return (
+    <div className="turn-receipt flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-faint pb-3">
+      <span className="flex items-center gap-1.5"><AgentLogo agent="claude" size={12} /> {row.model} · <span className="num">{dur(row.seconds)}</span></span>
+      {row.files.length ? (
+        <span className="flex items-center gap-1 min-w-0" title={row.files.join("\n")}>
+          <Icon name="file" size={11} />
+          <span className="truncate max-w-[280px]">{shown.join(", ")}{row.files.length > shown.length ? ` +${row.files.length - shown.length}` : ""}</span>
+        </span>
+      ) : <span>no files changed</span>}
+      {row.tests ? (
+        <span className={`flex items-center gap-1 ${row.tests === "pass" ? "text-ok" : "text-danger"}`}>
+          <Icon name={row.tests === "pass" ? "check" : "cross"} size={11} /> {row.tests === "pass" ? "tests pass" : "tests fail"}
+        </span>
+      ) : null}
+      {cost !== null ? <span className="num" title="Estimated at list prices from this turn's real token counts">{money(cost)}</span> : null}
+      {undo && row.files.length ? (
+        <button className="turn-undo flex items-center gap-1 hover:text-ink cursor-pointer" onClick={undo}
+          title="Put every file back the way it was before this message (where you are now is saved first)">
+          <Icon name="up" size={10} className="-rotate-90" /> Undo this turn
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The conversation rows (bubbles, replies, tool groups, turn receipts) —
+ *  shared by session chat and the Grill Me Chat panel. `undoFor` turns on
+ *  per-turn undo where save points exist. */
+export function ChatRows({ rows, undoFor }: { rows: ChatRow[]; undoFor?: (ask: string | undefined) => (() => void) | undefined }) {
   return (
     <>
       {rows.map((row) => {
         if (row.kind === "tools") return <ToolGroup key={row.id} tools={row.tools} />;
-        if (row.kind === "worked") {
-          return (
-            <div key={row.id} className="flex items-center gap-2 text-[12.5px] text-faint pb-2">
-              <AgentLogo agent="claude" size={12} />
-              <span>{row.model} worked for <span className="num">{row.seconds < 60 ? `${row.seconds}s` : `${Math.floor(row.seconds / 60)}m ${row.seconds % 60}s`}</span></span>
-            </div>
-          );
-        }
+        if (row.kind === "worked") return <Receipt key={row.id} row={row} undo={undoFor?.(row.ask)} />;
         const it = row.item;
         return it.kind === "user" ? (
           <div key={it.id} className="flex justify-end pt-2">
@@ -231,6 +259,17 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const member = useApp((s) => s.members.find((m) => m.id === mate.id));
+  const toast = useApp((s) => s.toast);
+  // save points taken before each message, matched to the turn they started
+  const rev = useSavePoints((s) => s.rev);
+  const [points, setPoints] = useState<SavePoint[]>([]);
+  useEffect(() => { if (repoPath) void listSavePoints(repoPath).then(setPoints); }, [repoPath, rev, items.length]);
+  const undoFor = (ask: string | undefined) => {
+    if (!ask || !repoPath) return undefined;
+    const sp = points.find((p) => p.label === beforeLabel(ask));
+    if (!sp) return undefined;
+    return () => void goBack(repoPath, sp.id).then((m) => toast(m), (e) => toast(`Couldn't undo: ${e}`, "warn"));
+  };
   const agent = member?.agent ?? "claude";
 
   // sessions spawn lazily on first view — the chat is a view too, so make
@@ -274,7 +313,7 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
             <p className="text-faint text-[12px]">Send one below — the conversation shows up here.</p>
           </div>
         ) : (
-          <ChatRows rows={rows} />
+          <ChatRows rows={rows} undoFor={undoFor} />
         )}
         {pending.map((p) => (
           <div key={p.at} className="flex justify-end pt-2">

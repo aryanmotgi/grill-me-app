@@ -6,8 +6,11 @@
 // Pure + tested; the ChatView polls `transcript_tail` and feeds lines here.
 // ---------------------------------------------------------------------------
 
-/** `ts` = epoch ms from the transcript line; `model` = the model that wrote it */
-type Stamp = { ts?: number; model?: string };
+/** Tokens one assistant API call used (from the transcript's message.usage). */
+export type Usage = { input: number; output: number; cacheRead: number; cacheWrite: number };
+/** `ts` = epoch ms from the transcript line; `model` = the model that wrote it;
+ *  `usage` = that API call's tokens, on the first item it produced */
+type Stamp = { ts?: number; model?: string; usage?: Usage };
 export type ChatItem =
   | ({ kind: "user"; id: string; text: string; images: number } & Stamp)
   | ({ kind: "assistant"; id: string; text: string } & Stamp)
@@ -87,10 +90,11 @@ export function harnessNote(raw: string): string | null {
 export function parseTranscript(lines: string[]): ChatItem[] {
   const items: ChatItem[] = [];
   const tools = new Map<string, Extract<ChatItem, { kind: "tool" }>>();
+  const countedCalls = new Set<string>();
   let n = 0;
 
   for (const line of lines) {
-    let o: { type?: string; isMeta?: boolean; isSidechain?: boolean; uuid?: string; timestamp?: string; message?: { content?: unknown; model?: string } };
+    let o: { type?: string; isMeta?: boolean; isSidechain?: boolean; uuid?: string; timestamp?: string; message?: { id?: string; content?: unknown; model?: string; usage?: Record<string, unknown> } };
     try { o = JSON.parse(line); } catch { continue; }
     if (!o || o.isSidechain || o.isMeta) continue;
     if (o.type !== "user" && o.type !== "assistant") continue;
@@ -100,6 +104,14 @@ export function parseTranscript(lines: string[]): ChatItem[] {
     const parsedTs = o.timestamp ? Date.parse(o.timestamp) : NaN;
     const ts = Number.isFinite(parsedTs) ? parsedTs : undefined;
     const model = o.message?.model;
+    // one API call is split over several lines that repeat its usage: count it once
+    let usage: Usage | undefined;
+    if (o.type === "assistant" && o.message?.usage && !(o.message.id && countedCalls.has(o.message.id))) {
+      const u = o.message.usage;
+      const num = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0);
+      usage = { input: num("input_tokens"), output: num("output_tokens"), cacheRead: num("cache_read_input_tokens"), cacheWrite: num("cache_creation_input_tokens") };
+      if (o.message.id) countedCalls.add(o.message.id);
+    }
 
     if (o.type === "user") {
       if (typeof content === "string") {
@@ -136,6 +148,7 @@ export function parseTranscript(lines: string[]): ChatItem[] {
 
     // assistant: Claude Code writes one content block per line
     if (!Array.isArray(content)) continue;
+    const before = items.length;
     (content as Block[]).forEach((b, i) => {
       const id = `${baseId}:${i}`;
       if (b.type === "text" && b.text?.trim()) {
@@ -161,8 +174,20 @@ export function parseTranscript(lines: string[]): ChatItem[] {
       }
       // thinking blocks are intentionally not shown
     });
+    if (usage) {
+      // a thinking-only line produced nothing: carry its usage on a hidden note
+      const host = items[before] ?? items[items.length - 1];
+      if (host && items.length > before) host.usage = usage;
+      else if (host) host.usage = addUsage(host.usage, usage);
+    }
   }
   return items;
+}
+
+export function addUsage(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return { input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite };
 }
 
 // ---- render grouping -------------------------------------------------------
@@ -179,10 +204,32 @@ export function modelLabel(model?: string): string {
 export type ChatRow =
   | { kind: "item"; item: ChatItem }
   | { kind: "tools"; id: string; tools: Extract<ChatItem, { kind: "tool" }>[] }
-  | { kind: "worked"; id: string; model: string; seconds: number };
+  | ({ kind: "worked"; id: string; model: string; seconds: number } & TurnReceipt);
+
+/** What one turn did, for the receipt under it. */
+export interface TurnReceipt {
+  /** the message that started the turn */
+  ask?: string;
+  /** files it wrote or edited, in order, no repeats */
+  files: string[];
+  /** the last test run in the turn: passed, failed, or none */
+  tests?: "pass" | "fail";
+  usage?: Usage;
+  /** raw model id, for pricing */
+  modelId?: string;
+}
+
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+const TEST_CMD = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(vitest|jest|pytest|mocha|playwright test|rspec|phpunit)\b|\b(cargo|go|deno|dotnet|mix)\s+test\b|\bmake\s+test\b/;
+
+/** Is this shell command a test run? */
+export function isTestCommand(cmd: string): boolean {
+  return TEST_CMD.test(cmd);
+}
 
 /** Group runs of tool calls, and close each finished turn (user → reply)
- *  with a "<model> worked for Ns" line. The last turn stays open while the
+ *  with a receipt: how long it took, which files it touched, whether the
+ *  tests passed, and its tokens. The last turn stays open while the
  *  session is still working. */
 export function toRows(items: ChatItem[], working: boolean): ChatRow[] {
   const rows: ChatRow[] = [];
@@ -190,13 +237,20 @@ export function toRows(items: ChatItem[], working: boolean): ChatRow[] {
   let lastTs: number | undefined;
   let model: string | undefined;
   let hasReply = false;
+  let ask: string | undefined;
+  let files: string[] = [];
+  let tests: "pass" | "fail" | undefined;
+  let usage: Usage | undefined;
 
   const closeTurn = (id: string) => {
     if (hasReply && turnStart !== undefined && lastTs !== undefined && lastTs >= turnStart) {
-      rows.push({ kind: "worked", id: `w-${id}`, model: modelLabel(model), seconds: Math.round((lastTs - turnStart) / 1000) });
+      rows.push({ kind: "worked", id: `w-${id}`, model: modelLabel(model), seconds: Math.round((lastTs - turnStart) / 1000), ask, files, tests, usage, modelId: model });
     }
     hasReply = false;
     model = undefined;
+    files = [];
+    tests = undefined;
+    usage = undefined;
   };
 
   for (const it of items) {
@@ -204,15 +258,22 @@ export function toRows(items: ChatItem[], working: boolean): ChatRow[] {
       closeTurn(it.id);
       turnStart = it.ts;
       lastTs = it.ts;
+      ask = it.text;
       rows.push({ kind: "item", item: it });
       continue;
     }
+    usage = addUsage(usage, it.usage);
     if (it.kind === "assistant" || it.kind === "tool") {
       hasReply = true;
       model = it.model ?? model;
       if (it.ts !== undefined) lastTs = it.ts;
     }
     if (it.kind === "tool") {
+      if (EDIT_TOOLS.has(it.name)) {
+        const f = it.summary.replace(/^\S+\s+/, "");
+        if (f && !files.includes(f)) files.push(f);
+      }
+      if (it.name === "Bash" && isTestCommand(it.detail) && it.result !== undefined) tests = it.isError ? "fail" : "pass";
       const prev = rows[rows.length - 1];
       if (prev?.kind === "tools") prev.tools.push(it);
       else rows.push({ kind: "tools", id: `g-${it.id}`, tools: [it] });

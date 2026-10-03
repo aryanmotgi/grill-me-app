@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { EditableTitle } from "./EditableTitle";
+import { uiLayoutOf } from "../lib/uiLayout";
+import { useTests } from "../lib/testsStore";
+import { sessionSentence } from "../lib/sessionSentence";
 import { useApp } from "../store";
 import { visibleSessions } from "../lib/sessionNav";
 import { applySessionOrder, moveId, reorderByDrop } from "../lib/sessionOrder";
@@ -127,6 +130,30 @@ function SessionRow({ mate, reorder }: { mate: Teammate; reorder?: RowReorder })
   useEffect(() => {
     if (isCursor) rowRef.current?.scrollIntoView({ block: "nearest" });
   }, [isCursor]);
+  const simple = useApp((s) => uiLayoutOf(s.appSettings) === "simple");
+  const testsOk = useTests((t) => (t.results[mate.id] && !t.results[mate.id].running ? t.results[mate.id].ok : null));
+
+  // the simple layout: what it's called and one plain sentence of where it is
+  if (simple) {
+    const said = sessionSentence(mate, testsOk);
+    return (
+      <div ref={rowRef} role="button" tabIndex={0} aria-current={isActive ? "true" : undefined}
+        className={`px-3 py-2.5 cursor-pointer transition-colors border-l-2 ${isActive ? "bg-raised border-l-accent" : isCursor ? "bg-raised/60 border-l-data" : "hover:bg-raised/60 border-l-transparent"}`}
+        onClick={() => setActive(mate.id)}
+        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setActive(mate.id); } }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`status-dot ${mate.status} flex-none`} role="img" aria-label={STATUS_LABEL[mate.status]} />
+          <span className="text-[13px] font-medium text-ink truncate flex min-w-0 flex-1"><EditableTitle mate={mate} /></span>
+          <span className="text-[10.5px] text-faint num flex-none" title="Since its last activity">
+            {mate.lastActiveMin < 60 ? `${mate.lastActiveMin}m` : `${Math.floor(mate.lastActiveMin / 60)}h`}
+          </span>
+        </div>
+        <div className={`mt-0.5 pl-4 text-[11.5px] truncate ${said.tone === "needs" ? "text-warn" : said.tone === "done" ? "text-ok" : said.tone === "stopped" ? "text-danger" : "text-faint"}`}>
+          {said.text}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

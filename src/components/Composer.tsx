@@ -193,10 +193,10 @@ export function Composer({ mateId }: { mateId: string }) {
         onClick={(e) => syncCaret(e.currentTarget)}
         onKeyDown={onKeyDown}
       />
-      <div className="flex items-center gap-1.5">
-        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim font-mono" title={member.repoPath}>
-          <Icon name="folder" size={10} /> {member.repoPath.split("/").pop()}
-          <Icon name="branch" size={10} /> {mate?.branch ?? "main"}
+      <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim font-mono flex-none max-w-[150px] min-w-0"
+          title={`${member.repoPath}\non branch ${mate?.branch ?? "main"}`}>
+          <Icon name="branch" size={10} className="flex-none" /> <span className="truncate">{mate?.branch ?? "main"}</span>
         </span>
         {draft.trim() || viewOnly ? (
           <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-raised text-[10px] text-dim"
@@ -206,7 +206,7 @@ export function Composer({ mateId }: { mateId: string }) {
         ) : (
           // empty box: the asks people type all day, one click each
           QUICK_ASKS.map((q) => (
-            <button key={q.label} className="px-2 py-0.5 rounded-md bg-raised text-[10.5px] text-dim hover:text-ink hover:bg-raised/70 cursor-pointer disabled:opacity-40"
+            <button key={q.label} className="px-2 py-0.5 rounded-md bg-raised text-[10.5px] text-dim hover:text-ink hover:bg-raised/70 cursor-pointer disabled:opacity-40 whitespace-nowrap flex-none"
               disabled={sending} title={q.prompt} onClick={() => void send(q.prompt)}>
               {q.label}
             </button>
@@ -214,7 +214,7 @@ export function Composer({ mateId }: { mateId: string }) {
         )}
         <span className="flex-1" />
         <button
-          className="flex items-center gap-1 px-3 py-1 rounded-md bg-accent text-accent-ink text-[11px] font-semibold cursor-pointer hover:brightness-110 disabled:opacity-40"
+          className="flex items-center gap-1 px-3 py-1 rounded-md bg-accent text-accent-ink text-[11px] font-semibold cursor-pointer hover:brightness-110 disabled:opacity-40 whitespace-nowrap flex-none"
           disabled={!draft.trim() || viewOnly || sending}
           title="Send to the agent (Enter)"
           onClick={() => void send()}

@@ -1,5 +1,6 @@
 import { SparkPill } from "./components/SparkPanel";
 import { useDNALearning } from "./lib/dnaStore";
+import { useWindowDrag } from "./hooks/useWindowDrag";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "./store";
 import { BottomTerminal } from "./components/BottomTerminal";
@@ -273,6 +274,7 @@ export default function App() {
   // Claude bridge: live pending requests + "coder finished" pings
   useBridgeFeed();
   useTeamChatFeed();
+  useWindowDrag();
   useWelcomeBack();
   useAutomations();
   useRemoteAutostart();
@@ -302,7 +304,8 @@ export default function App() {
     );
   }
 
-  if (uiLayout === "simple") return <><SimpleShell active={active} split={split} /><FinishSetupPill /><SparkPill /></>;
+  // the simple sidebar shows the Spark's count on Coding DNA instead of a floating pill
+  if (uiLayout === "simple") return <><SimpleShell active={active} split={split} /><FinishSetupPill /></>;
 
   return (
     <div className={`h-full flex flex-col ${demoMode ? "demo-mode" : ""} ${dense ? "dense" : ""}`}>
