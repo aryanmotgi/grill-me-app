@@ -346,8 +346,15 @@ export function SessionPane({ mate }: { mate: Teammate }) {
   // the simple layout shows changes in its right panel
   const simple = useApp((s) => uiLayoutOf(s.appSettings) === "simple");
   const member = members.find((m) => m.id === mate.id);
-  // Claude sessions open as chat (Monocode-style); other agents keep the TUI
-  const [tab, setTab] = useState<PaneTab>((member?.agent ?? "claude") === "claude" ? "chat" : "terminal");
+  // Claude sessions open in the view you last picked (chat or terminal);
+  // other agents keep the terminal, since the chat reads Claude's transcripts
+  const preferred = useApp((s) => (s.appSettings.sessionView === "terminal" ? "terminal" : "chat"));
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const [tab, setTabState] = useState<PaneTab>((member?.agent ?? "claude") === "claude" ? preferred : "terminal");
+  const setTab = (t: PaneTab) => {
+    setTabState(t);
+    if (t === "chat" || t === "terminal") setAppSetting("sessionView", t);
+  };
   // a jump from elsewhere (brain search: a commit → this session's Changes)
   const jump = usePaneJump((j) => j.req);
   useEffect(() => {
@@ -434,7 +441,7 @@ export function SessionPane({ mate }: { mate: Teammate }) {
                 shell={tab === "shell"}
               />
             </div>
-            {tab === "terminal" ? <Composer mateId={mate.id} /> : null}
+            {/* the terminal is the input: type straight in, like any terminal */}
             <VitalsStrip mateId={mate.id} />
           </div>
         ) : (
