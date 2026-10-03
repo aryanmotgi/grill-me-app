@@ -119,7 +119,7 @@ export function BrainPage() {
   const bridgeSig = useBridge((b) => JSON.stringify([b.state.goal, b.state.notes.length, b.state.plans.length, b.state.questions.length]));
   const toast = useApp((s) => s.toast);
 
-  const checksOn = useApp((s) => s.appSettings.brainChecks !== false);
+  const checksOn = useApp((s) => s.appSettings.brainChecks === true);
   const [since, setSince] = useState<string | null>(null);
   const [now, setNow] = useState<string | null>(null);
   const [draftGoal, setDraftGoal] = useState<string | null>(null);

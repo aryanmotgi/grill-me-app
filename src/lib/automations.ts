@@ -31,11 +31,11 @@ export interface AutomationDef {
 }
 
 export const AUTOMATIONS: AutomationDef[] = [
-  { id: "review-replies", title: "Check every reply against the plan", desc: "Flags work that contradicts your decisions and ticks tasks on the board.", trigger: "After each session reply", icon: "eye", category: "Code review", defaultOn: true },
-  { id: "auto-review", title: "Review each session when it finishes", desc: "Reads the diff, tests and last turn, then says ship, fix or wait — in Flow, and to Claude via whats_new.", trigger: "When a session goes idle with new changes (at most every 3 min)", icon: "doc", category: "Code review", defaultOn: true },
+  { id: "review-replies", title: "Check every reply against the plan", desc: "Flags work that contradicts your decisions and ticks tasks on the board.", trigger: "After each session reply", icon: "eye", category: "Code review", defaultOn: false },
+  { id: "auto-review", title: "Review each session when it finishes", desc: "Reads the diff, tests and last turn, then says ship, fix or wait — in Flow, and to Claude via whats_new.", trigger: "When a session goes idle with new changes (at most every 3 min)", icon: "doc", category: "Code review", defaultOn: false },
   { id: "draft-answers", title: "Draft answers to coders' questions", desc: "Claude drafts an answer from your goal, decisions and tasks. You edit it and send it with one click in Flow.", trigger: "When a session asks the brainstorm side", icon: "bulb", category: "Code review", defaultOn: true },
-  { id: "spot-decisions", title: "Spot decisions automatically", desc: "When a session or Grill Me Chat agrees on something (“let's use Postgres”), it shows up in Flow and Brain as “Decision?” — Save logs it for the team. Nothing is logged without your click.", trigger: "After each session reply and chat reply", icon: "note", category: "Team", defaultOn: true },
-  { id: "drift-alarm", title: "Warn when sessions drift apart", desc: "Flags sessions building in contradicting directions — say, one doing email login while another does Google login.", trigger: "When 2+ sessions finished a turn in the last 30 min (at most every 10 min)", icon: "warn", category: "Alerts", defaultOn: true },
+  { id: "spot-decisions", title: "Spot decisions automatically", desc: "When a session or Grill Me Chat agrees on something (“let's use Postgres”), it shows up in Flow and Brain as “Decision?” — Save logs it for the team. Nothing is logged without your click.", trigger: "After each session reply and chat reply", icon: "note", category: "Team", defaultOn: false },
+  { id: "drift-alarm", title: "Warn when sessions drift apart", desc: "Flags sessions building in contradicting directions — say, one doing email login while another does Google login.", trigger: "When 2+ sessions finished a turn in the last 30 min (at most every 10 min)", icon: "warn", category: "Alerts", defaultOn: false },
   { id: "auto-test", title: "Run tests after every reply", desc: "Runs the project's tests in that session's worktree and shows ✓/✗ on its tab.", trigger: "After each session reply (skips if nothing changed)", icon: "check", category: "Testing", defaultOn: false },
   { id: "waiting-reminder", title: "Remind me when a session waits", desc: "A session asked you something and it's been sitting there.", trigger: "Waiting 5+ minutes", icon: "bell", category: "Alerts", defaultOn: true },
   { id: "phone-pings", title: "Ping my phone", desc: "Needs-you, failing tests, off-plan work, and deadline alerts on your phone (ntfy app). Hand-offs, plans and drafted answers come with Approve / Dismiss buttons.", trigger: "Whenever Grill Me alerts you", icon: "broadcast", category: "Alerts", defaultOn: false },
@@ -49,8 +49,10 @@ export const CATEGORIES: ("All" | AutoCategory)[] = ["All", "Code review", "Test
 type Settings = Record<string, unknown>;
 
 export function automationOn(settings: Settings, id: AutomationId): boolean {
-  // the plan check predates this page and keeps its original setting
-  if (id === "review-replies") return settings.brainChecks !== false;
+  // the checks that call Claude after every reply are off until you turn them
+  // on: they cost usage and their findings used to pop up unasked.
+  // The plan check predates this page and keeps its original setting
+  if (id === "review-replies") return settings.brainChecks === true;
   const map = (settings.automations ?? {}) as Record<string, boolean>;
   const def = AUTOMATIONS.find((a) => a.id === id);
   return typeof map[id] === "boolean" ? map[id] : !!def?.defaultOn;
