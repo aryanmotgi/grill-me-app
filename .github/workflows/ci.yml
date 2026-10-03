@@ -1,15 +1,28 @@
 name: CI
 
-# Private repo: macOS runner minutes bill at 10x Linux. The web checks run on
-# Linux every time; the Rust suite (macOS-only app) runs only when the backend
-# actually changed. The MCP server is part of the Rust binary (grill-me --mcp),
-# so its end-to-end tests (src/lib/mcpServer.node.test.ts) run in the rust job,
-# against the freshly built debug binary.
+# GitHub Actions minutes are limited (macOS bills at 10x Linux), so:
+# - Everything runs on Linux. The macOS-only code is behind
+#   cfg(target_os = "macos"), so the Rust suite and the MCP end-to-end tests
+#   run on Ubuntu with Tauri's Linux libraries.
+# - A macOS run happens only when asked: label a PR "mac", or start this
+#   workflow by hand with "mac" ticked. Releases build on macOS (release.yml).
+# - PRs only. A merge to main doesn't run everything again (the PR already
+#   did). Docs-only changes and draft PRs skip CI. A new push cancels the
+#   older run. Rust builds are cached.
 
 on:
   pull_request:
-  push:
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      mac:
+        description: Also run the Rust suite on macOS
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,7 +30,9 @@ concurrency:
 
 jobs:
   changes:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read # paths-filter lists the PR's files via the API
@@ -35,7 +50,9 @@ jobs:
               - 'src/lib/mcpServer.node.test.ts'
 
   web:
+    needs: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,10 +65,15 @@ jobs:
 
   rust:
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    runs-on: macos-latest
+    if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Tauri's Linux libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libssl-dev pkg-config zsh
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -71,3 +93,25 @@ jobs:
         run: cargo build --locked
       - name: MCP server end-to-end
         run: npx vitest run src/lib/mcpServer.node.test.ts
+
+  # macOS only when asked: a "mac" label on the PR, or a manual run with mac ticked
+  rust-mac:
+    needs: changes
+    if: contains(github.event.pull_request.labels.*.name, 'mac') || inputs.mac
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm run build
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --locked
