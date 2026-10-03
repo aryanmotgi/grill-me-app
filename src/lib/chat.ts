@@ -208,8 +208,9 @@ export type ChatRow =
 
 /** What one turn did, for the receipt under it. */
 export interface TurnReceipt {
-  /** the message that started the turn */
+  /** the message that started the turn, and when (epoch ms) */
   ask?: string;
+  startTs?: number;
   /** files it wrote or edited, in order, no repeats */
   files: string[];
   /** the last test run in the turn: passed, failed, or none */
@@ -244,7 +245,7 @@ export function toRows(items: ChatItem[], working: boolean): ChatRow[] {
 
   const closeTurn = (id: string) => {
     if (hasReply && turnStart !== undefined && lastTs !== undefined && lastTs >= turnStart) {
-      rows.push({ kind: "worked", id: `w-${id}`, model: modelLabel(model), seconds: Math.round((lastTs - turnStart) / 1000), ask, files, tests, usage, modelId: model });
+      rows.push({ kind: "worked", id: `w-${id}`, model: modelLabel(model), seconds: Math.round((lastTs - turnStart) / 1000), ask, startTs: turnStart, files, tests, usage, modelId: model });
     }
     hasReply = false;
     model = undefined;

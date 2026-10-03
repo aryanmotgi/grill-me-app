@@ -5,6 +5,7 @@ import { ptyIdFor } from "../../store";
 import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
 import { DEFAULT_STALL_MIN, LOOP_SAMPLES, isStalled, looksLooping } from "../../lib/stall";
 import { isTrustPrompt, TRUST_ACCEPT_KEYS } from "../../lib/ptyReady";
+import { savePoint } from "../../lib/savepoints";
 import { parseResetHint } from "../../lib/ratelimit";
 import { sessionTokens, shouldCapPause } from "../../lib/cap";
 import { fmtTokens } from "../../lib/format";
@@ -23,6 +24,11 @@ import {
   type ConflictPair,
   type TeamMemberConfig,
 } from "./git";
+
+/** The last prompt event each session got a save point for (hook seconds). */
+const promptSaved: Record<string, number> = {};
+/** Prompt events from before this launch are history, not new prompts. */
+const LAUNCH_S = Math.floor(Date.now() / 1000);
 
 /** Sessions whose trust screen we already answered (cleared once it's gone). */
 const autoTrusted = new Set<string>();
@@ -484,6 +490,18 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         const memberId = st.id.includes(":") ? st.id.split(":").slice(1).join(":") : st.id;
         if (ptyIdFor(memberId) !== st.id) continue; // other project's session
         const hook = latest[memberId];
+        // undo for every way you type (terminal, CLI, chat box): a save point
+        // when Claude says a prompt came in. Same files as one the chat box
+        // just made = the same save point, so nothing doubles up.
+        if (hook?.event === "prompt" && hook.ts > (promptSaved[memberId] ?? LAUNCH_S)) {
+          promptSaved[memberId] = hook.ts;
+          const repo = store.getState().members.find((m) => m.id === memberId)?.repoPath;
+          if (repo) {
+            const t = new Date(hook.ts * 1000);
+            const hhmm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+            void savePoint(repo, `Before your message at ${hhmm}`).catch(() => {});
+          }
+        }
         const hookFresh = hook && nowS - hook.ts < 30 * 60;
         // OSC 9/99/777 is an explicit signal from the agent — trust it first
         let status: "idle" | "working" | "needs-input" = !st.alive

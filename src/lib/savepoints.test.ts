@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, beforeLabel, lastTurn } from "./savepoints";
+import { ago, beforeLabel, lastTurn, pointForTurn } from "./savepoints";
 
 describe("save points", () => {
   it("labels a save point with the message it came before", () => {
@@ -20,5 +20,20 @@ describe("save points", () => {
     expect(ago(now / 1000 - 5, now)).toBe("just now");
     expect(ago(now / 1000 - 240, now)).toBe("4 min ago");
     expect(ago(now / 1000 - 7200, now)).toBe("2 h ago");
+  });
+});
+
+describe("pointForTurn", () => {
+  const pts = [
+    { id: "c", label: "Before your message at 14:52", at: 1000 },
+    { id: "b", label: "Before: “add login”", at: 900 },
+    { id: "a", label: "Saved by you", at: 500 },
+  ];
+  it("prefers the save point named after the message", () => {
+    expect(pointForTurn(pts, "add login", 1_000_000)?.id).toBe("b");
+  });
+  it("falls back to the newest one just before the turn (typed in the terminal)", () => {
+    expect(pointForTurn(pts, "typed in terminal", 1_002_000)?.id).toBe("c");
+    expect(pointForTurn(pts, "typed in terminal", 2_000_000)).toBeUndefined();
   });
 });

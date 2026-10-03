@@ -62,3 +62,16 @@ export async function goBack(repoPath: string, id: string): Promise<string> {
   useSavePoints.getState().bump();
   return msg;
 }
+
+/** The save point taken just before a turn: by its label (the chat box names
+ *  it after your message), else the newest one from up to two minutes
+ *  before the turn started (a prompt typed in the terminal or the CLI). */
+export function pointForTurn(points: SavePoint[], ask: string | undefined, startMs: number | undefined): SavePoint | undefined {
+  if (ask) {
+    const byLabel = points.find((p) => p.label === beforeLabel(ask));
+    if (byLabel) return byLabel;
+  }
+  if (!startMs) return undefined;
+  const start = startMs / 1000;
+  return points.filter((p) => p.at <= start + 10 && p.at >= start - 120).sort((a, b) => b.at - a.at)[0];
+}

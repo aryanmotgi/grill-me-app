@@ -8,7 +8,7 @@ import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { TRUST_ACCEPT_KEYS } from "../lib/ptyReady";
 import { money, turnCost } from "../lib/coach";
-import { beforeLabel, goBack, listSavePoints, useSavePoints, type SavePoint } from "../lib/savepoints";
+import { goBack, listSavePoints, pointForTurn, useSavePoints, type SavePoint } from "../lib/savepoints";
 
 /** Claude Code asks once per new folder whether to trust it. A brand-new
  *  session's worktree always hits this, and the chat can't show Claude's
@@ -213,12 +213,12 @@ function Receipt({ row, undo }: { row: Extract<ChatRow, { kind: "worked" }>; und
 /** The conversation rows (bubbles, replies, tool groups, turn receipts) —
  *  shared by session chat and the Grill Me Chat panel. `undoFor` turns on
  *  per-turn undo where save points exist. */
-export function ChatRows({ rows, undoFor }: { rows: ChatRow[]; undoFor?: (ask: string | undefined) => (() => void) | undefined }) {
+export function ChatRows({ rows, undoFor }: { rows: ChatRow[]; undoFor?: (ask: string | undefined, startTs?: number) => (() => void) | undefined }) {
   return (
     <>
       {rows.map((row) => {
         if (row.kind === "tools") return <ToolGroup key={row.id} tools={row.tools} />;
-        if (row.kind === "worked") return <Receipt key={row.id} row={row} undo={undoFor?.(row.ask)} />;
+        if (row.kind === "worked") return <Receipt key={row.id} row={row} undo={undoFor?.(row.ask, row.startTs)} />;
         const it = row.item;
         return it.kind === "user" ? (
           <div key={it.id} className="flex justify-end pt-2">
@@ -264,9 +264,9 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
   const rev = useSavePoints((s) => s.rev);
   const [points, setPoints] = useState<SavePoint[]>([]);
   useEffect(() => { if (repoPath) void listSavePoints(repoPath).then(setPoints); }, [repoPath, rev, items.length]);
-  const undoFor = (ask: string | undefined) => {
-    if (!ask || !repoPath) return undefined;
-    const sp = points.find((p) => p.label === beforeLabel(ask));
+  const undoFor = (ask: string | undefined, startTs?: number) => {
+    if (!repoPath) return undefined;
+    const sp = pointForTurn(points, ask, startTs);
     if (!sp) return undefined;
     return () => void goBack(repoPath, sp.id).then((m) => toast(m), (e) => toast(`Couldn't undo: ${e}`, "warn"));
   };
