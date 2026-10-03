@@ -134,7 +134,7 @@ const CHECK_EVERY_MS = 3 * 60_000;
 async function runBrainCheck(memberId: string) {
   const st = useApp.getState();
   // one model call serves both: the plan check and spotting agreed decisions
-  const checks = st.appSettings.brainChecks !== false;
+  const checks = st.appSettings.brainChecks === true;
   const spot = automationOn(st.appSettings, "spot-decisions");
   if (!checks && !spot) return;
   const now = Date.now();
