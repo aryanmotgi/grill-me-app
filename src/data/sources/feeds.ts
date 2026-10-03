@@ -87,17 +87,20 @@ const GIT_POLL_MS = 5000;
 export function startGitFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
   if (!isTauri()) return;
 
-  let cfgLoaded = false;
+  let cfgSig = "";
   let busy = false;
 
   const tick = async () => {
     if (busy) return; // previous tick still awaiting — don't pile up
     busy = true;
     try {
-      if (!cfgLoaded) {
-        const cfg = await loadTeamConfig();
+      // re-read the session list each tick: sessions added from the CLI,
+      // the API or a fan-out show up without a restart
+      const cfg = await loadTeamConfig();
+      const sig = JSON.stringify(cfg.teammates);
+      if (sig !== cfgSig) {
         store.getState().applyTeamConfig(cfg.teammates);
-        cfgLoaded = true;
+        cfgSig = sig;
       }
       // re-read members every tick — sessions added after startup get git state
       const members = store.getState().members;

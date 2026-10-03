@@ -511,10 +511,8 @@ export const useApp = create<AppState>((set, get) => ({
           const base = get().members[0];
           if (!base) return;
           const sid = `agent-${dep.id.slice(-8)}`;
-          const parent = base.repoPath.replace(/\/[^/]+$/, "");
-          const path = `${parent}/worktrees-${sid}`;
           try {
-            await invoke("worktree_add", { baseRepo: base.repoPath, branch: `fan/${sid}`, path });
+            const path = await invoke<string>("worktree_add", { baseRepo: base.repoPath, branch: `fan/${sid}`, path: "" });
             const nextMembers = [...get().members, { id: sid, name: sid, repoPath: path, permission: "edit" }];
             await invoke("team_config_write", { cfg: { teammates: nextMembers } });
             get().applyTeamConfig(nextMembers);
@@ -607,7 +605,9 @@ export const useApp = create<AppState>((set, get) => ({
           ...(seed ?? emptyTeammate(m.id)),
           id: m.id,
           name: m.name,
-          permission: (m.permission ?? (i === 0 ? "edit" : "view")) as Teammate["permission"],
+          // the first session is always yours (the backend agrees); others on
+          // this Mac are yours too unless marked view-only on purpose
+          permission: (i === 0 ? "edit" : m.permission ?? "edit") as Teammate["permission"],
         };
       }),
       activeId: members.some((m) => m.id === s.activeId)
@@ -814,10 +814,9 @@ export const useApp = create<AppState>((set, get) => ({
     if (!isTauri()) return;
     const base = get().members[0];
     if (!base) return;
-    const path = `${base.repoPath.replace(/\/[^/]+$/, "")}/worktrees-${id}`;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("worktree_add", { baseRepo: base.repoPath, branch, path });
+      const path = await invoke<string>("worktree_add", { baseRepo: base.repoPath, branch, path: "" });
       const member: TeamMemberConfig = { id, name, repoPath: path, permission: "edit" };
       if (agent && agent !== "claude") member.agent = agent;
       const members = [...get().members, member];
