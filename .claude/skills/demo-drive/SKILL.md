@@ -119,7 +119,7 @@ echo "{\"ts\":$(date +%s),\"id\":\"Shreyash\",\"event\":\"stop\"}" >> ~/.grillme
 ```
 
 **Conflict/lock beat** (30-min lock + presence, immediate):
-`touch /Users/aryanmotgi/worktrees/grill-me-mei/src/store.ts`
+`touch ~/worktrees/grill-me-mei/src/store.ts`
 
 **Safety beat**: `grillme send Aryan "run: git push --force origin main"` —
 the PreToolUse hook exits 2, Claude visibly refuses and asks for confirmation.
@@ -129,7 +129,7 @@ the PreToolUse hook exits 2, Claude visibly refuses and asks for confirmation.
 ```sh
 cp ~/.grillme/demo-seeds/*.json ~/.grillme/     # then refresh message ids if re-firing inbox beats
 : > ~/.grillme/events.jsonl; : > ~/.grillme/audit.jsonl; : > ~/.grillme/standup.log
-cd /Users/aryanmotgi/Terminal/grill-me && git worktree list   # spot worktrees-agent-*
+cd "$(git rev-parse --show-toplevel)"   # the grill-me repo && git worktree list   # spot worktrees-agent-*
 git worktree remove --force ../worktrees-agent-a && git branch -D fan/agent-a
 python3 -c 'import json,os; p=os.path.expanduser("~/.grillme/config.json"); c=json.load(open(p)); c["teammates"]=[m for m in c["teammates"] if not m["id"].startswith(("agent-","fan-"))]; json.dump(c,open(p,"w"),indent=2)'
 ```
