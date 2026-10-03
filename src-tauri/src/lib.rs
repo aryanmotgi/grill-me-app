@@ -3427,8 +3427,10 @@ A="Authorization: Bearer $T"
 jsonstr() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
 case "$1" in
   sessions) curl -sf -H "$A" "$B/sessions" ;;
-  send) id="$2"; shift 2; curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":$(jsonstr "$*
-")}" ;;
+  send) id="$2"; shift 2
+        # the text, then a real Enter: agent CLIs read "\n" as a new line, not "send"
+        curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":$(jsonstr "$*")}" >/dev/null && sleep 0.3 \
+          && curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":\"\\r\"}" ;;
   type) id="$2"; shift 2; curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":$(jsonstr "$*")}" ;;
   read) curl -sf -H "$A" "$B/read?id=$2&lines=${3:-40}" ;;
   new)  curl -sf -H "$A" -X POST "$B/new" --data "{\"id\":$(jsonstr "$2"),\"branch\":$(jsonstr "$3")}" ;;
@@ -3963,6 +3965,8 @@ fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     let mut cur: Vec<u8> = vec![];
     let mut esc = 0u8;
+    // the numeric parameter of the CSI sequence being read
+    let mut param: u32 = 0;
     let mut flush = |cur: &mut Vec<u8>, out: &mut Vec<String>| {
         let line = String::from_utf8_lossy(cur).trim_end().to_string();
         if !line.trim().is_empty() {
@@ -3972,8 +3976,21 @@ fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
     };
     for &b in bytes {
         match esc {
-            1 => esc = match b { b'[' => 2, b']' => 3, _ => 0 },
-            2 => { if (0x40..=0x7e).contains(&b) { esc = 0; } }
+            1 => { param = 0; esc = match b { b'[' => 2, b']' => 3, _ => 0 } }
+            2 => {
+                if b.is_ascii_digit() {
+                    param = param.saturating_mul(10).saturating_add(u32::from(b - b'0')).min(400);
+                } else if (0x40..=0x7e).contains(&b) {
+                    // TUIs often move the cursor right instead of printing
+                    // spaces ("ESC[1C"); keep those gaps or words run together
+                    if b == b'C' {
+                        for _ in 0..param.max(1) {
+                            if cur.len() < 8000 { cur.push(b' '); }
+                        }
+                    }
+                    esc = 0;
+                }
+            }
             // OSC ends with BEL or ST (ESC \); state 4 = in OSC, saw ESC
             3 => { if b == 0x07 { esc = 0; } else if b == 0x1b { esc = 4; } }
             4 => esc = match b { b'\\' => 0, 0x1b => 1, b'[' => 2, b']' => 3, _ => 0 },
@@ -5601,6 +5618,12 @@ mod pure_fn_tests {
     use super::*;
 
     // -- strip_ansi_stateless ------------------------------------------------
+
+    #[test]
+    fn strip_ansi_keeps_cursor_forward_gaps() {
+        let raw = b"Quick\x1b[1Csafety\x1b[Ccheck\x1b[3Cdone";
+        assert_eq!(super::strip_ansi_stateless(raw), vec!["Quick safety check   done".to_string()]);
+    }
 
     #[test]
     fn strip_ansi_plain_text_passes_through() {
