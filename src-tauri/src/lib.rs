@@ -2441,7 +2441,32 @@ fn events_tail() -> Vec<String> {
 #[tauri::command]
 fn worktree_add(base_repo: String, branch: String, path: String) -> Result<(), String> {
     let base = default_branch(&base_repo);
-    git(&base_repo, &["worktree", "add", "-b", &branch, &path, &base]).map(|_| ())
+    git(&base_repo, &["worktree", "add", "-b", &branch, &path, &base]).map(|_| ())?;
+    remember_worktree(&path);
+    Ok(())
+}
+
+fn ours_path() -> PathBuf {
+    grillme_root().join("worktrees.json")
+}
+
+/// Note a worktree Grill Me made, so its sessions can skip Claude's
+/// "trust this folder?" screen: it's a copy of a project you already chose.
+fn remember_worktree(path: &str) {
+    let mut list: Vec<String> = std::fs::read_to_string(ours_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let p = path.trim_end_matches('/').to_string();
+    if !list.contains(&p) {
+        list.push(p);
+        if list.len() > 500 { list.drain(..list.len() - 500); }
+        let _ = std::fs::write(ours_path(), serde_json::to_string(&list).unwrap_or_default());
+    }
+}
+
+/// Did Grill Me make this worktree?
+#[tauri::command]
+fn worktree_is_ours(path: String) -> bool {
+    let list: Vec<String> = std::fs::read_to_string(ours_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    list.iter().any(|p| p == path.trim_end_matches('/'))
 }
 
 #[tauri::command]
@@ -4810,6 +4835,7 @@ pub fn run() {
             git_commit_only,
             commit_message_ai,
             checkpoint_commit,
+            worktree_is_ours,
             savepoint::savepoint_create,
             savepoint::savepoint_list,
             savepoint::savepoint_restore,
