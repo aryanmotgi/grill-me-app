@@ -37,6 +37,8 @@ export function stripAnsi(input: string): string {
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     // OSC sequences: ESC ] ... (BEL | ESC \)  (window titles, hyperlinks, …)
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+    // three-byte charset picks ("ESC ( B", from tput sgr0): not a visible "B"
+    .replace(/\x1b[()*+#%][\x20-\x7e]/g, "")
     // any other two-char escape (ESC + single byte)
     .replace(/\x1b[@-Z\\-_]/g, "")
     // collapse CR (keep LF); drop remaining C0 controls except tab/newline

@@ -34,7 +34,8 @@ describe("submitting to an agent", () => {
     expect(submitParts("hi")).toEqual(["hi", "\r"]);
     expect(submitParts("/ship\n")).toEqual(["/ship", "\r"]);
   });
-  it("keeps line breaks inside one pasted message", () => {
-    expect(submitParts("line one\nline two\n")).toEqual(["\x1b[200~line one\nline two\x1b[201~", "\r"]);
+  it("types line breaks inside one message, never as a paste", () => {
+    // a bracketed paste reads to Claude as material you shared, not an instruction
+    expect(submitParts("line one\r\nline two\n")).toEqual(["line one\nline two", "\r"]);
   });
 });

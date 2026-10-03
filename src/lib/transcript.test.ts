@@ -66,3 +66,9 @@ describe("stripAnsi columns", () => {
     expect(stripAnsi("the\x1b[5Gquick\x1b[11Gbrown\x1b[17Gfox")).toBe("the quick brown fox");
   });
 });
+
+describe("stripAnsi charset picks", () => {
+  it("drops ESC ( B instead of showing a stray B", () => {
+    expect(stripAnsi("agents\x1b(B\x1b[m done")).toBe("agents done");
+  });
+});

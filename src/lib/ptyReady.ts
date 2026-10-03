@@ -107,16 +107,17 @@ export async function deliverBriefWhenReady(ptyId: string, brief: string): Promi
  *  Multi-line text goes in as one bracketed paste, so its line breaks stay
  *  line breaks instead of submitting early. */
 export function submitParts(text: string): [string, string] {
-  const body = text.replace(/[\r\n]+$/, "");
-  return [body.includes("\n") ? `\x1b[200~${body}\x1b[201~` : body, "\r"];
+  // typed lines ("\n"), never a bracketed paste: Claude treats pasted text as
+  // material you shared rather than your instruction (mirrors pty_submit)
+  const body = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+  return [body, "\r"];
 }
 
 /** Type `text` into an agent session and press Enter (after a beat, so the
  *  TUI has taken the text in first). */
 export async function submitToAgent(ptyId: string, text: string): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
-  const [body, enter] = submitParts(text);
-  await invoke("pty_write", { id: ptyId, data: body });
-  await new Promise((r) => setTimeout(r, 120));
-  await invoke("pty_write", { id: ptyId, data: enter });
+  // one backend path for every sender: paste, Enter, and a second Enter if
+  // the agent is still holding the message ("press Enter to send")
+  await invoke("pty_submit", { id: ptyId, text });
 }

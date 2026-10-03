@@ -956,6 +956,44 @@ fn can_write_session(pty_id: &str) -> Result<(), String> {
     can_write_session_with(pty_id, &team_config().teammates)
 }
 
+/// The text and the keystroke that sends it. Lines are typed with "\n",
+/// which agent CLIs read as a new line inside the message; Enter is "\r".
+/// Never a bracketed paste: Claude treats pasted text as material you shared,
+/// not as your instruction, and asks what to do with it.
+pub(crate) fn submit_parts(text: &str) -> (String, &'static str) {
+    let body = text.replace("\r\n", "\n").replace('\r', "\n");
+    (body.trim_end_matches('\n').to_string(), "\r")
+}
+
+/// Is the agent still holding the message, waiting for another Enter?
+/// (Claude Code: "Removed 1 invisible character · review and press Enter to send")
+pub(crate) fn still_holding(screen_tail: &str) -> bool {
+    let t = screen_tail.to_lowercase();
+    t.contains("press enter to send")
+}
+
+/// Type a message into a session and send it, the one way every sender uses
+/// (chat box, quick asks, CLI, API). If the agent is still holding it a moment
+/// later, press Enter once more.
+#[tauri::command(async)]
+fn pty_submit(id: String, text: String) -> Result<(), String> {
+    let (typed, enter) = submit_parts(&text);
+    pty_write(id.clone(), typed)?;
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    pty_write(id.clone(), enter.to_string())?;
+    std::thread::spawn(move || {
+        for _ in 0..8 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            let tail = pty_screen(id.clone(), Some(8)).map(|l| l.join("\n")).unwrap_or_default();
+            if still_holding(&tail) {
+                let _ = pty_write(id.clone(), "\r".to_string());
+                return;
+            }
+        }
+    });
+    Ok(())
+}
+
 #[tauri::command]
 fn pty_write(id: String, data: String) -> Result<(), String> {
     // View-only is enforced HERE, not just in the UI: every input path
@@ -3492,10 +3530,7 @@ A="Authorization: Bearer $T"
 jsonstr() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
 case "$1" in
   sessions) curl -sf -H "$A" "$B/sessions" ;;
-  send) id="$2"; shift 2
-        # the text, then a real Enter: agent CLIs read "\n" as a new line, not "send"
-        curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":$(jsonstr "$*")}" >/dev/null && sleep 0.3 \
-          && curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":\"\\r\"}" ;;
+  send) id="$2"; shift 2; curl -sf -H "$A" -X POST "$B/submit" --data "{\"id\":$(jsonstr "$id"),\"text\":$(jsonstr "$*")}" ;;
   type) id="$2"; shift 2; curl -sf -H "$A" -X POST "$B/send" --data "{\"id\":$(jsonstr "$id"),\"data\":$(jsonstr "$*")}" ;;
   read) curl -sf -H "$A" "$B/read?id=$2&lines=${3:-40}" ;;
   new)  curl -sf -H "$A" -X POST "$B/new" --data "{\"id\":$(jsonstr "$2"),\"branch\":$(jsonstr "$3")}" ;;
@@ -3682,6 +3717,15 @@ fn handle_api_conn(app: &tauri::AppHandle, token: &str, stream: std::net::TcpStr
                     respond(&mut stream, 200, &out);
                 }
                 Err(e) => respond(&mut stream, 404, &format!("{{\"error\":\"{e}\"}}")),
+            }
+        }
+        ("POST", "/submit") => {
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = v["id"].as_str().unwrap_or("").to_string();
+            let text = v["text"].as_str().unwrap_or("").to_string();
+            match pty_submit(resolve_pty_id(&id), text) {
+                Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
+                Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
             }
         }
         ("POST", "/send") => {
@@ -4041,7 +4085,11 @@ fn strip_ansi_stateless(bytes: &[u8]) -> Vec<String> {
     };
     for &b in bytes {
         match esc {
-            1 => { param = 0; esc = match b { b'[' => 2, b']' => 3, _ => 0 } }
+            // "ESC ( B" and friends (charset picks, e.g. tput sgr0 in status
+            // lines) are three bytes: state 5 swallows the third, or it
+            // showed up on screen as a stray "B"
+            1 => { param = 0; esc = match b { b'[' => 2, b']' => 3, b'(' | b')' | b'*' | b'+' | b'#' | b'%' => 5, _ => 0 } }
+            5 => esc = 0,
             2 => {
                 if b.is_ascii_digit() {
                     param = param.saturating_mul(10).saturating_add(u32::from(b - b'0')).min(400);
@@ -4870,6 +4918,7 @@ pub fn run() {
             detect_agents,
             pty_ensure,
             pty_write,
+            pty_submit,
             pty_resize,
             pty_scrollback,
             pty_status,
@@ -5695,9 +5744,20 @@ mod pure_fn_tests {
     // -- strip_ansi_stateless ------------------------------------------------
 
     #[test]
+    fn submits_like_a_person_would() {
+        assert_eq!(super::submit_parts("add login\n"), ("add login".to_string(), "\r"));
+        // typed, never pasted: a paste reads as material, not an instruction
+        assert_eq!(super::submit_parts("a\r\nb\n"), ("a\nb".to_string(), "\r"));
+        assert!(super::still_holding("Removed 1 invisible character · review and press Enter to send"));
+        assert!(!super::still_holding("❯ Try \"fix lint errors\""));
+    }
+
+    #[test]
     fn strip_ansi_keeps_cursor_forward_gaps() {
         let raw = b"Quick\x1b[1Csafety\x1b[Ccheck\x1b[3Cdone";
         assert_eq!(super::strip_ansi_stateless(raw), vec!["Quick safety check   done".to_string()]);
+        // tput sgr0 in a status line: "ESC ( B" is a charset pick, not a "B"
+        assert_eq!(super::strip_ansi_stateless(b"agents\x1b(B\x1b[m done"), vec!["agents done".to_string()]);
         // what Claude Code actually sends: words placed by absolute column
         let raw = b"the\x1b[5Gquick\x1b[11Gbrown\x1b[17Gfox";
         assert_eq!(super::strip_ansi_stateless(raw), vec!["the quick brown fox".to_string()]);
