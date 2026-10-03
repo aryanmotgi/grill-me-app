@@ -372,7 +372,7 @@ export function SessionPane({ mate }: { mate: Teammate }) {
         ) : null}
         {mate.terminal.some((l) => l.text.includes("need authentication")) ? (
           <button className="tag warn cursor-pointer" title="MCP servers need auth — click to run /mcp in this session"
-            onClick={() => shipRaw(mate.id, "/mcp\n")}>
+            onClick={() => shipRaw(mate.id, "/mcp\r")}>
             <Icon name="warn" size={9} /> mcp auth
           </button>
         ) : null}

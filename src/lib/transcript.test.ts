@@ -54,3 +54,9 @@ describe("transcriptFilename", () => {
     expect(transcriptFilename("!!!", 0)).toMatch(/^transcript-session-\d{8}\.md$/);
   });
 });
+
+describe("stripAnsi gaps", () => {
+  it("keeps cursor-forward gaps as spaces", () => {
+    expect(stripAnsi("Quick\x1b[1Csafety\x1b[Ccheck\x1b[3Cdone")).toBe("Quick safety check   done");
+  });
+});

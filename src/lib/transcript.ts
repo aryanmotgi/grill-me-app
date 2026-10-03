@@ -13,6 +13,8 @@
  */
 export function stripAnsi(input: string): string {
   return input
+    // cursor-forward ("ESC[3C") stands in for spaces in TUIs: keep the gap
+    .replace(/\x1b\[(\d*)C/g, (_, n: string) => " ".repeat(Math.min(400, Number(n) || 1)))
     // CSI sequences: ESC [ ... final-byte  (colors, cursor moves, erase, …)
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     // OSC sequences: ESC ] ... (BEL | ESC \)  (window titles, hyperlinks, …)
