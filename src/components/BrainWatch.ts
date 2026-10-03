@@ -1,10 +1,10 @@
 import { create } from "zustand";
+import { note } from "../lib/activity";
 import { useApp } from "../store";
 import { automationOn, type AutomationId } from "../lib/automations";
 import type { DecisionProposal } from "../lib/bridge";
 import { driftDue, driftId, isDismissed, pairKey, parseDismissed, pruneDismissed, type DriftConflict } from "../lib/drift";
 import { refreshBridge, useBridge } from "./BridgePanel";
-import { alertEverywhere } from "./Automations";
 
 // ---------------------------------------------------------------------------
 // The brain watching on its own (pure rules in lib/decisionSpot.ts + drift.ts):
@@ -55,12 +55,12 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 export async function onChatDone(chatId: string, isError: boolean) {
   if (!native() || isError || !on("spot-decisions")) return;
   const n = await invoke<number>("brain_spot_chat", { chatId }).catch(() => 0);
-  if (n > 0) useApp.getState().toast(`Grill Me Chat agreed on ${plural(n, "decision")} — Save or dismiss in Flow`);
+  if (n > 0) note(`Grill Me Chat agreed on ${plural(n, "decision")}. Save or dismiss it in Flow.`);
 }
 
 /** brain_check found decisions in a session's turn. */
 export function announceProposed(session: string, n: number) {
-  if (n > 0) useApp.getState().toast(`${session} agreed on ${plural(n, "decision")} — Save or dismiss in Flow`);
+  if (n > 0) note(`${session} agreed on ${plural(n, "decision")}. Save or dismiss it in Flow.`);
 }
 
 // ---- drift alarm ------------------------------------------------------------------------
@@ -98,8 +98,7 @@ async function maybeDrift() {
     const shown = new Set(useDrift.getState().conflicts.map(pairKey));
     useDrift.setState({ conflicts: live });
     for (const c of live.filter((x) => !shown.has(pairKey(x)))) {
-      useApp.getState().toast(`Drifting apart: ${c.a} ⇄ ${c.b} — ${c.why}`, "warn");
-      void alertEverywhere("Sessions drifting apart", `${c.a} ⇄ ${c.b}: ${c.why}`);
+      note(`Sessions drifting apart: ${c.a} and ${c.b}. ${c.why}`, "warn");
     }
   } catch (e) {
     console.warn("drift check failed", e);

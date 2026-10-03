@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { note } from "../lib/activity";
 import { create } from "zustand";
 import { useApp } from "../store";
 import { Icon } from "./Icon";
@@ -52,7 +53,7 @@ export function useRemoteAutostart() {
         await queueRemoteStart().catch((e) => st.toast(`claude.ai connection didn't reopen: ${e}`, "warn"));
         // never reopen silently — say so every launch
         if (useRemote.getState().status?.url) {
-          st.toast(`claude.ai connection is on (${st.appSettings.remoteWrites === true ? "can propose" : "read-only"}) — turn it off in the Claude panel`);
+          note(`claude.ai connection is on (${st.appSettings.remoteWrites === true ? "can propose" : "read-only"}). Turn it off in the Claude panel.`);
         }
       }
     })();

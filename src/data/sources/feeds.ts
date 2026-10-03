@@ -1,4 +1,5 @@
 import type { StoreApi, UseBoundStore } from "zustand";
+import { note } from "../../lib/activity";
 import type { Teammate } from "../../types";
 import { ptyIdFor } from "../../store";
 import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
@@ -329,10 +330,7 @@ export async function startWatchFeed(store: UseBoundStore<StoreApi<FeedStore>>) 
       });
       if (readIt) {
         notified.set(key, Date.now());
-        store.getState().toast(
-          `Heads-up: ${lock.owner} just changed ${lock.file} — you read it recently`,
-          "warn",
-        );
+        note(`Heads-up: ${lock.owner} just changed ${lock.file}, which you read recently`, "warn");
       }
     }
   };
@@ -598,13 +596,10 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         // one-time alert per episode: fire on the flip into a flagged state,
         // re-arm once it clears (lastFlag back to undefined)
         if (flag && lastFlag[st.id] !== flag) {
-          stg.toast(
-            `${cur?.name ?? memberId} ${flag === "looping"
-              ? "looks stuck in a loop — recent output keeps repeating"
-              : `has stalled — no output for ${stallMin}m+`}`,
-            "warn",
-          );
-          playAlert("needs-input", stg.appSettings);
+          // the sidebar already says "may be stuck"; this just logs it
+          note(`${cur?.name ?? memberId} ${flag === "looping"
+            ? "may be stuck in a loop: its output keeps repeating"
+            : `has gone quiet for ${stallMin}m+ and may be stuck`}`, "warn");
         }
         lastFlag[st.id] = flag;
         // pause masks working/idle only — a needs-input status (OSC/BEL,

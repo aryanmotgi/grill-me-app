@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { note } from "../lib/activity";
 import { upsertShared, useApp } from "../store";
 import { sessionTitle } from "../lib/sessionTitle";
 import { automationOn, type AutomationId } from "../lib/automations";
@@ -70,7 +71,7 @@ async function draftNewQuestions(b: BridgeState) {
         // null = another refresh already claimed it (one draft per question, ever)
         ok = !!(await invoke<{ draft: string } | null>("bridge_draft_answer", { id: j.id }));
         if (!ok) return;
-        useApp.getState().toast(`Question from ${j.asker} — Claude drafted an answer. Review it in Flow`);
+        note(`Question from ${j.asker}. Claude drafted an answer; review it in Flow.`);
       } catch (e) {
         useApp.getState().toast(`Couldn't draft an answer for ${j.asker}: ${e}`, "warn");
       }
@@ -142,7 +143,7 @@ async function runReview(memberId: string) {
     const parsed = parseReviews({ [memberId]: r })[memberId];
     if (!parsed) return;
     useReviews.setState((s) => ({ reviews: { ...s.reviews, [memberId]: parsed } }));
-    if (!r.skipped && parsed.verdict === "fix") st.toast(`${titleOf(memberId)} needs a fix: ${parsed.reason || parsed.summary}`, "warn");
+    if (!r.skipped && parsed.verdict === "fix") note(`${titleOf(memberId)} needs a fix: ${parsed.reason || parsed.summary}`, "warn");
   } catch (e) {
     console.warn("review failed", e);
   } finally {
@@ -156,7 +157,7 @@ async function checkReplies(memberId: string) {
     const r = await invoke<BridgeHandoff | null>("bridge_handoff_result", { id: h.id }).catch(() => null);
     if (!r?.result) continue;
     const st = useApp.getState();
-    st.toast(`${h.sessionTitle || titleOf(memberId)} replied: ${clip(r.result.summary, 140)}`);
+    note(`${h.sessionTitle || titleOf(memberId)} replied: ${clip(r.result.summary, 140)}`);
     // a teammate's hand-off: send the result back on its room entry so their Claude sees it
     const e = h.from ? st.teamBridge.find((x) => x.id === h.id) : undefined;
     if (e) await upsertShared("team-bridge.json", [{ ...e, result: r.result, resultTs: r.resultTs ?? Date.now() }]);

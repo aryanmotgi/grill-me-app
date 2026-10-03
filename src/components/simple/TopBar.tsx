@@ -11,6 +11,8 @@ import { useTests } from "../../lib/testsStore";
 import { automationOn, withAutomation } from "../../lib/automations";
 import { ago, goBack, lastTurn, listSavePoints, savePoint, useSavePoints, type SavePoint } from "../../lib/savepoints";
 import type { Teammate } from "../../types";
+import { useActivity } from "../../lib/activity";
+import { span } from "../../lib/limits";
 
 // ---------------------------------------------------------------------------
 // Simple layout, top of the middle column. The left half is the session's
@@ -150,6 +152,45 @@ function UndoChips({ repo }: { repo: string }) {
   );
 }
 
+/** The quiet list: what Grill Me noticed on its own, with a count. Never pops up. */
+function ActivityBell() {
+  const items = useActivity((a) => a.items);
+  const readAll = useActivity((a) => a.readAll);
+  const clear = useActivity((a) => a.clear);
+  const [open, setOpen] = useState(false);
+  const unread = items.filter((x) => !x.read).length;
+  const toggle = () => { if (!open) readAll(); setOpen(!open); };
+  return (
+    <span className="relative" data-no-drag>
+      <button className={`topbar-chip ${unread ? "text-ink" : "text-dim"} ${open ? "on" : ""}`} onClick={toggle}
+        title="Activity: what Grill Me noticed in the background" aria-label={`Activity${unread ? `, ${unread} new` : ""}`}>
+        <Icon name="bell" size={12} />{unread ? <span className="num text-accent">{unread}</span> : null}
+      </button>
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="composer-menu absolute right-0 top-full mt-1.5 z-40 w-[360px] max-h-[420px] overflow-y-auto rounded-xl p-1.5 rise">
+            <div className="flex items-center px-2.5 pt-1.5 pb-1">
+              <span className="text-[10.5px] tracking-[0.12em] text-faint uppercase flex-1">Activity</span>
+              {items.length ? <button className="text-[11.5px] text-dim hover:text-ink cursor-pointer" onClick={clear}>Clear</button> : null}
+            </div>
+            {items.length === 0 ? <div className="px-2.5 py-3 text-[12px] text-faint">Nothing yet. Things Grill Me notices in the background show up here instead of popping up.</div> : null}
+            {items.map((x) => (
+              <div key={x.id} className="flex items-start gap-2 px-2.5 py-2 rounded-lg hover:bg-raised">
+                <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-none ${x.tone === "warn" ? "bg-warn" : "bg-line"}`} aria-hidden />
+                <span className="flex-1 min-w-0 text-[12px] text-dim leading-snug select-text">
+                  {x.text}{x.count > 1 ? <span className="text-faint"> ×{x.count}</span> : null}
+                </span>
+                <span className="text-[10.5px] text-faint flex-none num">{span((Date.now() - x.at) / 60_000)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
 export function TopBar({ active, peekOpen, onTogglePeek }: { active: Teammate | undefined; peekOpen: boolean; onTogglePeek: () => void }) {
   const view = useApp((s) => s.view);
   const titles = useApp((s) => s.appSettings.sessionTitles);
@@ -188,6 +229,7 @@ export function TopBar({ active, peekOpen, onTogglePeek }: { active: Teammate | 
           <Icon name="swap" size={11} /> {waiting} waiting
         </Chip>
       ) : null}
+      <ActivityBell />
       <Chip on={peekOpen} title={peekOpen ? "Hide the Peek panel" : "Peek: changed files, the app preview, the plan, the team"} onClick={onTogglePeek}>
         <Icon name="layout" size={12} /> Peek
       </Chip>

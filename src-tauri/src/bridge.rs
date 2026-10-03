@@ -537,6 +537,17 @@ fn id_list(v: &Value, allowed: &[String]) -> Vec<String> {
         .unwrap_or_default()
 }
 
+const MISMATCH_QUIET_MS: i64 = 2 * 3_600_000;
+
+/// Did the mismatch check already warn about this session recently?
+pub(crate) fn recently_warned(notes: &Value, session: &str, now_ms: i64) -> bool {
+    let prefix = format!("⚠ Mismatch in {session}:");
+    notes.as_array().is_some_and(|a| a.iter().any(|n| {
+        n["text"].as_str().is_some_and(|t| t.starts_with(&prefix))
+            && n["ts"].as_i64().is_some_and(|ts| now_ms - ts < MISMATCH_QUIET_MS)
+    }))
+}
+
 /// After a session's turn: does it contradict the plan, and which tasks did
 /// it finish/start? A mismatch is also written to the brain as a note, so
 /// the session (via its sync hook) and the Claude side both see it.
@@ -565,7 +576,11 @@ pub(crate) fn brain_check(app: tauri::AppHandle, member_id: String, checks: Opti
     let reply = claude_quick(&input, &prompt, "haiku")?;
     let r = extract_json(&reply).ok_or("check returned no JSON")?;
     let reason: String = r["reason"].as_str().unwrap_or("").trim().chars().take(300).collect();
-    let mismatch = checks && r["mismatch"].as_bool().unwrap_or(false) && !reason.is_empty();
+    // one warning per session per two hours: the check runs after every turn
+    // and rewords the same finding, which used to pile up as near-duplicates
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    let mismatch = checks && r["mismatch"].as_bool().unwrap_or(false) && !reason.is_empty()
+        && !recently_warned(&load()["notes"], &session, now_ms);
     if mismatch {
         push("note", &json!({ "text": format!("⚠ Mismatch in {session}: {reason}"), "by": "Mismatch check" }))?;
     }
@@ -890,6 +905,10 @@ mod tests {
 
     #[test]
     fn extracts_json_from_chatty_replies() {
+        let notes = json!([{ "ts": 1_000, "text": "⚠ Mismatch in Shreyash: drifted to pitch page" }]);
+        assert!(super::recently_warned(&notes, "Shreyash", 1_000 + 3_600_000));
+        assert!(!super::recently_warned(&notes, "Shreyash", 1_000 + 3 * 3_600_000));
+        assert!(!super::recently_warned(&notes, "Nandan", 2_000));
         let v = extract_json("Sure!\n```json\n{\"mismatch\": true, \"reason\": \"x\"}\n```").unwrap();
         assert_eq!(v["mismatch"], true);
         assert!(extract_json("no json here").is_none());
