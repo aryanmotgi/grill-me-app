@@ -11,7 +11,7 @@ import { useTests } from "../../lib/testsStore";
 import { visibleSessions } from "../../lib/sessionNav";
 import { submitToAgent } from "../../lib/ptyReady";
 import { parseTranscript, toRows, type ChatRow } from "../../lib/chat";
-import { AGENT_NAMES, forecast, paceFrac, toneOf, type AgentUsage } from "../../lib/limits";
+import { AGENT_NAMES, forecast, paceFrac, span, toneOf, type AgentUsage } from "../../lib/limits";
 import { RECAP_SCHEMA, RECAP_SYSTEM, needsRewrite, parseRecap, recapFacts, sig, startOfDay, type SessionDay } from "../../lib/recap";
 import { interviewBrainOf } from "../../lib/aiConnect";
 import { useDNA } from "../../lib/dnaStore";
@@ -87,7 +87,7 @@ function Limits() {
           <div key={u.agent} className="flex flex-col gap-2.5">
             <div className="flex items-center gap-2 text-[12.5px] text-ink">
               <AgentLogo agent={u.agent} size={14} /> {AGENT_NAMES[u.agent] ?? u.agent}
-              {u.source === "cache" && u.ageSecs > 1800 ? <span className="text-[11px] text-faint">· updated {Math.round(u.ageSecs / 60)} min ago</span> : null}
+              {u.source === "cache" && u.ageSecs > 1800 ? <span className="text-[11px] text-faint" title="These numbers come from the last time this agent ran">· as of {span(u.ageSecs / 60)} ago</span> : null}
             </div>
             {u.windows.map((w) => {
               const pace = paceFrac(w);
@@ -315,7 +315,10 @@ function Goal() {
 }
 
 function SparkTip() {
-  const tip = useDNA((s) => (s.dna ? notices(s.dna)[0] : undefined));
+  // select the DNA itself (a stable reference), then derive: a selector that
+  // builds a new object each call makes React re-render forever
+  const dna = useDNA((s) => s.dna);
+  const tip = useMemo(() => (dna ? notices(dna)[0] : undefined), [dna]);
   const setView = useApp((s) => s.setView);
   if (!tip) return null;
   return (

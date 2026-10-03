@@ -16,6 +16,7 @@ import { FlowPage } from "./FlowPage";
 import { ReviewModal } from "./ReviewModal";
 import { SessionHandoff } from "./SessionHandoff";
 import { HomeDashboard } from "./HomeDashboard";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { SimpleOverview } from "./simple/SimpleOverview";
 import { uiLayoutOf } from "../lib/uiLayout";
 import { FeatureIndex } from "./FeatureIndex";
@@ -50,6 +51,16 @@ import { TeamView } from "./TeamView";
  *  new-session screen, or a page opened from the nav/⌘K. Shared by both
  *  layouts so every "go to X" lands somewhere in either one. */
 export function CenterStage({ active, split }: { active: Teammate | undefined; split: Teammate | undefined }) {
+  const view = useApp((s) => s.view);
+  const setView = useApp((s) => s.setView);
+  return (
+    <ErrorBoundary resetKey={`${view}:${active?.id ?? ""}`} onBack={() => setView(active ? "session" : "new")}>
+      <CenterStageInner active={active} split={split} />
+    </ErrorBoundary>
+  );
+}
+
+function CenterStageInner({ active, split }: { active: Teammate | undefined; split: Teammate | undefined }) {
   const view = useApp((s) => s.view);
   const focusMode = useApp((s) => s.focusMode);
   const panelSizes = useApp((s) => s.panelSizes);
