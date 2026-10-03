@@ -24,6 +24,7 @@ mod dnasync;
 mod savepoint;
 mod usage;
 mod projectmap;
+mod agentreap;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -823,6 +824,10 @@ fn pty_ensure_inner(
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    // written down so a force-quit can't leave it running forever (agentreap)
+    if let Some(pid) = child.process_id() {
+        agentreap::remember(pid);
+    }
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
@@ -1088,7 +1093,7 @@ fn valid_project_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
-fn grillme_root() -> PathBuf {
+pub(crate) fn grillme_root() -> PathBuf {
     // GRILLME_HOME: a separate data folder (the `forge` test launcher uses a
     // fresh one, so the app starts exactly like a first install)
     let dir = match std::env::var("GRILLME_HOME") {
@@ -4665,6 +4670,8 @@ fn scrub_parent_agent_env() {
 
 pub fn run() {
     scrub_parent_agent_env();
+    // agents a force-quit (pkill, crash) left behind last time
+    agentreap::reap_on_launch();
     tauri::Builder::default()
         .on_window_event(|window, event| {
             // Closing the window (red button / ⌘W on the last window) must reap
