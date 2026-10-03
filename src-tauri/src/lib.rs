@@ -22,6 +22,7 @@ mod learn;
 mod past;
 mod dnasync;
 mod savepoint;
+mod usage;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -1717,7 +1718,7 @@ fn newest_transcript(repo_path: &str) -> Option<PathBuf> {
 
 /// Newest transcript for EXACTLY this folder (no parent fallback) — the chat
 /// view must never show another project's conversation.
-fn newest_transcript_exact(repo_path: &str) -> Option<PathBuf> {
+pub(crate) fn newest_transcript_exact(repo_path: &str) -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
     let dir = PathBuf::from(home)
         .join(".claude")
@@ -4772,6 +4773,8 @@ pub fn run() {
             savepoint::savepoint_create,
             savepoint::savepoint_list,
             savepoint::savepoint_restore,
+            usage::agent_usage,
+            usage::transcript_recent,
             git_revert_file,
             usage_stats,
             transcript_tail,
