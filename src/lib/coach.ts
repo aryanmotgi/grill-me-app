@@ -81,7 +81,7 @@ export interface HintFix {
   value: string;
 }
 export interface Hint {
-  id: "vague" | "many" | "paste" | "small-on-big" | "heavy";
+  id: "vague" | "many" | "paste" | "small-on-big" | "heavy" | "drift";
   text: string;
   fix?: HintFix;
 }

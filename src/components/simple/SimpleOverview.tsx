@@ -3,7 +3,6 @@ import { ptyIdFor, useApp } from "../../store";
 import { Icon } from "../Icon";
 import { AgentLogo } from "../AgentLogo";
 import { HomeDashboard } from "../HomeDashboard";
-import { useBridge } from "../BridgePanel";
 import { sessionTitle } from "../../lib/sessionTitle";
 import { headline, sessionSentence, type Sentence } from "../../lib/sessionSentence";
 import { kTokens, money, sessionStats } from "../../lib/coach";
@@ -17,6 +16,7 @@ import { interviewBrainOf } from "../../lib/aiConnect";
 import { useDNA } from "../../lib/dnaStore";
 import { notices } from "../../lib/spark";
 import type { Teammate } from "../../types";
+import { GoalWatch, ProjectMap } from "./OverviewExtras";
 
 // ---------------------------------------------------------------------------
 // The simple layout's Overview, top to bottom:
@@ -83,7 +83,13 @@ function Limits() {
     <section aria-label="Plan limits">
       <Label>Limits</Label>
       <div className="limits-card rounded-2xl border border-line px-4 py-3.5 flex flex-col gap-4">
-        {data.map((u) => (
+        {data.map((u) => u.source === "cache" && u.ageSecs > 3 * 86_400 ? (
+          // not used in days: one quiet line, no bars that look current
+          <div key={u.agent} className="flex items-center gap-2 text-[12px] text-faint" title="These numbers are from the last time you used it">
+            <AgentLogo agent={u.agent} size={13} /> {AGENT_NAMES[u.agent] ?? u.agent}
+            <span>· {u.windows.map((w) => `${Math.round(w.pct)}% of ${w.label.toLowerCase()}`).join(", ")}, as of {span(u.ageSecs / 60)} ago</span>
+          </div>
+        ) : (
           <div key={u.agent} className="flex flex-col gap-2.5">
             <div className="flex items-center gap-2 text-[12.5px] text-ink">
               <AgentLogo agent={u.agent} size={14} /> {AGENT_NAMES[u.agent] ?? u.agent}
@@ -207,7 +213,10 @@ function SessionCard({ t, said, last }: { t: Teammate; said: Sentence; last?: La
 // -- running apps ------------------------------------------------------------------
 
 interface Server { port: number; pid: number; command: string; cwd: string }
-function RunningApps() {
+/** Is this server running from one of the project's folders? */
+const inFolders = (cwd: string, folders: string[]) => folders.some((f) => { const r = f.replace(/\/+$/, ""); return cwd === r || cwd.startsWith(`${r}/`); });
+
+function RunningApps({ folders }: { folders: string[] }) {
   const members = useApp((s) => s.members);
   const [servers, setServers] = useState<Server[]>([]);
   useEffect(() => {
@@ -218,13 +227,15 @@ function RunningApps() {
     const t = setInterval(load, 15_000);
     return () => { alive = false; clearInterval(t); };
   }, []);
-  if (!servers.length) return null;
+  // only this project's apps: not other projects, not Grill Me's own tools
+  const mine = servers.filter((s) => s.cwd && inFolders(s.cwd, folders));
+  if (!mine.length) return null;
   const open = (port: number) => void import("@tauri-apps/plugin-opener").then(({ openUrl }) => openUrl(`http://localhost:${port}`)).catch(() => {});
   return (
     <section aria-label="Running apps">
       <Label>Running apps</Label>
       <div className="flex flex-col gap-1.5">
-        {servers.map((s) => {
+        {mine.map((s) => {
           const m = members.find((x) => s.cwd && (s.cwd === x.repoPath || s.cwd.startsWith(`${x.repoPath}/`)));
           const name = m?.name ?? s.cwd.split("/").filter(Boolean).pop() ?? s.command;
           return (
@@ -278,7 +289,14 @@ function Today({ days, repos }: { days: SessionDay[]; repos: string[] }) {
       .finally(() => { busy.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [factsSig, brain]);
-  if (!facts && !fresh) return null;
+  if (!facts && !fresh) {
+    return (
+      <section aria-label="Today">
+        <Label>Today</Label>
+        <p className="text-[12.5px] text-faint px-1">A short recap of what you built today shows up here after your first message.</p>
+      </section>
+    );
+  }
   const copy = () => void navigator.clipboard.writeText(fresh || facts).then(() => toast("Recap copied"));
   return (
     <section aria-label="Today">
@@ -293,26 +311,6 @@ function Today({ days, repos }: { days: SessionDay[]; repos: string[] }) {
 }
 
 // -- goal + spark -----------------------------------------------------------------------
-
-function Goal() {
-  const goal = useBridge((b) => b.state.goal ?? "");
-  const tasks = useApp((s) => s.tasks);
-  const setView = useApp((s) => s.setView);
-  if (!goal || !tasks.length) return null;
-  const done = tasks.filter((t) => t.status === "done").length;
-  return (
-    <section aria-label="Goal">
-      <Label>Goal</Label>
-      <button className="w-full text-left rounded-xl border border-line bg-raised/20 hover:bg-raised/40 px-4 py-3 cursor-pointer" onClick={() => setView("brain")}>
-        <div className="flex items-baseline gap-3">
-          <span className="text-[13.5px] text-ink flex-1 truncate">{goal}</span>
-          <span className="num text-[12px] text-dim">{done} of {tasks.length} tasks</span>
-        </div>
-        <div className="limit-bar ok mt-2"><div className="limit-fill" style={{ width: `${(done / tasks.length) * 100}%` }} /></div>
-      </button>
-    </section>
-  );
-}
 
 function SparkTip() {
   // select the DNA itself (a stable reference), then derive: a selector that
@@ -355,6 +353,7 @@ export function SimpleOverview() {
     tests: tests[t.id] && !tests[t.id].running ? (tests[t.id].ok ? "pass" : "fail") : undefined,
   }));
   const repos = [...new Set(mates.map((m) => m.repo).filter((r): r is string => !!r))];
+  const projectPath = useApp((s) => s.projects.find((p) => p.id === s.activeProject)?.path);
 
   if (full) {
     return (
@@ -374,6 +373,7 @@ export function SimpleOverview() {
           <h1 className="text-[19px] font-medium text-ink flex-1">{headline(rows)}</h1>
           <button className="composer-btn" onClick={() => setView("new")}><Icon name="plus" size={12} /> New session</button>
         </div>
+        <GoalWatch />
         <Limits />
         {rows.length ? (
           <section aria-label="Your sessions">
@@ -383,9 +383,9 @@ export function SimpleOverview() {
             </div>
           </section>
         ) : null}
-        <RunningApps />
+        <ProjectMap repo={projectPath ?? repos[0]} />
+        <RunningApps folders={projectPath ? [projectPath, ...repos] : repos} />
         <Today days={days} repos={repos} />
-        <Goal />
         <SparkTip />
         <button className="self-start text-[12px] text-faint hover:text-ink cursor-pointer" onClick={() => setFull(true)}>
           Show the full dashboard (activity, merges, budget) →

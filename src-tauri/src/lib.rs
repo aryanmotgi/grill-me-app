@@ -23,6 +23,7 @@ mod past;
 mod dnasync;
 mod savepoint;
 mod usage;
+mod projectmap;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4775,6 +4776,10 @@ pub fn run() {
             savepoint::savepoint_restore,
             usage::agent_usage,
             usage::transcript_recent,
+            projectmap::archify_installed,
+            projectmap::archify_install,
+            projectmap::map_generate,
+            projectmap::map_status,
             git_revert_file,
             usage_stats,
             transcript_tail,
