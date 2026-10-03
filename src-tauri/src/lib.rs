@@ -780,6 +780,18 @@ fn pty_ensure_inner(
             map.remove(&id);
         }
     }
+    // Grill Me's hooks (status, save points, the shared brain and the
+    // risky-command blocklist) must be in place before Claude starts: it
+    // reads them at launch. Every session gets them here, including ones made
+    // after launch (new worktrees, fan-out, the CLI) — once you've agreed.
+    if !shell && remote.is_none() && tmux.is_none() && agent.as_deref().unwrap_or("claude") == "claude"
+        && splash::read_settings()["installConsent"] == true
+    {
+        let member = id.rsplit_once(':').map(|(_, m)| m).unwrap_or(&id).to_string();
+        if validate_member_id(&member).is_ok() {
+            let _ = install_hooks(cwd.clone(), member);
+        }
+    }
     let pair = native_pty_system()
         .openpty(PtySize { rows: 32, cols: 110, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;

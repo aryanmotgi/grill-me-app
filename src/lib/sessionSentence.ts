@@ -27,7 +27,7 @@ export function sessionSentence(
     if (t.flag === "looping") return { text: "Repeating itself, may be stuck", tone: "needs" };
     if (t.flag === "stalled") return { text: `Quiet for ${t.lastActiveMin}m, may be stuck`, tone: "needs" };
     const f = t.currentFile && t.currentFile !== "—" ? base(t.currentFile) : "";
-    return { text: f ? `Working on ${f}` : "Working", tone: "working" };
+    return { text: f ? `Editing ${f}` : "Working", tone: "working" };
   }
   const n = t.changes.length;
   if (n === 0) return { text: "Ready for your next message", tone: "quiet" };

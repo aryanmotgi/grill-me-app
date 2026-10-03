@@ -110,7 +110,10 @@ const STATUS_LABEL: Record<string, string> = {
 /** branch name → human task label ("feature/real-git-data" → "real git data") */
 export function branchToLabel(branch: string): string {
   const tail = branch.split("/").pop() ?? branch;
-  return tail.replace(/[-_]/g, " ");
+  // "main" says nothing about the work: leave it to the session's name
+  if (/^(main|master|develop|dev|trunk|head|—)$/i.test(tail)) return "";
+  const words = tail.replace(/[-_]+/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : "";
 }
 
 export function toChanges(state: GitState): FileChange[] {

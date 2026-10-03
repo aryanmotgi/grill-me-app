@@ -11,7 +11,7 @@ describe("sessionSentence", () => {
     expect(sessionSentence(t({ rateLimited: true, rateLimitResetsAt: "3pm" })).text).toBe("Paused by the usage limit, back at 3pm");
   });
   it("says what it's working on", () => {
-    expect(sessionSentence(t({ status: "working", currentFile: "src/app/Login.tsx" })).text).toBe("Working on Login.tsx");
+    expect(sessionSentence(t({ status: "working", currentFile: "src/app/Login.tsx" })).text).toBe("Editing Login.tsx");
     expect(sessionSentence(t({ status: "working" })).text).toBe("Working");
     expect(sessionSentence(t({ status: "working", flag: "stalled", lastActiveMin: 9 })).text).toBe("Quiet for 9m, may be stuck");
   });
