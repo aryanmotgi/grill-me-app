@@ -1029,3 +1029,52 @@ button.topbar-chip:disabled { opacity: 0.4; cursor: default; background: none; }
 .turn-receipt:hover .turn-undo,
 .turn-receipt .turn-undo:focus-visible { opacity: 1; }
 @media (hover: none) { .turn-receipt .turn-undo { opacity: 1; } }
+
+/* Overview limit bars: a glowing ember fill, an even-pace tick, amber then red as it fills */
+.limits-card {
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+    color-mix(in srgb, var(--raised) 35%, transparent);
+}
+.limit-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  overflow: visible;
+}
+.limit-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #b8562a, #e8833f 60%, #ffb36b);
+  box-shadow: 0 0 12px color-mix(in srgb, #e8833f 55%, transparent);
+  transition: width 600ms cubic-bezier(.2, .8, .2, 1);
+  position: relative;
+  overflow: hidden;
+}
+.limit-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.28) 45%, transparent 70%);
+  transform: translateX(-100%);
+  animation: limit-sheen 3.2s ease-in-out infinite;
+}
+.limit-bar.warn .limit-fill { background: linear-gradient(90deg, #c07a1c, #f0b13e 70%, #ffd27a); box-shadow: 0 0 14px rgba(240, 177, 62, 0.55); }
+.limit-bar.hot .limit-fill { background: linear-gradient(90deg, #a8261f, #e5483a 70%, #ff7b62); box-shadow: 0 0 16px rgba(229, 72, 58, 0.6); }
+.limit-pace {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+}
+@keyframes limit-sheen { 0%, 40% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .limit-fill::after { animation: none; }
+  .limit-fill { transition: none; }
+}
