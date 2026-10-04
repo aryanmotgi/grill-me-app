@@ -34,6 +34,8 @@ describe("pointForTurn", () => {
   });
   it("falls back to the newest one just before the turn (typed in the terminal)", () => {
     expect(pointForTurn(pts, "typed in terminal", 1_002_000)?.id).toBe("c");
-    expect(pointForTurn(pts, "typed in terminal", 2_000_000)).toBeUndefined();
+    // nothing changed since an older save point: it is still the "before" state
+    expect(pointForTurn(pts, "typed in terminal", 2_000_000)?.id).toBe("c");
+    expect(pointForTurn(pts, "typed in terminal", 100_000)).toBeUndefined();
   });
 });

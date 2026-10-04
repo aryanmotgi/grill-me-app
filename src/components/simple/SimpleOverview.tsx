@@ -219,7 +219,9 @@ const inFolders = (cwd: string, folders: string[]) => folders.some((f) => { cons
 
 function RunningApps({ folders }: { folders: string[] }) {
   const members = useApp((s) => s.members);
+  const toast = useApp((s) => s.toast);
   const [servers, setServers] = useState<Server[]>([]);
+  const [confirm, setConfirm] = useState<number | null>(null);
   useEffect(() => {
     if (!native()) return;
     let alive = true;
@@ -232,6 +234,14 @@ function RunningApps({ folders }: { folders: string[] }) {
   const mine = servers.filter((s) => s.cwd && inFolders(s.cwd, folders));
   if (!mine.length) return null;
   const open = (port: number) => void import("@tauri-apps/plugin-opener").then(({ openUrl }) => openUrl(`http://localhost:${port}`)).catch(() => {});
+  const stop = async (srv: Server) => {
+    setConfirm(null);
+    try {
+      await call("stop_dev_server", { pid: srv.pid, port: srv.port });
+      setServers((list) => list.filter((x) => x.pid !== srv.pid));
+      toast(`Stopped localhost:${srv.port}`);
+    } catch (e) { toast(`Couldn't stop it: ${e}`, "warn"); }
+  };
   return (
     <section aria-label="Running apps">
       <Label>Running apps</Label>
@@ -245,6 +255,11 @@ function RunningApps({ folders }: { folders: string[] }) {
               <span className="font-mono text-[12.5px] text-ink">localhost:{s.port}</span>
               <span className="text-[12px] text-faint truncate flex-1" title={`${s.command} in ${s.cwd}`}>{name} · {s.command}</span>
               <button className="composer-btn h-7 text-[12px]" onClick={() => open(s.port)}>Open</button>
+              {confirm === s.port ? (
+                <button className="composer-btn h-7 text-[12px] text-danger" onClick={() => void stop(s)} title="Stops the process serving this port">Sure?</button>
+              ) : (
+                <button className="composer-btn h-7 text-[12px] text-dim" onClick={() => setConfirm(s.port)} title={`Stop ${s.command} (pid ${s.pid})`}>Stop</button>
+              )}
             </div>
           );
         })}

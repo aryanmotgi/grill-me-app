@@ -171,6 +171,23 @@ pub fn savepoint_list(repo_path: String) -> Result<Vec<SavePoint>, String> {
     list(&repo_path)
 }
 
+/// Files that changed between a save point and the next one, or the folder
+/// as it is now (`until` = None). This is what a turn really touched, edits
+/// made through shell commands included.
+#[tauri::command(async)]
+pub fn savepoint_changes(repo_path: String, from: String, until: Option<String>) -> Result<Vec<String>, String> {
+    repo_ok(&repo_path)?;
+    if !valid_id(&from) || until.as_deref().is_some_and(|u| !valid_id(u)) {
+        return Err("not a save point".into());
+    }
+    let to = match until {
+        Some(u) => u,
+        None => snapshot_tree(&repo_path)?,
+    };
+    let out = run(&repo_path, &["diff", "--name-only", &from, &to], None)?;
+    Ok(out.lines().filter(|l| !l.is_empty() && !l.starts_with(".archify/")).map(str::to_string).collect())
+}
+
 #[tauri::command]
 pub fn savepoint_restore(repo_path: String, id: String) -> Result<String, String> {
     repo_ok(&repo_path)?;
@@ -237,6 +254,10 @@ mod tests {
         assert!(p.join("later.txt").exists());
         // only our own save points can be restored
         assert!(restore(&r, head.trim()).is_err());
+        // what changed since a save point, as the folder is now
+        std::fs::write(p.join("a.txt"), "four\n").unwrap();
+        let changed = savepoint_changes(r.clone(), sp.id.clone(), None).unwrap();
+        assert!(changed.contains(&"a.txt".to_string()), "{changed:?}");
         let _ = std::fs::remove_dir_all(p);
     }
 }

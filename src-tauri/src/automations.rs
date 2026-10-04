@@ -243,6 +243,28 @@ pub(crate) fn ship_overview(sessions: Vec<(String, String)>) -> Vec<Value> {
 /// Local dev servers: TCP listeners owned by this user on unprivileged
 /// ports (minus Grill Me's own), with the process name and working dir so
 /// the UI can label them by project.
+/// Stop a running dev server from the Overview's Running apps. Only a
+/// process that is still listening on that port (as `dev_servers` sees it
+/// right now) can be stopped: a stale or reused pid is refused. Asks it to
+/// quit first, and only forces it if it's still there two seconds later.
+#[tauri::command(async)]
+pub(crate) fn stop_dev_server(pid: u32, port: u16) -> Result<(), String> {
+    let listening = dev_servers().iter().any(|v| v["pid"].as_u64() == Some(pid as u64) && v["port"].as_u64() == Some(port as u64));
+    if !listening || pid <= 1 {
+        return Err("That app isn't running on this port anymore".into());
+    }
+    let p = pid.to_string();
+    let _ = Command::new("kill").args(["-TERM", &p]).status();
+    for _ in 0..20 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if !Command::new("kill").args(["-0", &p]).status().map(|s| s.success()).unwrap_or(false) {
+            return Ok(());
+        }
+    }
+    let _ = Command::new("kill").args(["-KILL", &p]).status();
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub(crate) fn dev_servers() -> Vec<Value> {
     let user = std::env::var("USER").unwrap_or_default();

@@ -429,15 +429,21 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       agentOk = false;
     }
     store.getState().setClaudeMissing(!agentOk);
-    // lazy spawn: only YOUR session starts eagerly — teammates' agent
-    // processes spawn on first view of their pane (calmer start, less churn)
-    // remote/tmux sessions attach over ssh — they don't need a local CLI
-    if (me && (agentOk || me.remote)) {
+    // every session on this Mac starts at launch (they're all yours: a
+    // teammate's sessions run on their own Mac), so messages, merges and
+    // "ask them to commit" never wait on a session that isn't running.
+    // A few at a time, the main one first; remote/tmux ones attach over ssh.
+    const local = members.filter((m, i) => i === 0 || (!m.remote && !m.tmuxSession)).slice(0, 8);
+    for (const m of local) {
+      if (!(agentOk || m.remote)) break;
+      const missing = store.getState().teammates.find((t) => t.id === m.id)?.missing;
+      if (missing) continue;
       await invoke("pty_ensure", {
-        id: ptyIdFor(me.id), cwd: me.repoPath, shell: false,
-        remote: me.remote ?? null, tmux: me.tmuxSession ?? null,
-        agent: me.agent ?? null,
+        id: ptyIdFor(m.id), cwd: m.repoPath, shell: false,
+        remote: m.remote ?? null, tmux: m.tmuxSession ?? null,
+        agent: m.agent ?? null,
       }).catch(() => {});
+      if (m !== local[local.length - 1]) await new Promise((r) => setTimeout(r, 1500));
     }
     await installHooks();
   };
@@ -548,7 +554,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         // while the claude CLI is missing (local spawns can only die again;
         // remote sessions still restart since they don't need a local CLI).
         const healable = !stg.claudeMissing || !!member?.remote;
-        if (selfHealOn && healable && wasAlive[st.id] && !st.alive && member) {
+        const folderGone = !!store.getState().teammates.find((t) => t.id === memberId)?.missing;
+        if (selfHealOn && healable && !folderGone && wasAlive[st.id] && !st.alive && member) {
           const now = Date.now();
           restarts[st.id] = (restarts[st.id] ?? []).filter((t) => now - t < 10 * 60_000);
           if (restarts[st.id].length < 3) {

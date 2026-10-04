@@ -8,6 +8,7 @@ import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { TRUST_ACCEPT_KEYS } from "../lib/ptyReady";
 import { money, turnCost } from "../lib/coach";
+import { uiLayoutOf } from "../lib/uiLayout";
 import { goBack, listSavePoints, pointForTurn, useSavePoints, type SavePoint } from "../lib/savepoints";
 
 /** Claude Code asks once per new folder whether to trust it. A brand-new
@@ -178,11 +179,23 @@ export function Working({ since, model }: { since: number | undefined; model: st
   );
 }
 
+/** Claude's edited files (basenames) plus git's changed paths, no repeats. */
+export function mergeFiles(tools: string[], git: string[]): string[] {
+  const out = [...tools];
+  for (const g of git) {
+    const base = g.split("/").pop() ?? g;
+    if (!out.includes(base)) out.push(base);
+  }
+  return out;
+}
+
 const dur = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
 
 /** The receipt under a finished turn: what it touched, whether the tests
  *  passed, what it cost, and undo, all in one line. */
-function Receipt({ row, undo }: { row: Extract<ChatRow, { kind: "worked" }>; undo?: () => void }) {
+function Receipt({ row: raw, undo, gitFiles }: { row: Extract<ChatRow, { kind: "worked" }>; undo?: () => void; gitFiles?: string[] }) {
+  // what git saw change (shell edits included) plus Claude's own file edits
+  const row = gitFiles ? { ...raw, files: mergeFiles(raw.files, gitFiles) } : raw;
   const cost = turnCost(row.usage, row.modelId);
   const shown = row.files.slice(0, 3);
   return (
@@ -213,12 +226,12 @@ function Receipt({ row, undo }: { row: Extract<ChatRow, { kind: "worked" }>; und
 /** The conversation rows (bubbles, replies, tool groups, turn receipts) —
  *  shared by session chat and the Grill Me Chat panel. `undoFor` turns on
  *  per-turn undo where save points exist. */
-export function ChatRows({ rows, undoFor }: { rows: ChatRow[]; undoFor?: (ask: string | undefined, startTs?: number) => (() => void) | undefined }) {
+export function ChatRows({ rows, undoFor, gitFiles }: { rows: ChatRow[]; undoFor?: (ask: string | undefined, startTs?: number) => (() => void) | undefined; gitFiles?: Record<string, string[]> }) {
   return (
     <>
       {rows.map((row) => {
         if (row.kind === "tools") return <ToolGroup key={row.id} tools={row.tools} />;
-        if (row.kind === "worked") return <Receipt key={row.id} row={row} undo={undoFor?.(row.ask, row.startTs)} />;
+        if (row.kind === "worked") return <Receipt key={row.id} row={row} undo={undoFor?.(row.ask, row.startTs)} gitFiles={gitFiles?.[row.id]} />;
         const it = row.item;
         return it.kind === "user" ? (
           <div key={it.id} className="flex justify-end pt-2">
@@ -260,6 +273,7 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
   const pinned = useRef(true);
   const member = useApp((s) => s.members.find((m) => m.id === mate.id));
   const toast = useApp((s) => s.toast);
+  const simple = useApp((s) => uiLayoutOf(s.appSettings) === "simple");
   // save points taken before each message, matched to the turn they started
   const rev = useSavePoints((s) => s.rev);
   const [points, setPoints] = useState<SavePoint[]>([]);
@@ -271,11 +285,37 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
     return () => void goBack(repoPath, sp.id).then((m) => toast(m), (e) => toast(`Couldn't undo: ${e}`, "warn"));
   };
   const agent = member?.agent ?? "claude";
+  // each turn's real changes, from git: its save point to the next turn's
+  // (or the folder now, for the latest). Catches edits made through shell
+  // commands, which Claude's edit tools don't show.
+  const [gitFiles, setGitFiles] = useState<Record<string, string[]>>({});
+  const turnKey = rows.filter((r) => r.kind === "worked").map((r) => r.id).join("|") + `#${points.length}`;
+  useEffect(() => {
+    if (!repoPath || !("__TAURI_INTERNALS__" in window)) return;
+    const turns = rows.filter((r): r is Extract<ChatRow, { kind: "worked" }> => r.kind === "worked").slice(-15);
+    let alive = true;
+    void (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const out: Record<string, string[]> = {};
+      for (let i = 0; i < turns.length; i++) {
+        const from = pointForTurn(points, turns[i].ask, turns[i].startTs);
+        if (!from) continue;
+        const next = turns[i + 1] ? pointForTurn(points, turns[i + 1].ask, turns[i + 1].startTs) : undefined;
+        if (turns[i + 1] && !next) continue; // can't bound it: leave Claude's own list
+        const files = await invoke<string[]>("savepoint_changes", { repoPath, from: from.id, until: next?.id ?? null }).catch(() => null);
+        if (files) out[turns[i].id] = files;
+      }
+      if (alive) setGitFiles(out);
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnKey, repoPath]);
 
   // sessions spawn lazily on first view — the chat is a view too, so make
   // sure the agent is running (same call + config the terminal pane uses)
   useEffect(() => {
-    if (!member || !("__TAURI_INTERNALS__" in window) || useApp.getState().claudeMissing) return;
+    // a session whose folder is gone can't start: it would just crash
+    if (!member || !("__TAURI_INTERNALS__" in window) || useApp.getState().claudeMissing || mate.missing) return;
     void import("@tauri-apps/api/core").then(({ invoke }) =>
       invoke("pty_ensure", {
         id: ptyIdFor(member.id), cwd: member.repoPath, shell: false,
@@ -299,7 +339,8 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
         pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       }}
     >
-      <div className="max-w-[820px] mx-auto px-6 py-6 flex flex-col gap-3 select-text">
+      {/* the simple layout floats the Chat/Terminal switcher over the top: leave room */}
+      <div className={`max-w-[820px] mx-auto px-6 pb-6 ${simple ? "pt-14" : "pt-6"} flex flex-col gap-3 select-text`}>
         {agent !== "claude" ? (
           <p className="text-faint text-[12px] text-center py-16">
             Chat view supports Claude Code sessions. <button className="underline cursor-pointer" onClick={onOpenTerminal}>Open the terminal</button>
@@ -313,7 +354,7 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
             <p className="text-faint text-[12px]">Send one below — the conversation shows up here.</p>
           </div>
         ) : (
-          <ChatRows rows={rows} undoFor={undoFor} />
+          <ChatRows rows={rows} undoFor={undoFor} gitFiles={gitFiles} />
         )}
         {pending.map((p) => (
           <div key={p.at} className="flex justify-end pt-2">
