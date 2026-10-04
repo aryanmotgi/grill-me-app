@@ -143,7 +143,7 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
             title={p.id === activeProject ? `${p.path} — active` : `Switch to ${p.name}`}
             onClick={() => switchProject(p.id)}
           >
-            <ProjectIcon id={p.id} color={p.color} size={16} />
+            <ProjectIcon id={p.id} name={p.name} color={p.color} size={16} />
             <span className="text-[13px] truncate">{p.name}</span>
           </button>
         ))}

@@ -139,7 +139,7 @@ export function QuizCard() {
   useEffect(() => {
     if (!finished || !questions) return;
     void call("bridge_add_note", {
-      text: `🧠 Quiz on ${label(target)}'s code: ${score}/${questions.length}`,
+      text: `Quiz on ${label(target)}'s code: ${score}/${questions.length}`,
       by: "Code quiz",
     }).catch(() => {});
     toast(score === questions.length ? "Perfect — you know this code" : `${score}/${questions.length} — read the explanations, then quiz again`);
