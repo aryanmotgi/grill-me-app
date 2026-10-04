@@ -29,7 +29,7 @@ pub struct SavePoint {
     pub at: i64,
 }
 
-fn run(repo: &str, args: &[&str], index: Option<&Path>) -> Result<String, String> {
+pub(crate) fn run(repo: &str, args: &[&str], index: Option<&Path>) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo).args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -59,7 +59,7 @@ pub fn clean_label(label: &str) -> String {
 }
 
 /// The folder's current state as a tree, through a throwaway copy of the index.
-fn snapshot_tree(repo: &str) -> Result<String, String> {
+pub(crate) fn snapshot_tree(repo: &str) -> Result<String, String> {
     let git_index = run(repo, &["rev-parse", "--git-path", "index"], None)?;
     let git_index = git_index.trim();
     let real = if Path::new(git_index).is_absolute() { Path::new(git_index).to_path_buf() } else { Path::new(repo).join(git_index) };

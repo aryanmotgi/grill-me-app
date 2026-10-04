@@ -223,6 +223,8 @@ export interface TurnReceipt {
   usage?: Usage;
   /** raw model id, for pricing */
   modelId?: string;
+  /** what Claude said last in the turn, for "What just happened" */
+  reply?: string;
 }
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -247,16 +249,18 @@ export function toRows(items: ChatItem[], working: boolean): ChatRow[] {
   let files: string[] = [];
   let tests: "pass" | "fail" | undefined;
   let usage: Usage | undefined;
+  let reply: string | undefined;
 
   const closeTurn = (id: string) => {
     if (hasReply && turnStart !== undefined && lastTs !== undefined && lastTs >= turnStart) {
-      rows.push({ kind: "worked", id: `w-${id}`, model: modelLabel(model), seconds: Math.round((lastTs - turnStart) / 1000), ask, startTs: turnStart, files, tests, usage, modelId: model });
+      rows.push({ kind: "worked", id: `w-${id}`, model: modelLabel(model), seconds: Math.round((lastTs - turnStart) / 1000), ask, startTs: turnStart, files, tests, usage, modelId: model, reply });
     }
     hasReply = false;
     model = undefined;
     files = [];
     tests = undefined;
     usage = undefined;
+    reply = undefined;
   };
 
   for (const it of items) {
@@ -269,6 +273,7 @@ export function toRows(items: ChatItem[], working: boolean): ChatRow[] {
       continue;
     }
     usage = addUsage(usage, it.usage);
+    if (it.kind === "assistant") reply = it.text;
     if (it.kind === "assistant" || it.kind === "tool") {
       hasReply = true;
       model = it.model ?? model;
