@@ -15,11 +15,11 @@ import { sessionSentence } from "./sessionSentence";
 import { visibleSessions } from "./sessionNav";
 import { sessionStats, turnCost } from "./coach";
 import { mvpOf } from "./brainPlan";
-import { sendToSession } from "./ptyReady";
+import { TRUST_ACCEPT_KEYS, sendToSession } from "./ptyReady";
 import { goBack, listSavePoints } from "./savepoints";
 import type { AgentUsage } from "./limits";
 import {
-  DEFAULT_PREFS, NEXT_PROMPTS, focusLeft, glowOf, nextSteps, peekLine, recapLine, spendOf, spokenDone,
+  DEFAULT_PREFS, NEXT_PROMPTS, focusLeft, glowOf, initialsOf, questionOf, nextSteps, peekLine, recapLine, spendOf, spokenDone,
   type NextStep, type PillAction, type PillApp, type PillCommand, type PillOutside, type PillPrefs, type PillSession, type PillState,
 } from "./pill";
 
@@ -41,6 +41,8 @@ const live = {
   next: null as NextStep | null,
   recap: null as string | null,
   lastDoneAt: 0,
+  /** what each waiting session is asking, read off its screen */
+  questions: {} as Record<string, string | undefined>,
   /** what happened, for the away recap */
   log: [] as { at: number; kind: "done" | "needs" | "stuck"; title: string }[],
 };
@@ -97,6 +99,9 @@ export function buildState(): PillState {
       stuck: !!t.flag,
       pinned: pinned.includes(t.id),
       context: stats ? Math.min(1, stats.perTurn / CONTEXT_WINDOW) : null,
+      trust: !!t.trustPrompt,
+      initials: initialsOf(sessionTitle(t, titles)),
+      question: t.status === "needs-input" && !t.trustPrompt ? live.questions[t.id] : undefined,
     };
   });
   const outside: PillOutside[] = live.outside.map((o) => ({ id: o.id, folder: o.cwd.split("/").filter(Boolean).pop() ?? o.cwd, ask: o.ask, status: o.status }));
@@ -191,6 +196,14 @@ async function act(a: PillAction) {
       st.setAppSetting("pillPinned", pinned.includes(a.sessionId) ? pinned.filter((x) => x !== a.sessionId) : [...pinned, a.sessionId]);
       break;
     }
+    case "trust": {
+      // the same answer the chat's "Yes, trust it" gives: move to Yes, Enter
+      for (const key of TRUST_ACCEPT_KEYS) {
+        await invoke("pty_write", { id: ptyIdFor(a.sessionId), data: key }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      break;
+    }
     case "send":
       if (a.text.trim()) await send(a.sessionId, a.text.trim());
       break;
@@ -260,7 +273,15 @@ function poll() {
   };
   const loadLimits = () => void invoke<[AgentUsage[], string | null]>("agent_usage", { claudeLiveOk: useApp.getState().appSettings.claudeUsageLive === true })
     .then(([u]) => { live.limits = (u.find((x) => x.agent === "claude")?.windows ?? []).map((w) => ({ label: w.label, pct: w.pct })); schedule(); }).catch(() => {});
-  loadServers(); loadOutside(); loadSpend(); loadLimits();
+  const loadQuestions = () => {
+    const waiting = mates().filter((t) => t.status === "needs-input" && !t.trustPrompt);
+    if (!waiting.length) { if (Object.keys(live.questions).length) { live.questions = {}; schedule(); } return; }
+    void Promise.all(waiting.map((t) => invoke<string[]>("pty_screen", { id: ptyIdFor(t.id), lines: 24 })
+      .then((l) => [t.id, questionOf(l)] as const).catch(() => [t.id, undefined] as const)))
+      .then((pairs) => { live.questions = Object.fromEntries(pairs); schedule(); });
+  };
+  loadServers(); loadOutside(); loadSpend(); loadLimits(); loadQuestions();
+  setInterval(loadQuestions, 4_000);
   setInterval(loadServers, 10_000);
   setInterval(loadOutside, 5_000);
   setInterval(loadSpend, 60_000);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { focusLeft, glowOf, nextSteps, peekLine, recapLine, spendOf, spokenDone, type PillSession } from "./pill";
+import { focusLeft, glowOf, initialsOf, questionOf, nextSteps, peekLine, recapLine, spendOf, spokenDone, type PillSession } from "./pill";
 
-const s = (over: Partial<PillSession>): PillSession => ({ id: "a", title: "A", status: "idle", peek: "", stuck: false, pinned: false, context: null, ...over });
+const s = (over: Partial<PillSession>): PillSession => ({ id: "a", title: "A", status: "idle", peek: "", stuck: false, pinned: false, context: null, trust: false, initials: "A", ...over });
 
 describe("pill glow", () => {
   it("picks the most urgent state", () => {
@@ -44,5 +44,28 @@ describe("pill words", () => {
     expect(spendOf({ a: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }, b: { input: 2, output: 0, cacheRead: 0, cacheWrite: 0 } }, (t) => t.input * 0.5)).toBe(1.5);
     expect(focusLeft(10 * 60_000 + 1, 0)).toBe(11);
     expect(focusLeft(null)).toBe(0);
+  });
+});
+
+describe("chip letters", () => {
+  it("takes the first letters of the first two words", () => {
+    expect(initialsOf("Market prices")).toBe("MP");
+    expect(initialsOf("barn")).toBe("B");
+    expect(initialsOf("add-a-tooltip")).toBe("AA");
+    expect(initialsOf("  ")).toBe("?");
+  });
+});
+
+describe("what a waiting agent asks", () => {
+  it("finds the last question on its screen", () => {
+    expect(questionOf([
+      "╭──────────────────────────────╮",
+      "│ Should I store saves in localStorage or a file?  │",
+      "│ ❯ 1. localStorage                │",
+      "│   2. A JSON file                 │",
+      "╰──────────────────────────────╯",
+      "Enter to confirm · Esc to cancel",
+    ])).toBe("Should I store saves in localStorage or a file?");
+    expect(questionOf(["Done. 3 files changed.", ""])).toBeUndefined();
   });
 });
