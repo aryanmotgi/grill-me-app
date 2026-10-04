@@ -127,6 +127,8 @@ export async function submitToAgent(ptyId: string, text: string): Promise<void> 
  *  its prompt, then send. */
 export async function sendToSession(member: { id: string; repoPath: string; remote?: string | null; tmuxSession?: string | null; agent?: string | null }, ptyId: string, text: string): Promise<boolean> {
   const { invoke } = await import("@tauri-apps/api/core");
+  // Grill Me's own request: it mustn't become the session's name
+  void import("./autoTitle").then((m) => m.markSent(text));
   await invoke("pty_ensure", {
     id: ptyId, cwd: member.repoPath, shell: false,
     remote: member.remote ?? null, tmux: member.tmuxSession ?? null, agent: member.agent ?? null,

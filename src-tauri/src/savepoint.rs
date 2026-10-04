@@ -146,6 +146,9 @@ fn restore(repo: &str, id: &str) -> Result<String, String> {
         }
     }
     run(repo, &["restore", &format!("--source={}", target.id), "--worktree", "--", "."], None)?;
+    if target.label != "Before going back" {
+        crate::impact::log("undo", &target.label);
+    }
     Ok(format!("Back to “{}”. Where you were is saved as a save point too.", target.label))
 }
 

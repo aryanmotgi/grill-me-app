@@ -14,3 +14,15 @@ describe("titleFromTranscript", () => {
     expect(titleFromTranscript([])).toBe("");
   });
 });
+
+describe("Grill Me's own messages", () => {
+  it("never become a session's name", async () => {
+    const { markSent } = await import("./autoTitle");
+    markSent("Commit your current work on this branch with a clear message. Don't push.");
+    const lines = [
+      L({ type: "user", uuid: "c", message: { content: "Commit your current work on this branch with a clear message. Don't push." } }),
+      L({ type: "user", uuid: "m", message: { content: "Add a market panel for bulk selling" } }),
+    ];
+    expect(titleFromTranscript(lines)).toBe("Add a market panel for bulk selling");
+  });
+});

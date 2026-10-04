@@ -84,6 +84,8 @@ export async function runTestsFor(memberId: string, force = false) {
     const name = titleOf(memberId);
     if (!res.ok && (prev?.ok ?? true)) {
       st.toast(`✗ Tests failing in ${name}`, "warn");
+      // counted for "What Grill Me did for you": a failure you heard about right away
+      void import("@tauri-apps/api/core").then(({ invoke }) => invoke("impact_log", { kind: "tests-failed", detail: name })).catch(() => {});
       void alertEverywhere("Tests failing", `${name}: ${res.cmd}`);
     } else if (res.ok && prev && !prev.ok) {
       st.toast(`✓ Tests passing again in ${name}`);
