@@ -321,6 +321,17 @@ interface AppState {
 }
 
 let toastSeq = 0;
+
+/** Session names are per project ("sessionTitles:<project>"); the app reads
+ *  the open project's as plain sessionTitles. Names saved before this was
+ *  per project stay with the project that's open when it first loads. */
+export function projectTitles(settings: Record<string, unknown>): Record<string, unknown> {
+  const project = typeof settings.activeProject === "string" ? settings.activeProject : "default";
+  const key = `sessionTitles:${project}`;
+  if (settings[key] && typeof settings[key] === "object") return { ...settings, sessionTitles: settings[key] };
+  const legacy = settings.titlesPerProject === true ? {} : settings.sessionTitles ?? {};
+  return { ...settings, sessionTitles: legacy, [key]: legacy, titlesPerProject: true };
+}
 const recentToasts = new Map<string, number>();
 
 // Sample data is a browser-dev seam only. The real app starts EMPTY — before
@@ -859,7 +870,9 @@ export const useApp = create<AppState>((set, get) => ({
     get().setAppSetting("terminal", termSettings);
   },
   setAppSetting: (key, value) => {
-    const appSettings = { ...get().appSettings, [key]: value };
+    // session names belong to a project: keep them under its own key too
+    const extra = key === "sessionTitles" ? { [`sessionTitles:${get().appSettings.activeProject ?? "default"}`]: value } : {};
+    const appSettings = { ...get().appSettings, [key]: value, ...extra };
     set({ appSettings });
     persistShared("settings.json", appSettings);
   },
@@ -1122,7 +1135,7 @@ let firedBudgetLevel: BudgetLevel = 0;
     // a corrupt settings.json must degrade to defaults, not silently kill
     // this boot IIFE (which would leave every feed dead with no error)
     try {
-      appSettings = JSON.parse(raw);
+      appSettings = projectTitles(JSON.parse(raw));
       useApp.setState({ appSettings });
       if (typeof appSettings.theme === "string") useApp.setState({ themeName: appSettings.theme });
       if (appSettings.panelSizes) useApp.setState({ panelSizes: appSettings.panelSizes as { left: number; right: number; split: number } });
