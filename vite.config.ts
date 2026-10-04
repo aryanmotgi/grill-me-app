@@ -8,10 +8,10 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
-  // two pages: the app, and the launch animation's see-through splash window
+  // pages: the app, the launch animation, the boot screen, and the floating pill
   build: {
     rollupOptions: {
-      input: { main: "index.html", splash: "splash.html", boot: "boot.html" },
+      input: { main: "index.html", splash: "splash.html", boot: "boot.html", pill: "pill.html" },
     },
   },
 
