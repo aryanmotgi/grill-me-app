@@ -2,7 +2,7 @@ import { useApp } from "../../store";
 import { CenterStage, Overlays } from "../ShellParts";
 import { BottomTerminal } from "../BottomTerminal";
 import { DragHandle } from "../DragHandle";
-import { ConflictBanner } from "../Chrome";
+import { OverlapWatch } from "../Chrome";
 import { SimpleSidebar } from "./SimpleSidebar";
 import { TopBar } from "./TopBar";
 import { RightPanel } from "./RightPanel";
@@ -31,7 +31,8 @@ export function SimpleShell({ active, split }: { active: Teammate | undefined; s
 
   return (
     <div className={`h-full flex flex-col ${dense ? "dense" : ""}`}>
-      <ConflictBanner />
+      {/* overlaps go to the Activity bell, with "Merge now", not an orange bar */}
+      <OverlapWatch />
       <div className="flex-1 min-h-0 flex">
         {focusMode ? null : <SimpleSidebar />}
         <main className="flex-1 min-w-0 flex flex-col">

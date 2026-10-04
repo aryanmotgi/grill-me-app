@@ -3,7 +3,7 @@ import { useModalA11y } from "../hooks/useModalA11y";
 import { ptyIdFor, useApp } from "../store";
 import { Icon } from "./Icon";
 import { sessionTitle } from "../lib/sessionTitle";
-import { submitToAgent } from "../lib/ptyReady";
+import { sendToSession } from "../lib/ptyReady";
 import { candidates, hasConflicts, lines, mergePrompt, useMergeSessions, withWork, type BranchPreview } from "../lib/mergeSessions";
 import { useSavePoints } from "../lib/savepoints";
 
@@ -39,6 +39,21 @@ export function MergeSessions() {
   const target = teammates.find((t) => t.id === main?.id)?.branch ?? "";
   const others = useMemo(() => candidates(teammates.filter((t) => t.id !== main?.id), target), [teammates, main?.id, target]);
   const byBranch = useMemo(() => new Map(others.map((t) => [t.branch, t])), [others]);
+  // work that isn't committed yet can't be merged: offer to have it committed
+  const unsaved = others.filter((t) => !t.missing && t.changes.length > 0);
+  const askToCommit = async () => {
+    setBusy(true);
+    try {
+      const asked = unsaved.map((t) => {
+        const m = members.find((x) => x.id === t.id);
+        return m ? sendToSession(m, ptyIdFor(t.id), "Commit your current work on this branch with a clear message. Don't push.") : Promise.resolve(false);
+      });
+      toast(`Asking ${unsaved.length} session${unsaved.length === 1 ? "" : "s"} to commit. Open Merge my sessions again when they're done.`);
+      close();
+      const ok = (await Promise.all(asked)).filter(Boolean).length;
+      if (ok < unsaved.length) toast(`${unsaved.length - ok} session${unsaved.length - ok === 1 ? "" : "s"} didn't get ready in time. Open it and ask again.`, "warn");
+    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+  };
 
   useEffect(() => {
     if (!open || !main || !native()) return;
@@ -74,7 +89,8 @@ export function MergeSessions() {
   const mergeWithAgent = async () => {
     setBusy(true);
     try {
-      await submitToAgent(ptyIdFor(main.id), mergePrompt(target, chosen));
+      // the main session's agent may not be running yet after a restart
+      if (!(await sendToSession(main, ptyIdFor(main.id), mergePrompt(target, chosen)))) throw new Error("The main session didn't get ready in time. Open it and try again.");
       setActive(main.id);
       toast("The main session is merging them. Its receipt will show what it resolved.");
       close();
@@ -93,7 +109,15 @@ export function MergeSessions() {
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
           {error ? <p className="text-[12.5px] text-danger">{error}</p> : null}
           {!error && previews === null ? <p className="text-[12.5px] text-faint flex items-center gap-2"><span className="spinner" /> Looking at each session's work…</p> : null}
-          {previews?.length === 0 ? <p className="text-[12.5px] text-faint">Nothing to merge: no other session has committed work on its own branch.</p> : null}
+          {unsaved.length ? (
+            <div className="rounded-xl border border-warn/40 bg-warn/5 px-4 py-3 flex items-center gap-3">
+              <span className="flex-1 text-[12.5px] text-dim">
+                {unsaved.map((t) => sessionTitle(t, titles)).join(", ")} {unsaved.length === 1 ? "has" : "have"} changes that aren't committed yet. Only committed work can be merged.
+              </span>
+              <button className="composer-btn h-8 flex-none" disabled={busy} onClick={() => void askToCommit()}>Ask {unsaved.length === 1 ? "it" : "them"} to commit</button>
+            </div>
+          ) : null}
+          {previews?.length === 0 && !unsaved.length ? <p className="text-[12.5px] text-faint">Nothing to merge: no other session has committed work on its own branch.</p> : null}
           {previews?.map((p) => {
             const n = lines(p.files);
             const on = picked.has(p.branch);

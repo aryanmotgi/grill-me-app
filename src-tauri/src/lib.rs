@@ -2118,8 +2118,17 @@ fn install_hooks(repo_path: String, member_id: String) -> Result<String, String>
     let hook_cmd = |event: &str| {
         // events path is sh_quoted so a HOME with spaces/quotes cannot break
         // (or inject into) the script; member_id is validated above.
+        // Claude also sends a Notification when it has simply been idle
+        // ("Claude is waiting for your input"): that's not a question, so it's
+        // logged as "idle" instead of making the session say "needs you"
+        let classify = if event == "notification" {
+            "EV=notification; case \"$IN\" in *\"waiting for your input\"*) EV=idle;; esac; "
+        } else {
+            ""
+        };
+        let ev = if event == "notification" { "$EV".to_string() } else { event.to_string() };
         let script = format!(
-            "IN=$(cat); printf \"%s\\n\" \"{{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"{member_id}\\\",\\\"event\\\":\\\"{event}\\\"}}\" >> {}",
+            "IN=$(cat); {classify}printf \"%s\\n\" \"{{\\\"ts\\\":$(date +%s),\\\"id\\\":\\\"{member_id}\\\",\\\"event\\\":\\\"{ev}\\\"}}\" >> {}",
             sh_quote(&events)
         );
         format!("sh -c {}", sh_quote(&script))

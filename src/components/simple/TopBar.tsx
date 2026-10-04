@@ -12,6 +12,7 @@ import { automationOn, withAutomation } from "../../lib/automations";
 import { ago, goBack, lastTurn, listSavePoints, savePoint, useSavePoints, type SavePoint } from "../../lib/savepoints";
 import type { Teammate } from "../../types";
 import { useActivity } from "../../lib/activity";
+import { useMergeSessions } from "../../lib/mergeSessions";
 import { span } from "../../lib/limits";
 
 // ---------------------------------------------------------------------------
@@ -180,6 +181,12 @@ function ActivityBell() {
                 <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-none ${x.tone === "warn" ? "bg-warn" : "bg-line"}`} aria-hidden />
                 <span className="flex-1 min-w-0 text-[12px] text-dim leading-snug select-text">
                   {x.text}{x.count > 1 ? <span className="text-faint"> ×{x.count}</span> : null}
+                  {x.action === "merge-sessions" ? (
+                    <button className="block mt-1 text-[11.5px] text-accent hover:underline cursor-pointer"
+                      onClick={() => { setOpen(false); useMergeSessions.getState().setOpen(true); }}>
+                      Merge now →
+                    </button>
+                  ) : null}
                 </span>
                 <span className="text-[10.5px] text-faint flex-none num">{span((Date.now() - x.at) / 60_000)}</span>
               </div>

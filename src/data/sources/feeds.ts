@@ -521,7 +521,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         if (st.alive && hookFresh) {
           if (hook.event === "notification") status = "needs-input";
           else if (hook.event === "prompt") status = st.quietMs < 120_000 ? "working" : status;
-          else if (hook.event === "stop") status = st.oscNotify || st.bell ? "needs-input" : "idle";
+          // "idle": Claude's "waiting for your input" nudge, not a question
+          else if (hook.event === "stop" || hook.event === "idle") status = st.oscNotify || st.bell ? "needs-input" : "idle";
         }
         // the trust screen waits on a human: never "working", never "looping"
         const trustPrompt = st.alive && isTrustPrompt(st.tail.slice(-20).join("\n"));
