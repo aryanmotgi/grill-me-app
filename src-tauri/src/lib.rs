@@ -25,6 +25,7 @@ mod savepoint;
 mod usage;
 mod projectmap;
 mod agentreap;
+mod merge;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4946,6 +4947,8 @@ pub fn run() {
             commit_message_ai,
             checkpoint_commit,
             worktree_is_ours,
+            merge::merge_preview,
+            merge::merge_branches,
             savepoint::savepoint_create,
             savepoint::savepoint_list,
             savepoint::savepoint_restore,

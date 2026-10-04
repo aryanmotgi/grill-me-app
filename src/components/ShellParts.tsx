@@ -46,6 +46,7 @@ import { ShipQueue } from "./ShipQueue";
 import { PreviewPage } from "./PreviewPage";
 import { BridgePanel } from "./BridgePanel";
 import { TeamView } from "./TeamView";
+import { MergeSessions } from "./MergeSessions";
 
 /** What fills the middle: the active session (optionally split), the
  *  new-session screen, or a page opened from the nav/⌘K. Shared by both
@@ -149,6 +150,7 @@ export function Overlays() {
     <BridgePanel />
     <Kickoff />
     <ShipQueue />
+    <MergeSessions />
     <Toasts />
     </>
   );

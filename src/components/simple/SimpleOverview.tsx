@@ -17,6 +17,7 @@ import { useDNA } from "../../lib/dnaStore";
 import { notices } from "../../lib/spark";
 import type { Teammate } from "../../types";
 import { GoalWatch, ProjectMap } from "./OverviewExtras";
+import { useMergeSessions } from "../../lib/mergeSessions";
 
 // ---------------------------------------------------------------------------
 // The simple layout's Overview, top to bottom:
@@ -377,7 +378,11 @@ export function SimpleOverview() {
         <Limits />
         {rows.length ? (
           <section aria-label="Your sessions">
-            <Label>Sessions</Label>
+            <Label right={rows.length > 1 ? (
+              <button className="text-[11.5px] text-dim hover:text-ink cursor-pointer flex items-center gap-1" onClick={() => useMergeSessions.getState().setOpen(true)}>
+                <Icon name="merge" size={11} /> Merge my sessions
+              </button>
+            ) : undefined}>Sessions</Label>
             <div className="flex flex-col gap-1.5">
               {rows.map(({ t, said }) => <SessionCard key={t.id} t={t} said={said} last={last[t.id]} />)}
             </div>
