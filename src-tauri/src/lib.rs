@@ -28,6 +28,8 @@ mod agentreap;
 mod merge;
 mod impact;
 mod explain;
+mod pill;
+mod outside;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -4990,6 +4992,15 @@ pub fn run() {
             savepoint::savepoint_restore,
             savepoint::savepoint_changes,
             explain::turn_explain,
+            pill::pill_open,
+            pill::pill_close,
+            pill::pill_visible,
+            pill::pill_hit_rects,
+            pill::pill_placement,
+            pill::pill_focus,
+            pill::pill_say,
+            outside::outside_sessions,
+            outside::spend_since,
             usage::agent_usage,
             usage::transcript_recent,
             projectmap::archify_installed,

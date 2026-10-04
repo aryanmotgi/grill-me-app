@@ -355,6 +355,9 @@ export function SettingsModal() {
                         onClick={() => setAppSetting("background", b)}>{b}</button>
                     ))}
                   </Row>
+                  <Row label="Floating pill" hint="A small bar above your other apps with your sessions' status. ⌃⌥P hides it, ⌃⌥K searches">
+                    <Toggle checked={appSettings.pill !== false} onChange={(v) => void import("../lib/pillBridge").then((m) => m.setPillOn(v))} />
+                  </Row>
                   <Row label="Launch animation" hint="The 3D logo when Grill Me opens. Takes effect next launch">
                     <Toggle checked={appSettings.launchAnimation !== false} onChange={(v) => setAppSetting("launchAnimation", v)} />
                   </Row>

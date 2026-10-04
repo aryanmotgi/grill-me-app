@@ -101,7 +101,7 @@ fn cursor_in_window(w: &WebviewWindow) -> Option<(f64, f64)> {
 
 /// The cursor in global points, origin top-left of the main display.
 #[cfg(target_os = "macos")]
-fn cursor_points() -> Option<(f64, f64)> {
+pub(crate) fn cursor_points() -> Option<(f64, f64)> {
     #[repr(C)]
     struct CGPoint { x: f64, y: f64 }
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -123,7 +123,7 @@ fn cursor_points() -> Option<(f64, f64)> {
     }
 }
 #[cfg(not(target_os = "macos"))]
-fn cursor_points() -> Option<(f64, f64)> { None }
+pub(crate) fn cursor_points() -> Option<(f64, f64)> { None }
 
 /// GRILLME_HITLOG=1: once a second, where the cursor is and what the page
 /// says is clickable (to debug clicks falling through).
