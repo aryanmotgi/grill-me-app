@@ -17,6 +17,12 @@ export interface PillSession {
   pinned: boolean;
   /** how full its context is, 0–1, when known */
   context: number | null;
+  /** Claude is asking whether to trust its folder: one click answers it */
+  trust: boolean;
+  /** one or two letters for its chip on the rail */
+  initials: string;
+  /** what it's asking you, read off its screen, when it's waiting */
+  question?: string;
 }
 
 export interface PillOutside { id: string; folder: string; ask: string; status: "working" | "needs" | "done" }
@@ -68,6 +74,7 @@ export type PillAction =
   | { kind: "undo"; sessionId: string }
   | { kind: "focus"; minutes: number }
   | { kind: "pin"; sessionId: string }
+  | { kind: "trust"; sessionId: string }
   | { kind: "send"; sessionId: string; text: string }
   | { kind: "drop"; sessionId: string; paths: string[] }
   | { kind: "command"; id: string }
@@ -145,4 +152,25 @@ export function spendOf(
 
 export function focusLeft(until: number | null, now = Date.now()): number {
   return until && until > now ? Math.ceil((until - now) / 60_000) : 0;
+}
+
+/** "Market prices" → "MP", "barn" → "B", "add-a-tooltip" → "AT". */
+export function initialsOf(title: string): string {
+  const words = title.replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  const first = [...words[0]][0].toUpperCase();
+  return words[1] ? first + [...words[1]][0].toUpperCase() : first;
+}
+
+/** What a waiting agent is asking, from the last lines of its screen: the
+ *  last line that reads like a question, without box-drawing and menu marks. */
+export function questionOf(lines: string[]): string | undefined {
+  const clean = lines
+    .map((l) => l.replace(/[│┃╭╮╰╯─━┌┐└┘├┤┬┴┼╌╎⎿❯›>]/g, " ").replace(/^\s*\d+\.\s+/, "").replace(/\s+/g, " ").trim())
+    .filter((l) => l.length > 3);
+  for (let i = clean.length - 1; i >= 0; i--) {
+    const l = clean[i];
+    if (/\?\s*$/.test(l) && !/^(Esc|Enter|Tab|press)/i.test(l)) return l.length > 140 ? `${l.slice(0, 139)}…` : l;
+  }
+  return undefined;
 }

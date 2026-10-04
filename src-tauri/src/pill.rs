@@ -19,7 +19,9 @@
 //   "while you were away"    no input for 10 minutes, then input again: the
 //                            app hears how long you were gone
 //   pill_say                 spoken updates through the Mac's own voice
-//   shortcuts                ⌃⌥P shows or hides it, ⌃⌥K opens its command bar
+//   shortcuts                ⌃⌥P shows or hides it, ⌃⌥K opens its command
+//                            bar, ⌃⌥Y says yes to "trust this folder?",
+//                            ⌃⌥O opens the session that's waiting on you
 //
 // No macOS permission is needed for any of this.
 // ---------------------------------------------------------------------------
@@ -135,16 +137,65 @@ fn announce(win: &WebviewWindow, place: Place) {
 #[cfg(target_os = "macos")]
 mod mac {
     use objc2::runtime::AnyObject;
-    use objc2::{msg_send, sel};
+    use objc2::{define_class, msg_send, ClassType, MainThreadOnly};
+    use objc2_app_kit::NSPanel;
 
-    /// Float above other apps on every desktop and over full-screen apps,
-    /// stay out of window cycling, screen shares and recordings, and don't
-    /// pull the app forward when clicked. Main thread only.
+    define_class!(
+        // A borderless panel that can take the keyboard (to type in the
+        // pill) without making Grill Me the active app, so the big window
+        // never jumps in front of what you're working in. Spotlight and
+        // Raycast work the same way.
+        #[unsafe(super(NSPanel))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "GrillMePillPanel"]
+        struct PillPanel;
+
+        impl PillPanel {
+            #[unsafe(method(canBecomeKeyWindow))]
+            fn can_become_key(&self) -> bool { true }
+
+            #[unsafe(method(canBecomeMainWindow))]
+            fn can_become_main(&self) -> bool { false }
+        }
+    );
+
+    /// Turn the window into the non-activating panel above.
+    fn make_panel(w: &AnyObject) {
+        unsafe {
+            AnyObject::set_class(w, PillPanel::class());
+            let mask: usize = msg_send![w, styleMask];
+            // NSWindowStyleMaskNonactivatingPanel
+            let _: () = msg_send![w, setStyleMask: mask | (1 << 7)];
+            let _: () = msg_send![w, setFloatingPanel: true];
+            // only take the keyboard when something that types is clicked
+            let _: () = msg_send![w, setBecomesKeyOnlyIfNeeded: true];
+            let _: () = msg_send![w, setWorksWhenModal: true];
+        }
+    }
+
+    /// Take the keyboard (the command bar, a message box) without
+    /// activating Grill Me, or give it back.
+    pub fn key(ns_window: *mut std::ffi::c_void, on: bool) {
+        if ns_window.is_null() { return }
+        let w: &AnyObject = unsafe { &*(ns_window as *const AnyObject) };
+        unsafe {
+            if on {
+                let _: () = msg_send![w, makeKeyWindow];
+            } else {
+                let _: () = msg_send![w, resignKeyWindow];
+            }
+        }
+    }
+
+    /// Become the non-activating panel, float above other apps on every
+    /// desktop and over full-screen apps, and stay out of window cycling,
+    /// screen shares and recordings. Main thread only.
     pub fn float(ns_window: *mut std::ffi::c_void) {
         if ns_window.is_null() { return }
         let w: &AnyObject = unsafe { &*(ns_window as *const AnyObject) };
         // can join all spaces | stationary | ignores cycle | full-screen auxiliary
         let behavior: usize = (1 << 0) | (1 << 4) | (1 << 6) | (1 << 8);
+        make_panel(w);
         unsafe {
             let _: () = msg_send![w, setCollectionBehavior: behavior];
             // the status-bar level: above normal and floating windows
@@ -153,20 +204,6 @@ mod mac {
             let _: () = msg_send![w, setSharingType: 0usize];
             let _: () = msg_send![w, setHidesOnDeactivate: false];
         }
-        prevent_activation(w, true);
-    }
-
-    /// While on, clicking the pill doesn't bring Grill Me to the front.
-    pub fn prevent_activation(w: &AnyObject, on: bool) {
-        let sel = sel!(_setPreventsActivation:);
-        if w.class().responds_to(sel) {
-            unsafe { let _: () = msg_send![w, _setPreventsActivation: on]; }
-        }
-    }
-
-    pub fn set_prevent(ns_window: *mut std::ffi::c_void, on: bool) {
-        if ns_window.is_null() { return }
-        prevent_activation(unsafe { &*(ns_window as *const AnyObject) }, on);
     }
 
     /// Seconds since the last keyboard or mouse input anywhere.
@@ -270,15 +307,17 @@ pub fn pill_hit_rects(rects: Vec<[f64; 4]>) {
     }
 }
 
-/// Let the pill take the keyboard (typing in it) or give it back.
+/// Let the pill take the keyboard (typing in it) or give it back, without
+/// making Grill Me the active app.
 #[tauri::command]
 pub fn pill_focus(app: AppHandle, on: bool) {
     let Some(win) = app.get_webview_window("pill") else { return };
     #[cfg(target_os = "macos")]
     {
         let ptr = win.ns_window().map(|p| p as usize).unwrap_or(0);
-        let _ = app.run_on_main_thread(move || mac::set_prevent(ptr as *mut std::ffi::c_void, !on));
+        let _ = app.run_on_main_thread(move || mac::key(ptr as *mut std::ffi::c_void, on));
     }
+    #[cfg(not(target_os = "macos"))]
     if on {
         let _ = win.set_focus();
     }
@@ -381,16 +420,29 @@ fn watch_away(app: AppHandle) {
     let _ = app;
 }
 
-/// ⌃⌥P shows or hides the pill; ⌃⌥K opens its command bar.
+/// ⌃⌥P shows or hides the pill; ⌃⌥K opens its command bar; ⌃⌥Y and ⌃⌥O
+/// answer or open whatever is waiting on you.
 fn shortcuts(app: &AppHandle, on: bool) {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
     let mods = Some(Modifiers::CONTROL | Modifiers::ALT);
     let toggle = Shortcut::new(mods, Code::KeyP);
     let bar = Shortcut::new(mods, Code::KeyK);
+    let yes = Shortcut::new(mods, Code::KeyY);
+    let go = Shortcut::new(mods, Code::KeyO);
     let gs = app.global_shortcut();
-    let _ = gs.unregister(toggle);
-    let _ = gs.unregister(bar);
+    for s in [toggle, bar, yes, go] {
+        let _ = gs.unregister(s);
+    }
     if !on { return }
+    // one key, from any app: answer "trust this folder?", or jump to the
+    // session that's waiting on you
+    for (s, what) in [(yes, "yes"), (go, "open-needs")] {
+        let _ = gs.on_shortcut(s, move |app, _, ev| {
+            if ev.state() == ShortcutState::Pressed {
+                let _ = app.emit_to("pill", "pill-key", what);
+            }
+        });
+    }
     let _ = gs.on_shortcut(toggle, |app, _, ev| {
         if ev.state() != ShortcutState::Pressed { return }
         if let Some(w) = app.get_webview_window("pill") {

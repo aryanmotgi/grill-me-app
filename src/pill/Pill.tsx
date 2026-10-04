@@ -6,10 +6,13 @@ import { fuzzyRank } from "../lib/fuzzy";
 // ---------------------------------------------------------------------------
 // The floating pill: a slim vertical rail docked to a screen edge (left by
 // default), with everything else opening beside it.
-//   rail       status glow, one dot per session (hover to peek), sessions
+//   rail       status glow; one chip per session (its letters, a turning
+//              arc while it works, a badge when it needs you), sessions
 //              outside Grill Me, MVP ring, plan-limit ring, quiet inbox
 //              count, search, focus hour, and the ••• menu. Nothing going
 //              on: it shrinks to a faint ember dot.
+//   peek       hover a chip: what it's doing or asking, its context fill,
+//              and Yes-trust-it / Answer / Open / Message / Pin
 //   beside it  sessions panel (click the glow): pin, open, context fill,
 //              teammates, limits, today's spend, running apps, undo, a
 //              message box. Command bar (⌃⌥K from any app). Settings menu
@@ -118,6 +121,18 @@ export function Pill() {
   const [hover, setHover] = useState(false);
   const [near, setNear] = useState(false);
   const [peek, setPeek] = useState<PillSession | null>(null);
+  const [peekAt, setPeekAt] = useState(0);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showPeek = (x: PillSession, el: HTMLElement) => {
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+    setPeekAt(el.getBoundingClientRect().top + el.offsetHeight / 2);
+    setPeek(x);
+  };
+  const hidePeek = () => {
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+    peekTimer.current = setTimeout(() => setPeek(null), 220);
+  };
+  const keepPeek = () => { if (peekTimer.current) clearTimeout(peekTimer.current); };
   const [drop, setDrop] = useState<string[] | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [sure, setSure] = useState(false);
@@ -136,7 +151,7 @@ export function Pill() {
     setQuery("");
     setPick(0);
     setSure(false);
-    void invoke("pill_focus", { on: p === "command" || p === "sessions" });
+    void invoke("pill_focus", { on: p === "command" });
     if (p === "command") setTimeout(() => input.current?.focus(), 60);
   }, []);
   const close = useCallback(() => open(null), [open]);
@@ -146,8 +161,12 @@ export function Pill() {
   // design preview) the state comes from a "pill-demo" event instead.
   useEffect(() => {
     if (!native()) {
-      type Demo = { state: PillState; panel?: Panel; sub?: "look"; edge?: Edge };
-      const demo = (e: Event) => { const d = (e as CustomEvent<Demo>).detail; setSt(d.state); if (d.panel) setPanel(d.panel); if (d.sub) setSub(d.sub); if (d.edge) setEdge(d.edge); };
+      type Demo = { state: PillState; panel?: Panel; sub?: "look"; edge?: Edge; peek?: number };
+      const demo = (e: Event) => {
+        const d = (e as CustomEvent<Demo>).detail;
+        setSt(d.state); if (d.panel) setPanel(d.panel); if (d.sub) setSub(d.sub); if (d.edge) setEdge(d.edge);
+        if (d.peek !== undefined) { setPeek(d.state.sessions[d.peek]); setPeekAt(64 + d.peek * 34); }
+      };
       window.addEventListener("pill-demo", demo);
       const early = (window as unknown as { __PILL_DEMO__?: Demo }).__PILL_DEMO__;
       if (early) demo(new CustomEvent("pill-demo", { detail: early }));
@@ -160,7 +179,10 @@ export function Pill() {
       offs.push(await listen<{ edge: Edge }>("pill-place", (e) => setEdge(e.payload.edge)));
       offs.push(await listen<boolean>("pill-near", (e) => setNear(e.payload)));
       offs.push(await listen("pill-chime", () => chime()));
-      offs.push(await listen<string>("pill-key", (e) => { if (e.payload === "command") open("command"); }));
+      offs.push(await listen<string>("pill-key", (e) => {
+        if (e.payload === "command") open("command");
+        else onKey.current(e.payload);
+      }));
       const { getCurrentWebview } = await import("@tauri-apps/api/webview");
       offs.push(await getCurrentWebview().onDragDropEvent((e) => {
         if (e.payload.type === "over" || e.payload.type === "enter") setDragOver(true);
@@ -184,9 +206,21 @@ export function Pill() {
     if (!prefs) return;
     const root = document.documentElement;
     if (prefs.theme === "auto") delete root.dataset.theme; else root.dataset.theme = prefs.theme;
-    root.style.setProperty("--pill-scale", String(prefs.size));
-    root.style.setProperty("--text-scale", String(prefs.text));
+    // text size: everything is sized in rem off this
+    root.style.fontSize = `${16 * prefs.text}px`;
+    // pill size: the page's own zoom, so clicks still land where things are drawn
+    if (native()) void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => getCurrentWebview().setZoom(prefs.size)).catch(() => {});
+    else root.style.zoom = String(prefs.size);
   }, [prefs]);
+
+  // ⌃⌥Y / ⌃⌥O from any app: answer or open what's waiting on you
+  const onKey = useRef<(k: string) => void>(() => {});
+  onKey.current = (k) => {
+    const waiting = st?.sessions.find((x) => x.status === "needs-input");
+    if (!waiting) return;
+    if (k === "yes" && waiting.trust) void send({ kind: "trust", sessionId: waiting.id });
+    else void send({ kind: "open", sessionId: waiting.id });
+  };
 
   const s = st;
   const cards = !!(s?.recap || s?.next || drop || peek);
@@ -208,10 +242,12 @@ export function Pill() {
   useEffect(() => {
     if (!native()) return;
     let stop = false;
+    const z = prefs?.size ?? 1;
     const report = () => {
+      // page pixels × the page zoom = window points
       const rects = [...(stage.current?.querySelectorAll<HTMLElement>("[data-hit]") ?? [])].map((n) => {
         const r = n.getBoundingClientRect();
-        return [r.left - 4, r.top - 4, r.width + 8, r.height + 8];
+        return [(r.left - 4) * z, (r.top - 4) * z, (r.width + 8) * z, (r.height + 8) * z];
       });
       void invoke("pill_hit_rects", { rects });
     };
@@ -220,7 +256,7 @@ export function Pill() {
     const loop = () => { if (stop) return; report(); if (performance.now() - t0 < 900) setTimeout(loop, 50); };
     loop();
     return () => { stop = true; };
-  }, [railH, panel, sub, cards, quiet, edge, s?.sessions.length, prefs?.size, prefs?.text]);
+  }, [railH, panel, sub, cards, quiet, edge, s?.sessions.length, prefs?.size, prefs?.text, peekAt]);
 
   const ranked = useMemo(() => {
     const list = s?.commands ?? [];
@@ -254,20 +290,27 @@ export function Pill() {
   const rail = (
     <div data-hit className={`rail ${quiet ? "quiet" : ""} ${fade ? "fade" : ""} ${dragOver ? "drop" : ""} glow-${s.glow}`}
       style={railH ? { height: railH } : undefined} onMouseDown={dragStart}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => { setHover(false); setPeek(null); }}>
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => { setHover(false); hidePeek(); }}>
       <div ref={railInner} className="rail-inner">
         <button className={`orb-btn ${panel === "sessions" ? "on" : ""}`} title={headline(s)} aria-label={headline(s)} onClick={() => toggle("sessions")}>
           <span className={`orb ${s.glow}`} />
         </button>
         {quiet ? null : (
           <>
-            <div className="dots">
-              {sessions.slice(0, 8).map((x) => (
-                <button key={x.id} className={`sdot ${toneOf(x)} ${x.pinned ? "pinned" : ""}`} aria-label={`${x.title}: ${x.peek}`}
-                  onMouseEnter={() => setPeek(x)} onMouseLeave={() => setPeek(null)}
-                  onClick={() => void send({ kind: "open", sessionId: x.id })} />
+            <div className="chips">
+              {sessions.slice(0, 7).map((x) => (
+                <button key={x.id} className={`chip-s ${toneOf(x)} ${x.pinned ? "pinned" : ""} ${peek?.id === x.id ? "on" : ""}`} aria-label={`${x.title}: ${x.peek}`}
+                  onMouseEnter={(e) => showPeek(x, e.currentTarget)} onMouseLeave={hidePeek}
+                  onClick={() => void send({ kind: "open", sessionId: x.id })}>
+                  <span>{x.initials}</span>
+                </button>
               ))}
-              {s.outside.slice(0, 3).map((o) => <span key={o.id} className={`sdot outside ${o.status}`} title={`${o.folder} (outside Grill Me): ${o.ask}`} />)}
+              {sessions.length > 7 ? <button className="more-s" title={`${sessions.length - 7} more`} onClick={() => toggle("sessions")}>+{sessions.length - 7}</button> : null}
+              {s.outside.slice(0, 3).map((o) => (
+                <span key={o.id} className={`chip-s outside ${o.status}`} title={`${o.folder} (outside Grill Me) · ${o.status === "needs" ? "waiting on you" : o.status}${o.ask ? ` · ${o.ask}` : ""}`}>
+                  <span>{o.folder.slice(0, 1).toUpperCase()}</span>
+                </span>
+              ))}
             </div>
             <span className="sep" />
             {s.mvp ? <Ring value={s.mvp.done / s.mvp.total} title={`MVP: ${s.mvp.done} of ${s.mvp.total} done`} /> : null}
@@ -341,7 +384,7 @@ export function Pill() {
             {sessions.slice(0, 5).map((x) => <button key={x.id} className={`tchip ${x.id === to ? "on" : ""}`} onClick={() => setTarget(x.id)}>{x.title}</button>)}
           </div>
           <div className="msg">
-            <input value={msg} placeholder="Message this session…" onChange={(e) => setMsg(e.target.value)}
+            <input value={msg} placeholder="Message this session…" onFocus={() => void invoke("pill_focus", { on: true })} onBlur={() => void invoke("pill_focus", { on: false })} onChange={(e) => setMsg(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && msg.trim()) { void send({ kind: "send", sessionId: to, text: msg }); setMsg(""); } }} />
             <button className="ib" disabled={!msg.trim()} title="Send" onClick={() => { void send({ kind: "send", sessionId: to, text: msg }); setMsg(""); }}><Ico name="send" size={13} /></button>
           </div>
@@ -378,7 +421,7 @@ export function Pill() {
       <button className={`item ${sub === "look" ? "on" : ""}`} onClick={() => setSub(sub === "look" ? null : "look")}>
         <Ico name="palette" /> <span className="grow">Look &amp; sound</span><span className="dim small">{s.prefs.theme === "auto" ? "Auto" : s.prefs.theme === "light" ? "Light" : "Dark"}</span><Ico name="chevron" size={11} />
       </button>
-      <div className="item static" title="⌃⌥P shows or hides the pill · ⌃⌥K opens search, from any app"><Ico name="keys" /> <span className="grow">Shortcuts</span><span className="dim small">⌃⌥P · ⌃⌥K</span></div>
+      <div className="item static" title="From any app: ⌃⌥P shows or hides the pill · ⌃⌥K search · ⌃⌥Y yes to “trust this folder?” · ⌃⌥O open what's waiting on you"><Ico name="keys" /> <span className="grow">Shortcuts</span><span className="dim small">⌃⌥ P K Y O</span></div>
       <span className="msep" />
       <button className="item" onClick={() => void send({ kind: "focus", minutes: focusMin ? 0 : 60 })}><Ico name="moon" /> <span className="grow">{focusMin ? `End focus (${focusMin} min left)` : "Focus for an hour"}</span></button>
       <button className="item" onClick={() => void send({ kind: "open", view: "home" })}><Ico name="open" /> <span className="grow">Open Grill Me</span></button>
@@ -415,8 +458,19 @@ export function Pill() {
     <div ref={stage} className={`stage ${edge === "right" ? "right" : "left"}`}>
       {rail}
       <div className="side">
-        {peek && !panel ? (
-          <div data-hit className="card peek"><span className="title">{peek.title}</span><span className="sub">{peek.peek}</span></div>
+        {peek ? (
+          <div data-hit className="card peek" style={{ top: Math.max(6, peekAt - 34) }} onMouseEnter={keepPeek} onMouseLeave={hidePeek}>
+            <div className="peek-head"><span className={`sdot ${toneOf(peek)}`} /><span className="title">{peek.title}</span></div>
+            <span className="sub wrap">{peek.trust ? "Asking whether to trust its folder" : peek.question ? <>Asks: <b className="q">{peek.question}</b></> : peek.peek}</span>
+            {peek.context !== null ? <span className={`bar ${peek.context > 0.8 ? "hot" : peek.context > 0.6 ? "warn" : ""}`} title={`Context ${Math.round(peek.context * 100)}% full`}><i style={{ width: `${peek.context * 100}%` }} /></span> : null}
+            <div className="targets">
+              {peek.trust ? <button className="tchip go" title="⌃⌥Y from any app" onClick={() => { void send({ kind: "trust", sessionId: peek.id }); setPeek(null); }}>Yes, trust it</button> : null}
+              {peek.status === "needs-input" && !peek.trust ? <button className="tchip go" title="⌃⌥O from any app" onClick={() => void send({ kind: "open", sessionId: peek.id })}>Answer</button> : null}
+              {peek.status === "needs-input" && !peek.trust ? null : <button className="tchip" onClick={() => void send({ kind: "open", sessionId: peek.id })}>Open</button>}
+              <button className="tchip" onClick={() => { setTarget(peek.id); setPeek(null); open("sessions"); }}>Message</button>
+              <button className="tchip ghost" onClick={() => void send({ kind: "pin", sessionId: peek.id })}>{peek.pinned ? "Unpin" : "Pin"}</button>
+            </div>
+          </div>
         ) : null}
         {panel === "sessions" ? sessionsPanel : null}
         {panel === "command" ? command : null}

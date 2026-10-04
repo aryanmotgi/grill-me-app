@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "pill",
-  "description": "The floating pill: events, dragging itself, and file drops",
+  "description": "The floating pill: events, dragging itself, its zoom, and file drops",
   "windows": [
     "pill"
   ],
   "permissions": [
     "core:default",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "core:webview:allow-set-webview-zoom"
   ]
 }
