@@ -16,7 +16,7 @@ import { GrillFlame } from "./GrillMark";
 
 // ---------------------------------------------------------------------------
 // Monocode-style "What should we work on?" screen — the center view for a
-// new session. A pixel dot-grid banner up top, then one composer card:
+// new session. A quiet contour-line banner up top, then one composer card:
 // context chips (project + the branch it will create), the prompt, and a
 // toolbar (+ menu, agent picker, send). By default the prompt goes to the
 // session working in the project folder itself; "New worktree" instead spawns
@@ -45,37 +45,25 @@ export function grillPrefix(mode: GrillMode, hoursLeft: number | null): string {
   return "";
 }
 
-// pixel sprites for the banner (x = lit) — grill-themed, drawn in the
-// muted banner gray; the one ember flame is the brand mark.
-const SPRITES: Record<string, string[]> = {
-  kettle: [".xxxxxxx.", "xxxxxxxxx", "x.x.x.x.x", "xxxxxxxxx", ".xxxxxxx.", "..x...x..", ".x.....x."],
-  burger: ["..xxxxx..", ".xxxxxxx.", "xxxxxxxxx", ".........", "xxxxxxxxx", ".........", ".xxxxxxx."],
-  sausage: ["....x....", "....x....", ".xxxxxxx.", "xxxxxxxxx", ".xxxxxxx.", "....x....", "....x...."],
-  spatula: ["xxxx.....", "xxxx.....", "xxxx.....", "...x.....", "....x....", ".....x...", "......xx."],
-  invader: [".x...x.", "..xxx..", ".xxxxx.", "xx.x.xx", "xxxxxxx", ".x.x.x.", "x.....x"],
-};
-
-function Sprite({ name, x, y, px = 4 }: { name: string; x: string; y: string; px?: number }) {
-  const rows = SPRITES[name];
-  const w = rows[0].length;
-  return (
-    <svg className="absolute pixel-sprite" style={{ left: x, top: y }} width={w * px} height={rows.length * px} aria-hidden>
-      {rows.flatMap((r, j) =>
-        [...r].map((c, i) => (c === "x" ? <rect key={`${i}-${j}`} x={i * px} y={j * px} width={px - 0.5} height={px - 0.5} /> : null)),
-      )}
-    </svg>
-  );
+// The banner: quiet contour lines, like a heat map of the grill, with one
+// ember line and a soft glow. Drifts very slowly; still when the system
+// asks for reduced motion.
+function contour(i: number): string {
+  const y = 34 + i * 17;
+  const a = 10 + i * 2.5;
+  return `M-40 ${y} C 160 ${y - a}, 300 ${y + a}, 480 ${y - a * 0.4} S 820 ${y + a}, 1000 ${y - a * 0.6} S 1340 ${y + a * 0.5}, 1480 ${y}`;
 }
 
-function PixelBanner() {
+export function EmberHorizon() {
   return (
-    <div className="pixel-banner relative h-[22vh] min-h-[120px] max-h-[240px] flex-none overflow-hidden" aria-hidden>
-      <Sprite name="kettle" x="56%" y="16%" />
-      <Sprite name="burger" x="28%" y="40%" />
-      <Sprite name="sausage" x="78%" y="48%" />
-      <Sprite name="spatula" x="44%" y="62%" px={3} />
-      <Sprite name="invader" x="12%" y="18%" px={3} />
-      <span className="absolute" style={{ left: "66%", top: "58%" }}><GrillFlame px={4} dim /></span>
+    <div className="ember-horizon relative h-[22vh] min-h-[120px] max-h-[240px] flex-none overflow-hidden" aria-hidden>
+      <div className="ember-horizon-glow absolute inset-0" />
+      <svg className="ember-horizon-lines absolute inset-0 w-full h-full" viewBox="0 0 1440 240" preserveAspectRatio="xMidYMid slice">
+        {Array.from({ length: 10 }, (_, i) => (
+          <path key={i} d={contour(i)} fill="none" strokeWidth={i === 4 ? 1.25 : 1}
+            stroke={i === 4 ? "var(--horizon-ember)" : "var(--horizon-line)"} />
+        ))}
+      </svg>
     </div>
   );
 }
@@ -192,7 +180,7 @@ export function NewSession() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
-      <PixelBanner />
+      <EmberHorizon />
       <div className="w-full max-w-[820px] mx-auto px-6 pb-16 pt-[6vh]">
         <h1 className="text-[20px] font-medium text-ink mb-4 px-1">{simple ? `What should your agent work on in ${projectName}?` : `What are we grilling in ${projectName}?`}</h1>
 

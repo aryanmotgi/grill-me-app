@@ -108,7 +108,7 @@ function Projects() {
           <button key={p.id} title={`${p.path} · ⌃${i + 1}`} aria-current={here ? "true" : undefined}
             className={`flex items-center gap-2 w-full h-8 px-2.5 rounded-lg text-left cursor-pointer transition-colors ${here ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`}
             onClick={() => void switchProject(p.id)}>
-            <ProjectIcon id={p.id} color={p.color} size={14} />
+            <ProjectIcon id={p.id} name={p.name} color={p.color} size={14} />
             <span className="text-[12.5px] truncate flex-1">{p.name}</span>
             {st.text && !here ? (
               <span className={`text-[10.5px] flex-none ${st.tone === "needs" ? "text-warn" : st.tone === "working" ? "text-ok" : "text-faint"}`}>{st.text}</span>
@@ -183,7 +183,7 @@ export function SimpleSidebar() {
           title="Switch project (⌘P)"
           onClick={() => setPickerOpen(true)}
         >
-          {project ? <ProjectIcon id={project.id} color={project.color} size={16} /> : <Icon name="folder" size={14} />}
+          {project ? <ProjectIcon id={project.id} name={project.name} color={project.color} size={16} /> : <Icon name="folder" size={14} />}
           <span className="text-[13.5px] font-semibold text-ink truncate flex-1">{project?.name ?? "Pick a project"}</span>
           <Icon name="chevron" size={9} className="text-faint rotate-90" />
         </button>

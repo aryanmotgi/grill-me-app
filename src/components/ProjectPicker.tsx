@@ -156,7 +156,7 @@ export function ProjectPicker() {
                   <button key={p.id}
                     className={`composer-card group/proj flex items-center gap-3.5 px-4 py-3.5 rounded-xl cursor-pointer text-left transition-colors hover:border-white/20 ${current ? "border-white/20" : ""}`}
                     onClick={() => choose(p)}>
-                    <ProjectIcon id={p.id} color={p.color} size={22} />
+                    <ProjectIcon id={p.id} name={p.name} color={p.color} size={22} />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
                         <span className="text-[14px] font-medium text-ink truncate">{p.name}</span>

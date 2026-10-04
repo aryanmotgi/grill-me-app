@@ -15,7 +15,7 @@ import { PanelControls } from "./Dock";
 
 type WsTab = "sessions" | "explorer" | "changes";
 
-/** Monocode-style Changes panel: commit box up top (message + ✨ AI draft +
+/** Monocode-style Changes panel: commit box up top (message + AI draft +
  *  Commit — commit only, push stays a separate act), then the change list
  *  with per-file Review (diff in the editor pane) and Undo (git checkout --). */
 export function ChangesTab({ root, changes, activeFile, openFile }: {
@@ -73,7 +73,7 @@ export function ChangesTab({ root, changes, activeFile, openFile }: {
           <button className="btn" disabled={busy !== "" || changes.length === 0}
             title="Draft a commit message from the diff with AI"
             onClick={() => run("ai")}>
-            {busy === "ai" ? "…" : "✨"}
+            {busy === "ai" ? "…" : <Icon name="spark" size={11} />}
           </button>
         </div>
         <button

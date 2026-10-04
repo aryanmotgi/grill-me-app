@@ -747,16 +747,21 @@ select.btn, .btn[type] {
 
 /* ---- new-session screen (Monocode "What should we work on?") ---- */
 /* dot-grid banner: tiny square cells that fade out downward */
-.pixel-banner {
-  --cell: color-mix(in srgb, var(--ink) 5%, transparent);
-  background:
-    conic-gradient(from 90deg at 2px 2px, transparent 25%, var(--cell) 0) 0 0 / 11px 11px;
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 45%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 0%, #000 45%, transparent 100%);
+.ember-horizon {
+  --horizon-line: color-mix(in srgb, var(--ink) 7%, transparent);
+  --horizon-ember: color-mix(in srgb, #e0793a 55%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 40%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 40%, transparent 100%);
 }
-.pixel-sprite rect {
-  fill: color-mix(in srgb, var(--ink) 22%, transparent);
+.ember-horizon-glow {
+  background: radial-gradient(60% 90% at 62% 0%, color-mix(in srgb, #e0793a 13%, transparent), transparent 70%);
 }
+@media (prefers-reduced-motion: no-preference) {
+  .ember-horizon-lines { animation: horizon-drift 48s ease-in-out infinite alternate; }
+  .ember-horizon-glow { animation: horizon-breathe 12s ease-in-out infinite alternate; }
+}
+@keyframes horizon-drift { from { transform: translateX(0); } to { transform: translateX(-3%); } }
+@keyframes horizon-breathe { from { opacity: 0.7; } to { opacity: 1; } }
 .composer-card {
   background: color-mix(in srgb, #1d1e22 72%, transparent);
   border: 1px solid rgba(255, 255, 255, 0.09);

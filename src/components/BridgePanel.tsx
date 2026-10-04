@@ -108,7 +108,7 @@ async function mirrorToTeam(b: BridgeState) {
   const author = st.members[0]?.id ?? "me";
   const entries = [
     ...b.notes.map((n) => ({ id: `brain-${n.id}`, text: n.text, epochMs: n.ts })),
-    ...(b.goal ? [{ id: "brain-goal", text: `🎯 Goal: ${b.goal}`, epochMs: Date.now() }] : []),
+    ...(b.goal ? [{ id: "brain-goal", text: `Goal: ${b.goal}`, epochMs: Date.now() }] : []),
   ]
     .filter((e) => !have.has(`${e.id}|${e.text}`))
     .map((e) => ({ ...e, author, ts: new Date(e.epochMs).toTimeString().slice(0, 5), tag: "brain" }));

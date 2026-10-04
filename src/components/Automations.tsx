@@ -246,7 +246,7 @@ function PhoneConfig() {
   useEffect(() => { if (!hasReply) setAppSetting("ntfyReplyTopic", newTopic()); }, [hasReply, setAppSetting]);
   const test = async () => {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("phone_ping", { topic, title: "Grill Me", body: "Phone pings are working 🔥" })
+    await invoke("phone_ping", { topic, title: "Grill Me", body: "Phone pings are working." })
       .then(() => toast("Sent — check your phone"))
       .catch((e) => toast(`Couldn't send: ${e}`, "warn"));
   };

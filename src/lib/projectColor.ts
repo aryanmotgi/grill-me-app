@@ -20,7 +20,7 @@ export function projectColor(id: string): string {
   return `hsl(${hueFromId(id)} 34% 62%)`;
 }
 
-/** Brighter variant for the pixel project icon — sprites need more punch than
+/** Brighter variant for the project monogram tile — needs more punch than
  *  a dot to read at 16px, still desaturated enough for the graphite chrome. */
 export function projectSpriteColor(id: string): string {
   return `hsl(${hueFromId(id)} 62% 64%)`;

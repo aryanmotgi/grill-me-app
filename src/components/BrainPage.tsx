@@ -77,7 +77,7 @@ function DeadlineCard() {
   const save = async () => {
     if (!plan) return;
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("bridge_add_note", { text: `✂ Deadline plan (${label}):\n${plan}`, by: "Deadline coach" })
+    await invoke("bridge_add_note", { text: `Deadline plan (${label}):\n${plan}`, by: "Deadline coach" })
       .then(() => toast("Saved to the brain — every session sees it on its next message"))
       .catch((e) => toast(`${e}`, "warn"));
   };

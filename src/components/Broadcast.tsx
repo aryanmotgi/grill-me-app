@@ -100,7 +100,7 @@ export function Broadcast() {
     // cross-machine reach: also drop it in the team inbox (syncs to remote
     // teammates) so a broadcast isn't limited to locally-spawned sessions.
     if (liveRoom && toInbox) {
-      sendMessage("all", `📣 ${text.trim()}`, "fyi");
+      sendMessage("all", text.trim(), "fyi");
     }
 
     setResults(out);
