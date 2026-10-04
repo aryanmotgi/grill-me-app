@@ -277,7 +277,7 @@ impl Ctx {
             let tasks: Vec<Value> = read_list(&proj.dir.join("tasks.json")).into_iter().filter(|t| !eq_str(get(t, "status"), Some("done"))).collect();
             if !tasks.is_empty() {
                 let lines: Vec<String> =
-                    js::head(&tasks, 15).iter().map(|t| format!("- [{}] {}", to_str(get(t, "status")), to_str(get(t, "title")))).collect();
+                    js::head(&tasks, 15).iter().map(|t| format!("- [{}] {}{}", to_str(get(t, "status")), to_str(get(t, "title")), if get(t, "mvp").and_then(|v| v.as_bool()) == Some(true) { " (MVP must-have)" } else { "" })).collect();
                 out.push(format!("**Open tasks:**\n{}", lines.join("\n")));
             }
         }
@@ -291,7 +291,7 @@ impl Ctx {
             let changed = self.seen_changed(&format!("tasks:{member}"), sig);
             if !full {
                 if changed && !open.is_empty() {
-                    let lines: Vec<String> = js::head(&open, 15).iter().map(|t| format!("- [{}] {}", to_str(get(t, "status")), to_str(get(t, "title")))).collect();
+                    let lines: Vec<String> = js::head(&open, 15).iter().map(|t| format!("- [{}] {}{}", to_str(get(t, "status")), to_str(get(t, "title")), if get(t, "mvp").and_then(|v| v.as_bool()) == Some(true) { " (MVP must-have)" } else { "" })).collect();
                     out.push(format!("**Task board changed — open tasks now:**\n{}", lines.join("\n")));
                 }
             }
