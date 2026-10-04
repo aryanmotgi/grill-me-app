@@ -6,6 +6,7 @@ import { autoPauseEligible, resolveDisplayStatus } from "../../lib/attention";
 import { DEFAULT_STALL_MIN, LOOP_SAMPLES, isStalled, looksLooping } from "../../lib/stall";
 import { isTrustPrompt, TRUST_ACCEPT_KEYS } from "../../lib/ptyReady";
 import { savePoint } from "../../lib/savepoints";
+import { ensureTitle } from "../../lib/autoTitle";
 import { parseResetHint } from "../../lib/ratelimit";
 import { sessionTokens, shouldCapPause } from "../../lib/cap";
 import { fmtTokens } from "../../lib/format";
@@ -501,6 +502,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
           promptSaved[memberId] = hook.ts;
           const repo = store.getState().members.find((m) => m.id === memberId)?.repoPath;
           if (repo) {
+            // name the session after what you asked, once
+            void ensureTitle(memberId, repo, true).catch(() => {});
             const t = new Date(hook.ts * 1000);
             const hhmm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
             void savePoint(repo, `Before your message at ${hhmm}`).catch(() => {});
@@ -525,6 +528,8 @@ export async function startPtyFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
         if (trustPrompt) status = "needs-input";
         const stg = store.getState();
         const member = stg.members.find((m) => m.id === memberId);
+        // sessions you already talked to get a name from their first ask
+        if (member && st.alive) void ensureTitle(memberId, member.repoPath).catch(() => {});
         // a worktree Grill Me made is a copy of a project you already chose:
         // answer Claude's "trust this folder?" for you (once per session start)
         if (trustPrompt && member && !autoTrusted.has(st.id)) {
