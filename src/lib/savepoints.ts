@@ -64,14 +64,17 @@ export async function goBack(repoPath: string, id: string): Promise<string> {
 }
 
 /** The save point taken just before a turn: by its label (the chat box names
- *  it after your message), else the newest one from up to two minutes
- *  before the turn started (a prompt typed in the terminal or the CLI). */
+ *  it after your message), else the newest one taken by the time the turn
+ *  started (a prompt typed in the terminal or the CLI). */
 export function pointForTurn(points: SavePoint[], ask: string | undefined, startMs: number | undefined): SavePoint | undefined {
   if (ask) {
     const byLabel = points.find((p) => p.label === beforeLabel(ask));
     if (byLabel) return byLabel;
   }
   if (!startMs) return undefined;
+  // the newest one taken by the time the turn started: a save point is taken
+  // before every message, and an unchanged folder reuses the last one, so
+  // it can be old and still be exactly the "before" state
   const start = startMs / 1000;
-  return points.filter((p) => p.at <= start + 10 && p.at >= start - 120).sort((a, b) => b.at - a.at)[0];
+  return points.filter((p) => p.at <= start + 10).sort((a, b) => b.at - a.at)[0];
 }

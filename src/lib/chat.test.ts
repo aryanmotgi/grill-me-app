@@ -124,3 +124,10 @@ describe("turn receipts", () => {
     for (const c of ["npm run build", "git status", "ls tests/"]) expect(isTestCommand(c)).toBe(false);
   });
 });
+
+describe("compact summaries", () => {
+  it("show as one quiet note, not a giant message from you", () => {
+    const items = parseTranscript([JSON.stringify({ type: "user", uuid: "s", isCompactSummary: true, message: { content: "This session is being continued from a previous conversation…" } })]);
+    expect(items).toEqual([{ kind: "note", id: "s", text: "Conversation compacted: earlier turns summarised to save tokens" }]);
+  });
+});

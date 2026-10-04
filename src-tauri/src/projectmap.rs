@@ -29,11 +29,16 @@ const MAX_HTML: u64 = 8_000_000;
 
 static RUNS: Mutex<Option<HashMap<String, (Child, Instant)>>> = Mutex::new(None);
 
-pub const PROMPT: &str = "Use the archify skill to draw an interactive architecture diagram of this repository as it is right now: \
+/// The map agent works from inside .archify/grillme-map/ so its conversation
+/// is its own: started in the project folder, it showed up as your main
+/// session's chat. `{repo}` is the project's absolute path.
+pub fn prompt(repo: &str) -> String {
+    format!("Use the archify skill to draw an interactive architecture diagram of the repository at {repo} as it is right now: \
 its main parts (screens or pages, APIs, services, background jobs, data stores, external services) and how they connect, backed by the real source code. \
 Use plain names someone new to the code understands. \
-Write the candidate JSON and the HTML in .archify/grillme-map/, with the final HTML at .archify/grillme-map/project-map.html, replacing any previous one. \
-Run archify's finalize step and repair until it passes. Do not create, change or delete any file outside .archify/.";
+You are working in {repo}/.archify/grillme-map/: write the candidate JSON and the HTML here, with the final HTML at project-map.html in this folder, replacing any previous one. \
+Run archify's finalize step and repair until it passes. Do not create, change or delete any file outside {repo}/.archify/.")
+}
 
 fn home() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
@@ -133,8 +138,11 @@ pub fn map_generate(repo_path: String) -> Result<(), String> {
     let log = std::fs::File::create(dir.join("run.log")).map_err(|e| e.to_string())?;
     let child = Command::new("/bin/zsh")
         .arg("-lc").arg("exec \"$@\"").arg("grillme-map")
-        .args(["claude", "-p", PROMPT, "--dangerously-skip-permissions"])
-        .current_dir(&repo)
+        // its own folder (its own conversation, not your session's chat), and
+        // only your user settings: the project's Grill Me hooks would report
+        // its work as your session's
+        .args(["claude", "-p", &prompt(&repo.to_string_lossy()), "--dangerously-skip-permissions", "--setting-sources", "user"])
+        .current_dir(&dir)
         .stdin(Stdio::null())
         .stdout(log.try_clone().map_err(|e| e.to_string())?)
         .stderr(log)
@@ -233,7 +241,9 @@ mod tests {
 
     #[test]
     fn the_prompt_keeps_the_agent_inside_the_map_folder() {
-        assert!(PROMPT.contains(".archify/grillme-map/project-map.html"));
-        assert!(PROMPT.contains("Do not create, change or delete any file outside .archify/"));
+        let p = prompt("/code/farm");
+        assert!(p.contains("/code/farm/.archify/grillme-map/"));
+        assert!(p.contains("project-map.html in this folder"));
+        assert!(p.contains("Do not create, change or delete any file outside /code/farm/.archify/"));
     }
 }

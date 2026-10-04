@@ -94,9 +94,14 @@ export function parseTranscript(lines: string[]): ChatItem[] {
   let n = 0;
 
   for (const line of lines) {
-    let o: { type?: string; isMeta?: boolean; isSidechain?: boolean; uuid?: string; timestamp?: string; message?: { id?: string; content?: unknown; model?: string; usage?: Record<string, unknown> } };
+    let o: { type?: string; isMeta?: boolean; isSidechain?: boolean; isCompactSummary?: boolean; uuid?: string; timestamp?: string; message?: { id?: string; content?: unknown; model?: string; usage?: Record<string, unknown> } };
     try { o = JSON.parse(line); } catch { continue; }
     if (!o || o.isSidechain || o.isMeta) continue;
+    // /compact's summary is Claude's own notes to itself, not something you said
+    if (o.isCompactSummary) {
+      items.push({ kind: "note", id: o.uuid ?? `c${n++}`, text: "Conversation compacted: earlier turns summarised to save tokens" });
+      continue;
+    }
     if (o.type !== "user" && o.type !== "assistant") continue;
     const content = o.message?.content;
     const baseId = o.uuid ?? `l${n}`;
