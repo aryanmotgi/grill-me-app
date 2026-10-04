@@ -4,6 +4,9 @@ import { Icon } from "../Icon";
 import { ProjectIcon } from "../ProjectIcon";
 import type { TeamSession } from "../../types";
 import type { MainView } from "../../store";
+import { useEffect, useState } from "react";
+import { projectStates, stateLabel, type ProjectState, type PtyLite } from "../../lib/projectStatus";
+import { switchProject } from "../../lib/switchProject";
 import { useDNA } from "../../lib/dnaStore";
 import { notices } from "../../lib/spark";
 import { useBridge } from "../BridgePanel";
@@ -66,6 +69,54 @@ function Hub() {
         {waiting ? <span className="text-[11px] text-warn num">{waiting}</span> : null}
       </button>
     </nav>
+  );
+}
+
+/** Every project, with what's happening in it, one click (or ⌃1–9) away.
+ *  Agents in the others keep running while you're here. */
+function Projects() {
+  const projects = useApp((s) => s.projects);
+  const active = useApp((s) => s.activeProject);
+  const setPickerOpen = useApp((s) => s.setPickerOpen);
+  const [states, setStates] = useState<Record<string, ProjectState>>({});
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let alive = true;
+    const load = () => void import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke<PtyLite[]>("pty_status"))
+      .then((list) => { if (alive) setStates(projectStates(list)); }).catch(() => {});
+    load();
+    const t = setInterval(load, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  if (projects.length < 2) return null;
+  return (
+    <div className="flex-none border-t border-line px-2 py-2">
+      <button className="flex items-center gap-1.5 w-full px-2 pb-1 text-[11px] tracking-[0.12em] uppercase text-faint font-semibold cursor-pointer hover:text-dim"
+        onClick={() => setOpen(!open)} aria-expanded={open}>
+        <Icon name="chevron" size={9} className={`transition-transform ${open ? "rotate-90" : ""}`} /> Projects
+        <span className="flex-1" />
+        <span className="normal-case tracking-normal font-normal" title="Add or manage projects (⌘P)" onClick={(e) => { e.stopPropagation(); setPickerOpen(true); }}>
+          <Icon name="plus" size={11} />
+        </span>
+      </button>
+      {open ? projects.slice(0, 9).map((p, i) => {
+        const here = p.id === active;
+        const st = stateLabel(states[p.id]);
+        return (
+          <button key={p.id} title={`${p.path} · ⌃${i + 1}`} aria-current={here ? "true" : undefined}
+            className={`flex items-center gap-2 w-full h-8 px-2.5 rounded-lg text-left cursor-pointer transition-colors ${here ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`}
+            onClick={() => void switchProject(p.id)}>
+            <ProjectIcon id={p.id} color={p.color} size={14} />
+            <span className="text-[12.5px] truncate flex-1">{p.name}</span>
+            {st.text && !here ? (
+              <span className={`text-[10.5px] flex-none ${st.tone === "needs" ? "text-warn" : st.tone === "working" ? "text-ok" : "text-faint"}`}>{st.text}</span>
+            ) : <span className="text-[10.5px] text-faint num flex-none">⌃{i + 1}</span>}
+          </button>
+        );
+      }) : null}
+    </div>
   );
 }
 
@@ -158,6 +209,7 @@ export function SimpleSidebar() {
         <SessionList bare />
       </div>
       <TeammateSessions rows={others} />
+      <Projects />
       <Hub />
       <Footer />
     </aside>

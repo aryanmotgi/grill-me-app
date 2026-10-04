@@ -79,6 +79,15 @@ export default function App() {
       // ModeSelect owns the keyboard until a mode is chosen
       if (useApp.getState().appMode === null) return;
       const mod = e.metaKey || e.ctrlKey;
+      // ⌃1–9: jump to that project (the sidebar's Projects list order)
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key >= "1" && e.key <= "9") {
+        const p = useApp.getState().projects[Number(e.key) - 1];
+        if (p) {
+          e.preventDefault();
+          void import("./lib/switchProject").then((m) => m.switchProject(p.id));
+          return;
+        }
+      }
       if (mod && e.key === "/") {
         e.preventDefault();
         useApp.setState({ featureIndexOpen: !useApp.getState().featureIndexOpen });
