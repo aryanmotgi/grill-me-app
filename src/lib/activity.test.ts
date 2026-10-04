@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem } from "./activity";
+import { addItem, localOverlaps, overlapLine } from "./activity";
 
 describe("activity", () => {
   it("adds newest first", () => {
@@ -19,5 +19,21 @@ describe("activity", () => {
     let a: ReturnType<typeof addItem> = [];
     for (let i = 0; i < 80; i++) a = addItem(a, `n${i}`, "info", i);
     expect(a).toHaveLength(60);
+  });
+});
+
+describe("overlaps", () => {
+  it("finds files two of your sessions are changing, and says so plainly", () => {
+    const o = localOverlaps([
+      { title: "Barn", files: ["src/game.js", "logic.js"] },
+      { title: "Market", files: ["src/game.js"] },
+      { title: "Sound", files: ["sound.js"] },
+    ]);
+    expect(o).toEqual([{ file: "src/game.js", who: ["Barn", "Market"] }]);
+    expect(overlapLine("src/game.js", ["Barn", "Market"])).toBe("Barn and Market are both changing game.js");
+    expect(overlapLine("a.js", ["A", "B", "C"])).toBe("A, B and C are both changing a.js");
+  });
+  it("carries a one-click action", () => {
+    expect(addItem([], "x", "warn", 0, "merge-sessions")[0].action).toBe("merge-sessions");
   });
 });

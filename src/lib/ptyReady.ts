@@ -121,3 +121,15 @@ export async function submitToAgent(ptyId: string, text: string): Promise<void> 
   // the agent is still holding the message ("press Enter to send")
   await invoke("pty_submit", { id: ptyId, text });
 }
+
+/** Send a message to a session even if its agent isn't running yet (after a
+ *  restart, agents start when you open them): start it, wait until it's at
+ *  its prompt, then send. */
+export async function sendToSession(member: { id: string; repoPath: string; remote?: string | null; tmuxSession?: string | null; agent?: string | null }, ptyId: string, text: string): Promise<boolean> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("pty_ensure", {
+    id: ptyId, cwd: member.repoPath, shell: false,
+    remote: member.remote ?? null, tmux: member.tmuxSession ?? null, agent: member.agent ?? null,
+  }).catch(() => {});
+  return deliverBriefWhenReady(ptyId, text);
+}
