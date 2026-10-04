@@ -220,3 +220,51 @@ export function ProjectMap({ repo }: { repo: string | undefined }) {
     </section>
   );
 }
+
+// -- what Grill Me did for you -------------------------------------------------------
+
+interface Week { counts: Record<string, number>; since: number | null }
+const DID: { kind: string; icon: string; one: string; many: (n: number) => string; why: string }[] = [
+  { kind: "blocked", icon: "lock", one: "Blocked a risky command", many: (n) => `Blocked ${n} risky commands`, why: "Force-push to main, rm -rf, DROP TABLE… stopped before they ran" },
+  { kind: "tests-failed", icon: "cross", one: "Caught a failing test run", many: (n) => `Caught ${n} failing test runs`, why: "Tests ran after a change and failed, so you knew right away" },
+  { kind: "undo", icon: "up", one: "Undid a turn", many: (n) => `Undid ${n} turns`, why: "Files put back from a save point" },
+  { kind: "merge", icon: "merge", one: "Merged a session's work", many: (n) => `Merged ${n} sessions' work`, why: "Merged by Grill Me with a save point first" },
+  { kind: "compact", icon: "bolt", one: "Compacted a heavy session", many: (n) => `Compacted ${n} heavy sessions`, why: "Each one makes every later message in it cheaper" },
+];
+
+/** The last 7 days, counted from a local log. Real events only, no estimates. */
+export function WeekCard() {
+  const [w, setW] = useState<Week | null>(null);
+  useEffect(() => {
+    if (!native()) return;
+    let alive = true;
+    const load = () => void call<Week>("impact_week").then((x) => { if (alive) setW(x); }).catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  if (!w) return null;
+  const rows = DID.filter((d) => (w.counts[d.kind] ?? 0) > 0);
+  return (
+    <section aria-label="What Grill Me did for you this week">
+      <Label>This week, Grill Me</Label>
+      <div className="rounded-xl border border-line bg-raised/20 px-4 py-3">
+        {rows.length ? (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            {rows.map((d) => {
+              const n = w.counts[d.kind];
+              return (
+                <div key={d.kind} className="flex items-center gap-2 text-[12.5px] text-dim" title={d.why}>
+                  <Icon name={d.icon} size={12} className={d.kind === "undo" ? "text-accent -rotate-90" : "text-accent"} />
+                  <span className="num text-ink">{n === 1 ? d.one : d.many(n)}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[12.5px] text-faint">Nothing yet this week. Blocked commands, undone turns, caught test failures, merges and compacts show up here as they happen.</p>
+        )}
+      </div>
+    </section>
+  );
+}

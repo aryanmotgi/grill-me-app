@@ -119,6 +119,7 @@ pub fn merge_branches(repo_path: String, branches: Vec<String>) -> Result<MergeR
             let _ = git(repo, &["merge", "--abort"]);
             return Ok(MergeResult { merged, conflict: Some(b.clone()) });
         }
+        crate::impact::log("merge", b);
         merged.push(b.clone());
     }
     Ok(MergeResult { merged, conflict: None })

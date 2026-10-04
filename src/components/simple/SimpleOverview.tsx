@@ -16,7 +16,7 @@ import { interviewBrainOf } from "../../lib/aiConnect";
 import { useDNA } from "../../lib/dnaStore";
 import { notices } from "../../lib/spark";
 import type { Teammate } from "../../types";
-import { GoalWatch, ProjectMap } from "./OverviewExtras";
+import { GoalWatch, ProjectMap, WeekCard } from "./OverviewExtras";
 import { useMergeSessions } from "../../lib/mergeSessions";
 
 // ---------------------------------------------------------------------------
@@ -391,6 +391,7 @@ export function SimpleOverview() {
         <ProjectMap repo={projectPath ?? repos[0]} />
         <RunningApps folders={projectPath ? [projectPath, ...repos] : repos} />
         <Today days={days} repos={repos} />
+        <WeekCard />
         <SparkTip />
         <button className="self-start text-[12px] text-faint hover:text-ink cursor-pointer" onClick={() => setFull(true)}>
           Show the full dashboard (activity, merges, budget) →

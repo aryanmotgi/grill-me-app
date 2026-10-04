@@ -26,6 +26,7 @@ mod usage;
 mod projectmap;
 mod agentreap;
 mod merge;
+mod impact;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -994,6 +995,10 @@ fn pty_submit(id: String, text: String) -> Result<(), String> {
     pty_write(id.clone(), typed)?;
     std::thread::sleep(std::time::Duration::from_millis(150));
     pty_write(id.clone(), enter.to_string())?;
+    // counted only once it really reached the session
+    if text.trim() == "/compact" {
+        impact::log("compact", &id);
+    }
     std::thread::spawn(move || {
         for _ in 0..8 {
             std::thread::sleep(std::time::Duration::from_millis(250));
@@ -3319,7 +3324,7 @@ fn git_clone(url: String, dest: String) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 const HOOK_HELPER: &str = r#"#!/usr/bin/env python3
-# grillme-hook v2 — per-line, case-insensitive, quote-stripping, fails closed.
+# grillme-hook v3 — per-line, case-insensitive, quote-stripping, fails closed.
 import json, sys, time, os, re
 
 mode, member, proj_dir = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -3340,9 +3345,22 @@ def unquote(line):
     return " ".join(toks)
 
 
+# Grill Me's own folder: the project dir is <root> or <root>/projects/<id>
+root = os.path.dirname(os.path.dirname(proj_dir)) if os.path.basename(os.path.dirname(proj_dir)) == "projects" else proj_dir
+
+
+def impact(kind, detail):
+    # the weekly "what Grill Me did for you" count; never blocks anything
+    try:
+        with open(os.path.join(root, "impact.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": int(time.time()), "kind": kind, "id": member, "detail": detail[:120]}) + "\n")
+    except Exception:
+        pass
+
+
 if mode == "pre":
     cmd = (data.get("tool_input") or {}).get("command", "") or ""
-    bl_path = os.path.expanduser("~/.grillme/blocklist.json")
+    bl_path = os.path.join(root, "blocklist.json")
     patterns = []
     if os.path.exists(bl_path):
         try:
@@ -3365,6 +3383,7 @@ if mode == "pre":
             sys.exit(2)
         for line in lines:
             if rx.search(line):
+                impact("blocked", line)
                 print(f"BLOCKED by Grill Me safety blocklist (pattern: {pat}). "
                       "This command is flagged destructive - ask the user for explicit confirmation first.",
                       file=sys.stderr)
@@ -4958,6 +4977,8 @@ pub fn run() {
             worktree_is_ours,
             merge::merge_preview,
             merge::merge_branches,
+            impact::impact_log,
+            impact::impact_week,
             savepoint::savepoint_create,
             savepoint::savepoint_list,
             savepoint::savepoint_restore,

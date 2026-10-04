@@ -11,10 +11,15 @@ import { isNeutral } from "./goalWatch";
 import { titleFromAsk } from "./sessionTitle";
 
 const asked = new Set<string>();
+/** Messages Grill Me itself sent (merge, commit requests): never a name. */
+const ours = new Set<string>();
+export const markSent = (text: string) => { ours.add(text.trim()); };
+/** Grill Me's standard requests, recognised after a restart too. */
+const OURS = /^(commit your current work on this branch|merge these session branches|the tests fail after your last change|look at the last error in this session|in 3 short bullets, what did you change|review your changes for bugs|run the test suite\. if anything fails)/i;
 
 /** The name for a session from its transcript lines, or "" when nothing fits. */
 export function titleFromTranscript(lines: string[]): string {
-  const first = parseTranscript(lines).find((i) => i.kind === "user" && !isNeutral(i.text));
+  const first = parseTranscript(lines).find((i) => i.kind === "user" && !isNeutral(i.text) && !ours.has(i.text.trim()) && !OURS.test(i.text.trim()));
   return first && first.kind === "user" ? titleFromAsk(first.text) : "";
 }
 
