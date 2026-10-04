@@ -27,6 +27,7 @@ mod projectmap;
 mod agentreap;
 mod merge;
 mod impact;
+mod explain;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -153,7 +154,7 @@ pub struct GitState {
 
 /// Never let git (or credential helpers) block on an interactive prompt —
 /// a hung subprocess would stall the 10s git poller thread indefinitely.
-fn no_prompt(cmd: &mut Command) -> &mut Command {
+pub(crate) fn no_prompt(cmd: &mut Command) -> &mut Command {
     cmd.env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never")
 }
 
@@ -577,6 +578,11 @@ static CLAUDE_PATH: OnceLock<Option<String>> = OnceLock::new();
 /// environment pty_ensure spawns it in). Returns its resolved path, or an
 /// actionable error the frontend can surface instead of letting the pane
 /// enter a spawn/die/respawn loop.
+/// For other modules: is the claude CLI reachable.
+pub(crate) fn claude_ready() -> Result<String, String> {
+    preflight_claude()
+}
+
 #[tauri::command(async)]
 fn preflight_claude() -> Result<String, String> {
     if let Some(Some(path)) = CLAUDE_PATH.get() {
@@ -2090,7 +2096,7 @@ pub(crate) fn is_grillme_managed(path: &str) -> bool {
     path == "CLAUDE.md" || path == "DELEGATION.md" || path == ".claude/" || path.starts_with(".claude/")
 }
 
-fn sh_quote(s: &str) -> String {
+pub(crate) fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
@@ -3130,7 +3136,7 @@ fn summarize_session(pty_id: String, branch: String, task: String) -> Result<Str
 /// Strip a leading/trailing markdown code fence a model may wrap prose in,
 /// so a summary never leaks ```…``` into the popover. Mirrors the defensive
 /// fence handling used for JSON in room.rs, but for free text.
-fn strip_prose_fence(raw: &str) -> String {
+pub(crate) fn strip_prose_fence(raw: &str) -> String {
     let s = raw.trim();
     if let Some(rest) = s.strip_prefix("```") {
         // drop the rest of the opening fence line, then a trailing fence
@@ -4983,6 +4989,7 @@ pub fn run() {
             savepoint::savepoint_list,
             savepoint::savepoint_restore,
             savepoint::savepoint_changes,
+            explain::turn_explain,
             usage::agent_usage,
             usage::transcript_recent,
             projectmap::archify_installed,

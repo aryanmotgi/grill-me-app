@@ -6,6 +6,7 @@ import { modelLabel, parseTranscript, toRows, type ChatItem, type ChatRow } from
 import { AgentLogo } from "./AgentLogo";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
+import { TurnCard, type TurnSpan } from "./TurnCard";
 import { TRUST_ACCEPT_KEYS } from "../lib/ptyReady";
 import { money, turnCost } from "../lib/coach";
 import { uiLayoutOf } from "../lib/uiLayout";
@@ -193,12 +194,14 @@ const dur = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}
 
 /** The receipt under a finished turn: what it touched, whether the tests
  *  passed, what it cost, and undo, all in one line. */
-function Receipt({ row: raw, undo, gitFiles }: { row: Extract<ChatRow, { kind: "worked" }>; undo?: () => void; gitFiles?: string[] }) {
+function Receipt({ row: raw, undo, gitFiles, repoPath, span }: { row: Extract<ChatRow, { kind: "worked" }>; undo?: () => void; gitFiles?: string[]; repoPath?: string; span?: TurnSpan }) {
+  const [open, setOpen] = useState(false);
   // what git saw change (shell edits included) plus Claude's own file edits
   const row = gitFiles ? { ...raw, files: mergeFiles(raw.files, gitFiles) } : raw;
   const cost = turnCost(row.usage, row.modelId);
   const shown = row.files.slice(0, 3);
   return (
+    <>
     <div className="turn-receipt flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-faint pb-3">
       <span className="flex items-center gap-1.5"><AgentLogo agent="claude" size={12} /> {row.model} · <span className="num">{dur(row.seconds)}</span></span>
       {row.files.length ? (
@@ -219,19 +222,27 @@ function Receipt({ row: raw, undo, gitFiles }: { row: Extract<ChatRow, { kind: "
           <Icon name="up" size={10} className="-rotate-90" /> Undo this turn
         </button>
       ) : null}
+      {repoPath && span && row.files.length ? (
+        <button className={`flex items-center gap-1 cursor-pointer ${open ? "text-ink" : "hover:text-ink"}`} onClick={() => setOpen(!open)}
+          title="What this turn changed and why, in plain words">
+          <Icon name="spark" size={10} /> What happened?
+        </button>
+      ) : null}
     </div>
+    {open && repoPath && span ? <TurnCard repoPath={repoPath} span={span} ask={row.ask ?? ""} reply={row.reply ?? ""} onClose={() => setOpen(false)} /> : null}
+    </>
   );
 }
 
 /** The conversation rows (bubbles, replies, tool groups, turn receipts) —
  *  shared by session chat and the Grill Me Chat panel. `undoFor` turns on
  *  per-turn undo where save points exist. */
-export function ChatRows({ rows, undoFor, gitFiles }: { rows: ChatRow[]; undoFor?: (ask: string | undefined, startTs?: number) => (() => void) | undefined; gitFiles?: Record<string, string[]> }) {
+export function ChatRows({ rows, undoFor, gitFiles, repoPath, spans }: { rows: ChatRow[]; undoFor?: (ask: string | undefined, startTs?: number) => (() => void) | undefined; gitFiles?: Record<string, string[]>; repoPath?: string; spans?: Record<string, TurnSpan> }) {
   return (
     <>
       {rows.map((row) => {
         if (row.kind === "tools") return <ToolGroup key={row.id} tools={row.tools} />;
-        if (row.kind === "worked") return <Receipt key={row.id} row={row} undo={undoFor?.(row.ask, row.startTs)} gitFiles={gitFiles?.[row.id]} />;
+        if (row.kind === "worked") return <Receipt key={row.id} row={row} undo={undoFor?.(row.ask, row.startTs)} gitFiles={gitFiles?.[row.id]} repoPath={repoPath} span={spans?.[row.id]} />;
         const it = row.item;
         return it.kind === "user" ? (
           <div key={it.id} className="flex justify-end pt-2">
@@ -289,6 +300,8 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
   // (or the folder now, for the latest). Catches edits made through shell
   // commands, which Claude's edit tools don't show.
   const [gitFiles, setGitFiles] = useState<Record<string, string[]>>({});
+  // each turn's save points, for "What just happened"
+  const [spans, setSpans] = useState<Record<string, TurnSpan>>({});
   const turnKey = rows.filter((r) => r.kind === "worked").map((r) => r.id).join("|") + `#${points.length}`;
   useEffect(() => {
     if (!repoPath || !("__TAURI_INTERNALS__" in window)) return;
@@ -297,15 +310,17 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
     void (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
       const out: Record<string, string[]> = {};
+      const bounds: Record<string, TurnSpan> = {};
       for (let i = 0; i < turns.length; i++) {
         const from = pointForTurn(points, turns[i].ask, turns[i].startTs);
         if (!from) continue;
         const next = turns[i + 1] ? pointForTurn(points, turns[i + 1].ask, turns[i + 1].startTs) : undefined;
         if (turns[i + 1] && !next) continue; // can't bound it: leave Claude's own list
+        bounds[turns[i].id] = { from: from.id, until: next?.id };
         const files = await invoke<string[]>("savepoint_changes", { repoPath, from: from.id, until: next?.id ?? null }).catch(() => null);
         if (files) out[turns[i].id] = files;
       }
-      if (alive) setGitFiles(out);
+      if (alive) { setGitFiles(out); setSpans(bounds); }
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -354,7 +369,7 @@ export function ChatView({ mate, repoPath, onOpenTerminal }: {
             <p className="text-faint text-[12px]">Send one below — the conversation shows up here.</p>
           </div>
         ) : (
-          <ChatRows rows={rows} undoFor={undoFor} gitFiles={gitFiles} />
+          <ChatRows rows={rows} undoFor={undoFor} gitFiles={gitFiles} repoPath={repoPath} spans={spans} />
         )}
         {pending.map((p) => (
           <div key={p.at} className="flex justify-end pt-2">

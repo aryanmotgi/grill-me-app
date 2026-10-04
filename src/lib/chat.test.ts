@@ -86,7 +86,7 @@ describe("toRows", () => {
     expect(rows.map((r) => r.kind)).toEqual(["item", "tools", "item", "worked"]);
     const g = rows[1];
     expect(g.kind === "tools" && g.tools.length).toBe(2);
-    expect(rows[3]).toMatchObject({ kind: "worked", model: "Opus 4.8", seconds: 17 });
+    expect(rows[3]).toMatchObject({ kind: "worked", model: "Opus 4.8", seconds: 17, ask: "go", reply: "done" });
   });
   it("leaves the live turn open while working", () => {
     expect(toRows(parseTranscript(lines), true).some((r) => r.kind === "worked")).toBe(false);
