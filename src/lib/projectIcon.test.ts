@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { projectMonogram } from "../components/ProjectIcon";
+import { PROJECT_GLYPHS, projectGlyphIndex } from "../components/ProjectIcon";
 
-describe("project monogram", () => {
-  it("uses the first letter, or two for two-word names when asked", () => {
-    expect(projectMonogram("farm-sim")).toBe("F");
-    expect(projectMonogram("farm-sim", true)).toBe("FS");
-    expect(projectMonogram("demo", true)).toBe("D");
-    expect(projectMonogram("  ")).toBe("?");
-    expect(projectMonogram("éclair app")).toBe("É");
+describe("project glyphs", () => {
+  it("are all named and distinct", () => {
+    expect(new Set(PROJECT_GLYPHS.map((g) => g.name)).size).toBe(PROJECT_GLYPHS.length);
+  });
+  it("pick a stable glyph per project id, spread across the set", () => {
+    expect(projectGlyphIndex("rouge")).toBe(projectGlyphIndex("rouge"));
+    const idx = new Set(["a", "b", "rouge", "grill-me", "blindspot", "x1", "x2", "x3"].map(projectGlyphIndex));
+    expect(idx.size).toBeGreaterThan(2);
   });
 });
