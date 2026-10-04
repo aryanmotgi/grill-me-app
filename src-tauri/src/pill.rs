@@ -38,10 +38,12 @@ const MARGIN: f64 = 8.0;
 /// how close (window edge to screen edge) counts as "dropped on the edge"
 const SNAP: f64 = 140.0;
 /// no input this long counts as away
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const AWAY_SECS: f64 = 600.0;
 
 static HIT: Mutex<Vec<[f64; 4]>> = Mutex::new(Vec::new());
 static ON: AtomicBool = AtomicBool::new(false);
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 static WATCHING: AtomicBool = AtomicBool::new(false);
 /// "Floating" placement: stay where dropped, never dock to an edge.
 static FLOATING: AtomicBool = AtomicBool::new(false);
@@ -185,6 +187,8 @@ fn native_float(app: &AppHandle) {
         let ptr = win.ns_window().map(|p| p as usize).unwrap_or(0);
         let _ = app.run_on_main_thread(move || mac::float(ptr as *mut std::ffi::c_void));
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 #[tauri::command]

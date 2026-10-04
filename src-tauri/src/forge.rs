@@ -123,7 +123,7 @@ pub(crate) fn cursor_points() -> Option<(f64, f64)> {
     }
 }
 #[cfg(not(target_os = "macos"))]
-fn cursor_points() -> Option<(f64, f64)> { None }
+pub(crate) fn cursor_points() -> Option<(f64, f64)> { None }
 
 /// GRILLME_HITLOG=1: once a second, where the cursor is and what the page
 /// says is clickable (to debug clicks falling through).
