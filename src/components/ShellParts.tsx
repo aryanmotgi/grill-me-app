@@ -18,6 +18,7 @@ import { SessionHandoff } from "./SessionHandoff";
 import { HomeDashboard } from "./HomeDashboard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SimpleOverview } from "./simple/SimpleOverview";
+import { SimpleBrain } from "./simple/SimpleBrain";
 import { uiLayoutOf } from "../lib/uiLayout";
 import { FeatureIndex } from "./FeatureIndex";
 import { DiffBoard } from "./DiffBoard";
@@ -76,7 +77,7 @@ function CenterStageInner({ active, split }: { active: Teammate | undefined; spl
     ) : view === "automations" ? (
       <AutomationsPage />
     ) : view === "brain" ? (
-      <BrainPage />
+      simple ? <SimpleBrain /> : <BrainPage />
     ) : view === "dna" ? (
       <DNAPage />
     ) : view === "flow" ? (

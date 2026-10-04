@@ -78,6 +78,8 @@ export interface Task {
   desc: string;
   owner: string; // teammate id
   status: TaskStatus;
+  /** A must-have for the first version (the MVP). */
+  mvp?: boolean;
   files: string[];
   blockedBy?: string; // task id
   /** epoch ms when moved to in-progress — drives the per-task timer */

@@ -128,7 +128,7 @@ fn brain_text(ctx: &Ctx) -> Result<String, String> {
     }
     let tasks: Vec<Value> = read_list(&proj.dir.join("tasks.json")).into_iter().filter(|t| !eq_str(get(t, "status"), Some("done"))).collect();
     if !tasks.is_empty() {
-        out.push(format!("## Open tasks\n{}", js::head(&tasks, 25).iter().map(|t| format!("- [{}] {}", to_str(get(t, "status")), to_str(get(t, "title")))).collect::<Vec<_>>().join("\n")));
+        out.push(format!("## Open tasks\n{}", js::head(&tasks, 25).iter().map(|t| format!("- [{}] {}{}", to_str(get(t, "status")), to_str(get(t, "title")), if get(t, "mvp").and_then(|v| v.as_bool()) == Some(true) { " (MVP must-have)" } else { "" })).collect::<Vec<_>>().join("\n")));
     }
     let notes = get(&b, "notes").and_then(Value::as_array).cloned().unwrap_or_default();
     if !notes.is_empty() {
