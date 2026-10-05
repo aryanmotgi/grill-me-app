@@ -72,6 +72,10 @@ function CenterStageInner({ active, split }: { active: Teammate | undefined; spl
   const panelSizes = useApp((s) => s.panelSizes);
   const setPanelSize = useApp((s) => s.setPanelSize);
   const simple = useApp((s) => uiLayoutOf(s.appSettings) === "simple");
+  // A session split against itself renders no second pane, so it must not
+  // reserve half the width either — that leaves dead space with no drag
+  // handle to reclaim it. One condition drives both.
+  const showSplit = !!split && !!active && split.id !== active.id && !focusMode;
   return (
     <>
     {view === "home" ? (
@@ -104,10 +108,10 @@ function CenterStageInner({ active, split }: { active: Teammate | undefined; spl
     ) : (
     <>
     <div className="flex-1 min-h-0 flex">
-      <div className="min-w-0 flex" style={{ flexBasis: split && !focusMode ? `${panelSizes.split * 100}%` : "100%" }}>
+      <div className="min-w-0 flex" style={{ flexBasis: showSplit ? `${panelSizes.split * 100}%` : "100%" }}>
         <SessionPane mate={active} />
       </div>
-      {split && split.id !== active.id && !focusMode ? (
+      {showSplit ? (
         <>
           <DragHandle onDrag={(dx) => {
             const el = document.querySelector("main");
