@@ -163,16 +163,37 @@ mod mac {
     );
 
     /// Turn the window into the non-activating panel above.
+    ///
+    /// `set_class` is only sound when the two classes are the same size —
+    /// a bigger class would read ivars the object has no room for, and objc2
+    /// aborts the process rather than allow it. Tauri hands us an NSWindow
+    /// (448 bytes) while PillPanel inherits NSPanel (456), so on the builds
+    /// where that holds we skip the reclass: the pill then activates the app
+    /// when focused, which is a worse pill but a running one. The rest of the
+    /// panel setup below is plain NSWindow API and applies either way.
     fn make_panel(w: &AnyObject) {
         unsafe {
-            AnyObject::set_class(w, PillPanel::class());
-            let mask: usize = msg_send![w, styleMask];
-            // NSWindowStyleMaskNonactivatingPanel
-            let _: () = msg_send![w, setStyleMask: mask | (1 << 7)];
-            let _: () = msg_send![w, setFloatingPanel: true];
-            // only take the keyboard when something that types is clicked
-            let _: () = msg_send![w, setBecomesKeyOnlyIfNeeded: true];
-            let _: () = msg_send![w, setWorksWhenModal: true];
+            let want = PillPanel::class();
+            let have = (*w).class();
+            if have.instance_size() == want.instance_size() {
+                AnyObject::set_class(w, want);
+                let mask: usize = msg_send![w, styleMask];
+                // NSWindowStyleMaskNonactivatingPanel — NSWindow rejects it
+                let _: () = msg_send![w, setStyleMask: mask | (1 << 7)];
+                // NSPanel-only selectors: sending them to a plain NSWindow
+                // raises NSInvalidArgumentException and kills the app
+                let _: () = msg_send![w, setFloatingPanel: true];
+                // only take the keyboard when something that types is clicked
+                let _: () = msg_send![w, setBecomesKeyOnlyIfNeeded: true];
+                let _: () = msg_send![w, setWorksWhenModal: true];
+            } else {
+                eprintln!(
+                    "pill: {} is {} bytes and {} is {} — leaving it a plain window; \
+                     the pill will activate the app when focused",
+                    have.name().to_string_lossy(), have.instance_size(),
+                    want.name().to_string_lossy(), want.instance_size(),
+                );
+            }
         }
     }
 
