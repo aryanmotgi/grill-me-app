@@ -104,6 +104,8 @@ export function NavRail({ side = "left" }: { side?: "left" | "right" }) {
           <NavItem icon="eye" label="Preview" active={view === "preview"} title="Live preview of the app you're building"
             onClick={() => go("preview")} />
         ) : null}
+        <NavItem icon="push" label="Ship" active={view === "ship"} title="The last two hours: demo path, preview, pitch readiness, deck and README"
+          onClick={() => go("ship")} />
 
         {/* the rest folds away so the rail stays calm; opens itself when one is active */}
         <button className="flex items-center gap-2 px-2.5 h-7 mt-1 text-[12px] text-faint hover:text-dim cursor-pointer"

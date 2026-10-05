@@ -37,6 +37,7 @@ const DEFAULT_SKILLS: &[(&str, &str)] = &[
     ("breakdown", "# Breakdown\n\nSplit the chosen idea into tasks we can run in parallel:\n\n1. Define the demo path first — the exact clicks the judges will see.\n2. Break it into 4–8 tasks that touch different files so sessions don't collide.\n3. Mark what's must-have for the demo vs nice-to-have.\n4. Save it with save_plan so the tasks land on the board.\n"),
     ("finalize", "# Finalize\n\nWe're close to the deadline:\n\n1. Check every session's changes (get_diff) — flag anything risky or half-done.\n2. Decide what to cut so the demo path is rock solid.\n3. Make sure it deploys and the demo works end to end.\n4. List the final fixes in priority order.\n"),
     ("pitch", "# Pitch\n\nHelp me write the pitch and demo:\n\n1. One-line hook: who it's for and the problem.\n2. Demo script: the exact clicks, under 2 minutes, wow moment early.\n3. Why us / why now, plus the tech that makes it work (from what we built — read the sessions).\n4. Likely judge questions and crisp answers.\n\nOutput a 3-minute script and a 5-slide outline.\n"),
+    ("pitchdoc", "# Pitch doc\n\nWrite PITCH.<slug>.md for this project. It is the source document: the deck, the\nREADME and the submission form are all rendered from it, so it gets written first.\n\n**Interview me. Do not read the codebase to decide what the pitch says.** The repo\nknows what exists; it does not know why anyone cares, who buys it, or what we know\nthat others don't. Ask, and argue with my answers.\n\n1. Copy ~/.grillme/deck-kit/PITCH.template.md to PITCH.<slug>.md here.\n2. Fill it from our conversation. Keep the grammar exactly: `**Field:** value`, and\n   `- a | b | c` for list rows. The template's \"How to fill it\" explains it.\n3. Never invent a figure or a quote. A number we have not measured stays as an em\n   dash, and leave [ brackets ] wherever I have not given you the answer.\n4. Only now read the repo, and only to contradict what we wrote: is the demo path\n   real end to end, is a claimed feature a stub, is the architecture what we said?\n5. Audit it: `node ~/.grillme/deck-kit/catalog.cjs <slug>`\n\nReport which sections are 🔴 and what you need from me. Then offer the deck:\n\n  node ~/.grillme/deck-kit/pitch-to-project.cjs PITCH.<slug>.md <slug> --write\n  node ~/.grillme/deck-kit/build.cjs <slug>\n\nThat writes 13 slides per theme (carbon / press / signal) to\n~/.grillme/deck-kit/out/<theme>/project — publish those as a slide deck.\n~/.grillme/deck-kit/SECTIONS.md lists every section and diagram.\n"),
 ];
 
 fn root() -> PathBuf {
@@ -923,7 +924,7 @@ mod tests {
 
     #[test]
     fn skills_are_embedded() {
-        assert_eq!(DEFAULT_SKILLS.len(), 6);
+        assert_eq!(DEFAULT_SKILLS.len(), 7);
     }
 
     #[test]
