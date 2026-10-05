@@ -43,6 +43,7 @@ const HUB: { view: MainView; icon: string; label: string; title: string }[] = [
   { view: "space", icon: "space", label: "Code Space", title: "Fly through the folders on your Mac: see the code, what changed today, and how each app fits together" },
   { view: "flow", icon: "broadcast", label: "Flow", title: "Who's talking to whom: the Claude app, your sessions and teammates" },
   { view: "dna", icon: "spark", label: "Coding DNA", title: "How you build, what Grill Me learned, and tools that would help (Evolutions)" },
+  { view: "ship", icon: "push", label: "Ship", title: "The last two hours: demo path, preview, pitch readiness, deck and README" },
   { view: "automations", icon: "bolt", label: "Automations", title: "Things Grill Me does for you: tests, checks, reminders, phone pings" },
 ];
 

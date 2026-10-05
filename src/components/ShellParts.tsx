@@ -1,4 +1,5 @@
 import { DNAPage } from "./DNAPage";
+import { ShipPage } from "./ShipPage";
 import { useApp } from "../store";
 import type { Teammate } from "../types";
 import { DragHandle } from "./DragHandle";
@@ -85,6 +86,8 @@ function CenterStageInner({ active, split }: { active: Teammate | undefined; spl
       <Suspense fallback={<div className="flex-1 bg-[#07060a]" />}><SpacePage /></Suspense>
     ) : view === "dna" ? (
       <DNAPage />
+    ) : view === "ship" ? (
+      <ShipPage />
     ) : view === "flow" ? (
       <FlowPage />
     ) : view === "new" || !active ? (

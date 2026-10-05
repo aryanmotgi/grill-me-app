@@ -1,0 +1,169 @@
+{
+  "_": "Which visual belongs on which pitch slide. This is the reusable part: the recipe, the data it needs, and what to render when the project hasn't got that data yet. build.cjs reads it; a slide whose data is missing renders the fallback and a 'verify' footer rather than a made-up number.",
+  "slides": {
+    "cover": {
+      "recipe": null,
+      "purpose": "Name plus the one line you want repeated back.",
+      "done": "Someone who missed the title can still say what you do.",
+      "note": "Type only. A visual here competes with the line you want them to hear."
+    },
+    "problem": {
+      "recipe": "timeline",
+      "purpose": "The pain, dated and specific \u2014 not a category.",
+      "done": "A listener has personally felt it.",
+      "needs": [
+        "marks[]{label,sub,hot}"
+      ],
+      "why": "The problem is temporal \u2014 something decays and you notice too late. A timeline shows the gap between the two.",
+      "fallback": "prose only"
+    },
+    "insight": {
+      "recipe": "split",
+      "purpose": "The non-obvious thing you know that others don't.",
+      "done": "It is not a feature, and a competitor would argue with it.",
+      "needs": [
+        "left{kicker,title,body}",
+        "right{kicker,title,body}"
+      ],
+      "why": "An insight is almost always 'X is handled, Y is not'. Two panels make the asymmetry visible.",
+      "fallback": "prose only"
+    },
+    "solution": {
+      "recipe": "flow",
+      "purpose": "What you built, in three verbs.",
+      "done": "No adjectives survive on the slide.",
+      "needs": [
+        "steps[]{title,body}"
+      ],
+      "why": "Three to four verbs. Cards, not a paragraph.",
+      "fallback": "prose only"
+    },
+    "whynow": {
+      "recipe": "timeline",
+      "purpose": "Why this is buildable now and wasn't two years ago.",
+      "done": "Every mark is a real shift, not a trend word.",
+      "needs": [
+        "marks[]{label,sub,hot}"
+      ],
+      "why": "Why-now is a sequence of enabling shifts. Dated marks, no invented figures.",
+      "fallback": "prose only"
+    },
+    "product": {
+      "recipe": "flow",
+      "purpose": "The pipeline, one hand-off per arrow.",
+      "done": "It asks the user to change no habits.",
+      "needs": [
+        "steps[]{title,body}"
+      ],
+      "why": "Pipeline left to right, one arrow per hand-off. Screenshot goes on the NEXT slide, not here.",
+      "fallback": "prose only"
+    },
+    "market": {
+      "recipe": "stack",
+      "purpose": "Bottom-up arithmetic you can defend.",
+      "done": "Every term is counted and cited, none borrowed.",
+      "needs": [
+        "terms[]{value,label}",
+        "total{value,label}"
+      ],
+      "why": "Bottom-up multiplication, shown as the arithmetic. A top-down borrowed TAM gets you caught.",
+      "fallback": "em dashes in every cell plus an 'unsourced' footer"
+    },
+    "competition": {
+      "recipe": "quadrant",
+      "purpose": "Two axes that leave you alone in one corner.",
+      "done": "The axes are true even if a rival drew them.",
+      "needs": [
+        "xAxis",
+        "yAxis",
+        "points[]{x,y,label,sub,hot}"
+      ],
+      "why": "Axes are the argument. Pick the two that put you alone in one corner and are still true.",
+      "fallback": "three-row table"
+    },
+    "model": {
+      "recipe": null,
+      "purpose": "Who pays, how much, per what.",
+      "done": "It names the buyer, not the user.",
+      "note": "One line. A pricing diagram before a pilot is theatre."
+    },
+    "traction": {
+      "recipe": "bars",
+      "purpose": "Only what you have actually measured.",
+      "done": "Every number can be reproduced live.",
+      "needs": [
+        "rows[]{label,pct,value,hot}"
+      ],
+      "why": "Only for numbers actually measured. No data = one honest sentence instead.",
+      "fallback": "big-number slide plus 'nothing else is true yet'"
+    },
+    "team": {
+      "recipe": "flow",
+      "purpose": "Why these specific people.",
+      "done": "The why-us line would be false for any other team.",
+      "needs": [
+        "steps[]{title,body}"
+      ],
+      "why": "One card per person, role first. Headshots only if they exist as real files.",
+      "fallback": "cards"
+    },
+    "vision": {
+      "recipe": "rings",
+      "purpose": "The wedge expanding into a company.",
+      "done": "It is a company, not a bigger feature.",
+      "needs": [
+        "layers[]{label,sub}"
+      ],
+      "why": "A wedge expanding outward. Innermost ring is what you sell today.",
+      "fallback": "statement slide"
+    },
+    "ask": {
+      "recipe": null,
+      "purpose": "What you want, and the biggest risk named first.",
+      "done": "The risk is on the slide before they ask it.",
+      "note": "The ask and the biggest risk. No diagram."
+    }
+  },
+  "cannot_generate": {
+    "product_screenshot": "Must be captured from the running project \u2014 see capture.sh. Uploaded as a deck asset and referenced as /_blob/<id>; it is the one visual that does NOT live inside the slide file.",
+    "photos": "Team photos, venue shots, anything real. Supply the file; never generate a stand-in that reads as real.",
+    "logos": "Customer or partner logos. Only ones you have permission to show."
+  },
+  "recipes": {
+    "timeline": {
+      "shape": "{ marks: [{ label, sub, hot? }] }",
+      "use": "Something decaying, or a sequence of enabling shifts. `hot` paints one mark in the risk color.",
+      "height": 300
+    },
+    "split": {
+      "shape": "{ left: {kicker,title,body}, right: {kicker,title,body} }",
+      "use": "An asymmetry \u2014 one side handled, the other not. Right panel reads as the problem.",
+      "height": "~340"
+    },
+    "flow": {
+      "shape": "{ steps: [{ title, body }] }",
+      "use": "A pipeline or a hand-off chain, 2-4 stages. Arrows between, themed.",
+      "height": "~190"
+    },
+    "stack": {
+      "shape": "{ terms: [{value,label}], total: {value,label} }",
+      "use": "Bottom-up multiplication shown as the arithmetic itself. The total is outlined in the accent.",
+      "height": "~210"
+    },
+    "bars": {
+      "shape": "{ rows: [{ label, pct, value, hot? }] }",
+      "use": "Measured numbers only. `pct` drives bar width, `value` is the printed figure.",
+      "height": "auto"
+    },
+    "quadrant": {
+      "shape": "{ poles: {top,bottom,left,right}, points: [{x,y,label,sub,hot?}] }",
+      "use": "Positioning map. x and y are 0-1 fractions; `hot` is you.",
+      "height": 460
+    },
+    "rings": {
+      "shape": "{ layers: [{ label, sub }] }",
+      "use": "A wedge expanding. layers[0] is what you sell today and draws filled; up to 4.",
+      "height": 440
+    }
+  }
+}

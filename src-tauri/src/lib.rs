@@ -3081,6 +3081,112 @@ fn strip_md_fence(raw: &str) -> String {
 /// One-shot `claude -p` over stdin. Mirrors room::claude_pipe. Runs
 /// preflight_claude first so a missing CLI surfaces as an honest error rather
 /// than a spawn failure.
+/// Grill Me's own one-shot `claude -p` calls run unattended, so a hung CLI
+/// would block its automation forever and keep burning a slot. Kill the child
+/// after `secs` and let the caller fail cleanly; the automation retries on the
+/// next turn. The user's interactive session is a pty and never comes through
+/// here, so this can never cut a real turn short.
+/// Run one of the deck kit's scripts on a pitch file and return its output.
+///
+/// Deliberately not a general command runner: `script` is matched against a
+/// fixed list, the only interpolated value is a file name validated below, and
+/// nothing reaches a shell — argv goes straight to `node`. Adding a script here
+/// is a deliberate act; a caller cannot invent one.
+#[tauri::command]
+fn deck_kit_run(script: String, repo_path: String, pitch_file: String, slug: String, layout: Option<String>) -> Result<String, String> {
+    const SCRIPTS: [&str; 4] = ["readme.cjs", "pitch-to-project.cjs", "build.cjs", "catalog.cjs"];
+    if !SCRIPTS.contains(&script.as_str()) {
+        return Err(format!("unknown script {script:?}"));
+    }
+    let safe = |v: &str| {
+        !v.is_empty()
+            && v.len() <= 128
+            && !v.starts_with('-')
+            && v.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+    };
+    if !safe(&pitch_file) || !safe(&slug) {
+        return Err("bad pitch file or slug".into());
+    }
+    let kit = crate::grillme_root().join("deck-kit");
+    let path = kit.join(&script);
+    if !path.exists() {
+        return Err(format!("{script} is not installed in ~/.grillme/deck-kit"));
+    }
+    let mut args: Vec<String> = vec![path.to_string_lossy().into_owned()];
+    match script.as_str() {
+        "readme.cjs" => {
+            args.push(pitch_file.clone());
+            // only the layouts we ship; anything else falls back to plain prose
+            let l = layout.unwrap_or_else(|| "plain".into());
+            args.push(match l.as_str() {
+                "showcase" | "dev-tool" => l,
+                _ => "plain".into(),
+            });
+        }
+        "catalog.cjs" => args.push(slug.clone()),
+        "build.cjs" => args.push(slug.clone()),
+        _ => {
+            args.push(pitch_file.clone());
+            args.push(slug.clone());
+            args.push("--write".into());
+        }
+    }
+    let mut child = std::process::Command::new("node")
+        .args(&args)
+        .current_dir(&repo_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("node: {e}"))?;
+    let guard = kill_after(child.id(), 60);
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    guard.store(true, std::sync::atomic::Ordering::Relaxed);
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if !out.status.success() {
+        return Err(if stderr.is_empty() { "script failed".into() } else { stderr });
+    }
+    // readme.cjs prints the document; the others print a report on stdout and
+    // use stderr for the "left out" note, which is information, not an error.
+    Ok(if stderr.is_empty() { stdout } else { format!("{stdout}\n{stderr}") })
+}
+
+pub(crate) const ONE_SHOT_TIMEOUT_SECS: u64 = 120;
+
+/// Background Claude calls made since launch (checks, reviews, drafts). Shown
+/// in the UI so automation spend is not invisible next to session spend.
+pub(crate) static BG_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[tauri::command]
+fn bg_call_count() -> u64 {
+    BG_CALLS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Kill `pid` after `secs` unless `done` flips first. Returns a guard the
+/// caller drops once the child has been reaped.
+pub(crate) fn kill_after(pid: u32, secs: u64) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let done = std::sync::Arc::new(AtomicBool::new(false));
+    let flag = done.clone();
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+        while std::time::Instant::now() < deadline {
+            if flag.load(Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        if !flag.load(Ordering::Relaxed) {
+            // negative pid: the whole process group, so the zsh wrapper goes too
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", &format!("-{pid}")])
+                .status();
+            let _ = std::process::Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+        }
+    });
+    done
+}
+
 fn claude_pipe_stdin(input: &str, prompt: &str) -> Result<String, String> {
     use std::process::Stdio;
     preflight_claude()?; // "claude CLI not found on PATH" when not installed
@@ -5095,6 +5201,8 @@ pub fn run() {
             review_ai,
             project_export,
             activity_series,
+            bg_call_count,
+            deck_kit_run,
             install_hooks,
             events_tail,
             worktree_add,

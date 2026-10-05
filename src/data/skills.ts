@@ -22,6 +22,7 @@ export const SKILL_LOADERS: SkillLoader[] = [
   { id: "breakdown", label: "Breakdown", detail: "Split the idea into tasks", path: P("breakdown") },
   { id: "finalize", label: "Finalize", detail: "Polish, fix, cut scope", path: P("finalize") },
   { id: "pitch", label: "Pitch", detail: "Demo script and slides", path: P("pitch") },
+  { id: "pitchdoc", label: "Pitch doc", detail: "Write PITCH.md — source for deck, README, submission", path: P("pitchdoc") },
 ];
 
 /** Read a playbook's markdown (native app only). */

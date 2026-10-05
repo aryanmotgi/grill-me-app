@@ -1,0 +1,5 @@
+# generated: node build.cjs <slug> writes the slides here, and the audit
+# keeps its last verdict in .state. Both are outputs of the pitch, not sources.
+out/
+.state/
+projects/
