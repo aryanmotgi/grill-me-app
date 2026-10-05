@@ -44,6 +44,9 @@ const SNAP: f64 = 140.0;
 const AWAY_SECS: f64 = 600.0;
 
 static HIT: Mutex<Vec<[f64; 4]>> = Mutex::new(Vec::new());
+/// The window's top-left in global points, kept up to date on moves, so the
+/// 60-times-a-second hover check never has to ask the main thread.
+static ORIGIN: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
 static ON: AtomicBool = AtomicBool::new(false);
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 static WATCHING: AtomicBool = AtomicBool::new(false);
@@ -258,6 +261,7 @@ pub fn pill_open(app: AppHandle) -> Result<(), String> {
     };
     FLOATING.store(place.edge == Edge::Free, Ordering::SeqCst);
     let _ = win.set_position(LogicalPosition::new(place.x, place.y));
+    remember_origin(&win);
     native_float(&app);
     ON.store(true, Ordering::SeqCst);
     watch_cursor(win.clone());
@@ -296,6 +300,7 @@ pub fn pill_placement(app: AppHandle, floating: bool) {
     let Some(area) = work_area(&w) else { return };
     let place = snap(p.x, p.y, area, floating);
     let _ = w.set_position(LogicalPosition::new(place.x, place.y));
+    remember_origin(&w);
     let _ = std::fs::write(place_file(), serde_json::to_string(&place).unwrap_or_default());
     announce(&w, place);
 }
@@ -332,17 +337,24 @@ pub fn pill_say(text: String) {
     let _ = std::process::Command::new("/usr/bin/say").args(["-r", "190", &t]).spawn();
 }
 
+fn remember_origin(w: &WebviewWindow) {
+    let (Ok(scale), Ok(pos)) = (w.scale_factor(), w.inner_position()) else { return };
+    let p = pos.to_logical::<f64>(scale);
+    if let Ok(mut o) = ORIGIN.lock() { *o = (p.x, p.y); }
+}
+
 /// Click-through everywhere the pill doesn't draw, and "near" for fading.
+/// Runs about 60 times a second on its own thread with nothing but a cursor
+/// read and a lock, so hovering responds right away.
 fn watch_cursor(w: WebviewWindow) {
     std::thread::spawn(move || {
         let mut through: Option<bool> = None;
         let mut near: Option<bool> = None;
         while ON.load(Ordering::SeqCst) {
             let (inside, close) = (|| {
-                let scale = w.scale_factor().ok()?;
-                let pos = w.inner_position().ok()?.to_logical::<f64>(scale);
+                let (ox, oy) = *ORIGIN.lock().ok()?;
                 let (cx, cy) = crate::forge::cursor_points()?;
-                let (x, y) = (cx - pos.x, cy - pos.y);
+                let (x, y) = (cx - ox, cy - oy);
                 let rects = HIT.lock().ok()?;
                 let d = distance(&rects, x, y);
                 Some((hits(&rects, x, y), d > 0.0 && d < 56.0))
@@ -356,7 +368,7 @@ fn watch_cursor(w: WebviewWindow) {
                 let _ = w.emit("pill-near", close);
                 near = Some(close);
             }
-            std::thread::sleep(std::time::Duration::from_millis(40));
+            std::thread::sleep(std::time::Duration::from_millis(16));
         }
     });
 }
@@ -369,6 +381,7 @@ fn watch_moves(win: &WebviewWindow) {
     let w = win.clone();
     win.on_window_event(move |ev| {
         if !matches!(ev, tauri::WindowEvent::Moved(_)) { return }
+        remember_origin(&w);
         let seq = MOVE_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
         let w = w.clone();
         std::thread::spawn(move || {

@@ -144,6 +144,7 @@ export function Pill() {
   const stage = useRef<HTMLDivElement>(null);
   const railInner = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const sentRects = useRef("");
 
   const open = useCallback((p: Panel) => {
     setPanel(p);
@@ -201,17 +202,22 @@ export function Pill() {
   }, [close]);
 
   // theme, pill size and text size
+  // (only when the setting itself changes: zooming the page is expensive)
   const prefs = st?.prefs;
+  const theme = prefs?.theme, size = prefs?.size ?? 1, text = prefs?.text ?? 1;
   useEffect(() => {
-    if (!prefs) return;
     const root = document.documentElement;
-    if (prefs.theme === "auto") delete root.dataset.theme; else root.dataset.theme = prefs.theme;
+    if (!theme || theme === "auto") delete root.dataset.theme; else root.dataset.theme = theme;
+  }, [theme]);
+  useEffect(() => {
     // text size: everything is sized in rem off this
-    root.style.fontSize = `${16 * prefs.text}px`;
+    document.documentElement.style.fontSize = `${16 * text}px`;
+  }, [text]);
+  useEffect(() => {
     // pill size: the page's own zoom, so clicks still land where things are drawn
-    if (native()) void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => getCurrentWebview().setZoom(prefs.size)).catch(() => {});
-    else root.style.zoom = String(prefs.size);
-  }, [prefs]);
+    if (native()) void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => getCurrentWebview().setZoom(size)).catch(() => {});
+    else document.documentElement.style.zoom = String(size);
+  }, [size]);
 
   // ⌃⌥Y / ⌃⌥O from any app: answer or open what's waiting on you
   const onKey = useRef<(k: string) => void>(() => {});
@@ -242,21 +248,24 @@ export function Pill() {
   useEffect(() => {
     if (!native()) return;
     let stop = false;
-    const z = prefs?.size ?? 1;
     const report = () => {
       // page pixels × the page zoom = window points
       const rects = [...(stage.current?.querySelectorAll<HTMLElement>("[data-hit]") ?? [])].map((n) => {
         const r = n.getBoundingClientRect();
-        return [(r.left - 4) * z, (r.top - 4) * z, (r.width + 8) * z, (r.height + 8) * z];
+        return [Math.round((r.left - 4) * size), Math.round((r.top - 4) * size), Math.round((r.width + 8) * size), Math.round((r.height + 8) * size)];
       });
+      // only tell the window when the areas actually moved
+      const key = JSON.stringify(rects);
+      if (key === sentRects.current) return;
+      sentRects.current = key;
       void invoke("pill_hit_rects", { rects });
     };
-    // follow the spring for a moment after anything changes
+    // follow the spring each frame for a moment after anything changes
     const t0 = performance.now();
-    const loop = () => { if (stop) return; report(); if (performance.now() - t0 < 900) setTimeout(loop, 50); };
+    const loop = () => { if (stop) return; report(); if (performance.now() - t0 < 450) requestAnimationFrame(loop); };
     loop();
     return () => { stop = true; };
-  }, [railH, panel, sub, cards, quiet, edge, s?.sessions.length, prefs?.size, prefs?.text, peekAt]);
+  }, [railH, panel, sub, cards, quiet, edge, s?.sessions.length, size, text, peekAt]);
 
   const ranked = useMemo(() => {
     const list = s?.commands ?? [];
