@@ -739,6 +739,8 @@ function TeamTab({
 
   return (
     <>
+      {/* the table scrolls sideways in a narrow window instead of cutting columns off */}
+      <div className="overflow-x-auto -mx-1 px-1"><div className="min-w-[620px]">
       {/* column header */}
       <div className="grid items-center gap-2 pb-1.5 mb-1 border-b border-line/60" style={{ gridTemplateColumns: TEAM_COLS }}>
         <span />
@@ -783,6 +785,7 @@ function TeamTab({
         Each row is one live Claude Code session. The first row is you. A red dot means the folder
         doesn't exist (or isn't a git repo) on this machine yet — sessions for it stay offline until it does.
       </div>
+      </div></div>
       <button className="btn"
         onClick={() => setDraft((d) => [...d, { id: `member-${d.length}`, name: "", repoPath: "", permission: "view" }])}>
         <Icon name="plus" size={10} /> add member
