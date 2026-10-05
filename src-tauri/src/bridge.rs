@@ -518,7 +518,10 @@ fn claude_quick(input: &str, prompt: &str, model: &str) -> Result<String, String
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(input.as_bytes());
     }
+    crate::BG_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let guard = crate::kill_after(child.id(), crate::ONE_SHOT_TIMEOUT_SECS);
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    guard.store(true, std::sync::atomic::Ordering::Relaxed);
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().chars().take(300).collect());
     }
