@@ -34,7 +34,7 @@ pub struct Outside {
     pub at: u64,
 }
 
-#[derive(Serialize, Debug, Default, PartialEq)]
+#[derive(Serialize, Debug, Default, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Tokens {
     pub input: u64,
@@ -188,18 +188,56 @@ pub fn add_spend(raw: &str, since: u64, seen: &mut HashSet<String>, by_model: &m
     }
 }
 
+/// What's been counted so far today, and how far into each log: each call
+/// reads only what was added since (logs only grow), not whole files.
+#[derive(Default)]
+struct SpendCache {
+    since: u64,
+    read_to: std::collections::HashMap<PathBuf, u64>,
+    seen: HashSet<String>,
+    by_model: BTreeMap<String, Tokens>,
+}
+
+static SPEND: std::sync::Mutex<Option<SpendCache>> = std::sync::Mutex::new(None);
+
+/// The complete lines added to a file after `from`, and where they end.
+fn new_lines(path: &Path, from: u64) -> Option<(String, u64)> {
+    let mut f = std::fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    if len <= from { return Some((String::new(), from)) }
+    f.seek(SeekFrom::Start(from)).ok()?;
+    let mut buf = Vec::with_capacity((len - from) as usize);
+    f.read_to_end(&mut buf).ok()?;
+    // stop at the last full line; a line still being written waits
+    let end = buf.iter().rposition(|&b| b == b'\n').map(|i| i + 1).unwrap_or(0);
+    buf.truncate(end);
+    Some((String::from_utf8_lossy(&buf).into_owned(), from + end as u64))
+}
+
 #[tauri::command(async)]
 pub fn spend_since(since: u64) -> BTreeMap<String, Tokens> {
     let now = ms(SystemTime::now());
     let window = Duration::from_millis(now.saturating_sub(since).min(2 * 86_400_000) + 60_000);
-    let mut seen = HashSet::new();
-    let mut by_model = BTreeMap::new();
-    for (p, _) in recent_logs(window) {
-        // whole file: today's lines can sit anywhere in a long session
-        let raw = std::fs::read_to_string(&p).unwrap_or_default();
-        add_spend(&raw, since, &mut seen, &mut by_model);
+    let Ok(mut guard) = SPEND.lock() else { return BTreeMap::new() };
+    let cache = guard.get_or_insert_with(SpendCache::default);
+    if cache.since != since {
+        // a new day (or the first call): start over
+        *cache = SpendCache { since, ..SpendCache::default() };
     }
-    by_model
+    for (p, _) in recent_logs(window) {
+        let from = cache.read_to.get(&p).copied().unwrap_or(0);
+        // a log that got shorter was replaced: count today from scratch
+        if std::fs::metadata(&p).map(|m| m.len() < from).unwrap_or(false) {
+            *cache = SpendCache { since, ..SpendCache::default() };
+            drop(guard);
+            return spend_since(since);
+        }
+        if let Some((raw, to)) = new_lines(&p, from) {
+            add_spend(&raw, since, &mut cache.seen, &mut cache.by_model);
+            cache.read_to.insert(p, to);
+        }
+    }
+    cache.by_model.clone()
 }
 
 #[cfg(test)]
@@ -243,6 +281,20 @@ mod tests {
         let mut by = BTreeMap::new();
         add_spend(&raw, parse_ts("2026-10-03T00:00:00.000Z").unwrap(), &mut seen, &mut by);
         assert_eq!(by["claude-opus-5-5"], Tokens { input: 2, output: 10, cache_read: 100, cache_write: 5 });
+    }
+
+    #[test]
+    fn reads_only_new_complete_lines() {
+        let p = std::env::temp_dir().join(format!("grillme-spend-{}.jsonl", std::process::id()));
+        std::fs::write(&p, "a\nb\npart").unwrap();
+        let (raw, to) = new_lines(&p, 0).unwrap();
+        assert_eq!((raw.as_str(), to), ("a\nb\n", 4));
+        // the half-written line is picked up once it's finished
+        std::fs::write(&p, "a\nb\npartial\nc\n").unwrap();
+        let (raw, to) = new_lines(&p, to).unwrap();
+        assert_eq!((raw.as_str(), to), ("partial\nc\n", 14));
+        assert_eq!(new_lines(&p, to).unwrap().0, "");
+        let _ = std::fs::remove_file(&p);
     }
 
     /// Live, read-only: cargo test outside_live -- --ignored --nocapture

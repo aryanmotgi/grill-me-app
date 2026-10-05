@@ -132,9 +132,17 @@ export function buildState(): PillState {
   };
 }
 
-async function emitState() {
+/** The last snapshot sent: nothing is sent (and the pill doesn't redraw)
+ *  unless something it shows actually changed. */
+let lastSent = "";
+
+async function emitState(force = false) {
+  const state = buildState();
+  const json = JSON.stringify(state);
+  if (!force && json === lastSent) return;
+  lastSent = json;
   const { emitTo } = await import("@tauri-apps/api/event");
-  await emitTo("pill", "pill-state", buildState()).catch(() => {});
+  await emitTo("pill", "pill-state", state).catch(() => { lastSent = ""; });
 }
 
 let pending: ReturnType<typeof setTimeout> | null = null;
@@ -294,7 +302,7 @@ export async function startPill() {
   started = true;
   const { listen } = await import("@tauri-apps/api/event");
   await listen<PillAction>("pill-action", (e) => void act(e.payload));
-  await listen("pill-ready", () => void emitState());
+  await listen("pill-ready", () => void emitState(true));
   await listen<{ awaySecs: number; since: number }>("pill-back", (e) => {
     live.recap = recapLine(e.payload.awaySecs, live.log.filter((x) => x.at >= e.payload.since));
     schedule();

@@ -11,7 +11,7 @@
   --hot: #e0604f;
   /* a spring that overshoots a little and settles */
   --spring: linear(0, 0.013, 0.05 2.6%, 0.192 5.6%, 0.39 9%, 0.62 13%, 0.79 16.8%, 0.92 21%, 1.005 25.4%, 1.04 29.6%, 1.05 33%, 1.042 37.5%, 1.021 43.7%, 1.002 51%, 0.996 58%, 0.998 70%, 1);
-  --dur: 520ms;
+  --dur: 340ms;
 }
 :root, :root[data-theme="dark"] {
   --bg: rgba(22, 19, 21, 0.95);
@@ -20,7 +20,7 @@
   --ink: #f1ece9;
   --dim: #a9a2a0;
   --faint: #6f6967;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --shadow: 0 6px 16px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 :root[data-theme="light"] {
   --bg: rgba(250, 248, 246, 0.96);
@@ -29,7 +29,7 @@
   --ink: #1d1a19;
   --dim: #5f5856;
   --faint: #9a9391;
-  --shadow: 0 10px 30px rgba(60, 40, 30, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --shadow: 0 6px 16px rgba(60, 40, 30, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
@@ -39,7 +39,7 @@
     --ink: #1d1a19;
     --dim: #5f5856;
     --faint: #9a9391;
-    --shadow: 0 10px 30px rgba(60, 40, 30, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+    --shadow: 0 6px 16px rgba(60, 40, 30, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -69,7 +69,7 @@ input { font: inherit; color: inherit; }
   width: 40px; flex: none;
   background: var(--bg); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow);
   overflow: hidden; box-sizing: border-box;
-  transition: height var(--dur) var(--spring), opacity 300ms ease, box-shadow 600ms ease, background 300ms ease, border-color 300ms ease;
+  transition: height var(--dur) var(--spring), opacity 200ms ease;
 }
 .rail-inner { display: flex; flex-direction: column; align-items: center; gap: 9px; padding: 8px 0; }
 .rail.quiet { opacity: 0.5; background: transparent; border-color: transparent; box-shadow: none; }
@@ -79,16 +79,22 @@ input { font: inherit; color: inherit; }
 
 /* status light: calm ember while working, a gentle pulse (three times, then
    steady) when an agent needs you, green when done, red when stuck */
-.rail.glow-working { box-shadow: 0 0 20px -6px rgba(224, 121, 58, 0.6), var(--shadow); }
-.rail.glow-needs { animation: needs 2.4s ease-in-out 3; box-shadow: 0 0 24px -4px rgba(242, 193, 78, 0.6), var(--shadow); }
-.rail.glow-done { box-shadow: 0 0 20px -6px rgba(79, 191, 135, 0.6), var(--shadow); }
-.rail.glow-stuck { box-shadow: 0 0 20px -6px rgba(224, 96, 79, 0.55), var(--shadow); }
-@keyframes needs { 50% { box-shadow: 0 0 32px 0 rgba(242, 193, 78, 0.75), var(--shadow); } }
-@media (prefers-reduced-motion: reduce) { .rail.glow-needs { animation: none; } }
+.rail.glow-working { box-shadow: 0 0 14px -5px rgba(224, 121, 58, 0.6), var(--shadow); }
+.rail.glow-needs { box-shadow: 0 0 18px -4px rgba(242, 193, 78, 0.6), var(--shadow); }
+.rail { position: relative; }
+.rail.glow-needs::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 1.5px rgba(242, 193, 78, 0.7); opacity: 0;
+  animation: needs 2.4s ease-in-out 3; will-change: opacity;
+}
+.rail.glow-done { box-shadow: 0 0 14px -5px rgba(79, 191, 135, 0.6), var(--shadow); }
+.rail.glow-stuck { box-shadow: 0 0 14px -5px rgba(224, 96, 79, 0.55), var(--shadow); }
+@keyframes needs { 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .rail.glow-needs::before { animation: none; } }
 
 .orb-btn { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
 .orb-btn:hover, .orb-btn.on { background: var(--bg-2); }
-.orb { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--faint); transition: background 400ms ease, box-shadow 400ms ease; }
+.orb { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--faint); }
 .orb.working { background: var(--ember); box-shadow: 0 0 10px var(--ember); }
 .orb.needs { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
 .orb.done { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
@@ -221,22 +227,20 @@ button.sdot:hover { transform: scale(1.5); }
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--bg-2); color: var(--dim); font-size: 0.625rem; font-weight: 600; letter-spacing: 0.02em;
   box-shadow: inset 0 0 0 1.5px var(--line);
-  transition: transform 260ms var(--spring), box-shadow 300ms ease, color 300ms ease;
+  transition: transform 200ms var(--spring);
 }
 button.chip-s:hover, .chip-s.on { transform: scale(1.12); color: var(--ink); }
 .chip-s.idle { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ok) 55%, var(--line)); }
 .chip-s.working { color: var(--ink); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ember) 30%, var(--line)); }
 .chip-s.working::after {
-  content: ""; position: absolute; inset: 0; border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 62%, var(--ember) 100%);
-  -webkit-mask: radial-gradient(circle, transparent 12.5px, #000 13px);
-  mask: radial-gradient(circle, transparent 12.5px, #000 13px);
-  animation: turn 1.6s linear infinite;
+  content: ""; position: absolute; inset: 0; border-radius: 50%; box-sizing: border-box;
+  border: 1.5px solid transparent; border-top-color: var(--ember); border-right-color: color-mix(in srgb, var(--ember) 35%, transparent);
+  animation: turn 1.4s linear infinite; will-change: transform;
 }
 .chip-s.needs { color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--gold); }
 .chip-s.needs::before {
   content: ""; position: absolute; top: -1px; right: -1px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--gold); box-shadow: 0 0 0 2px var(--bg); animation: ping 1.8s ease-out 3;
+  background: var(--gold); box-shadow: 0 0 0 2px var(--bg);
 }
 .chip-s.stuck { color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--hot); }
 .chip-s.pinned { box-shadow: inset 0 0 0 1.5px var(--line), 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ember) 45%, transparent); }
@@ -247,8 +251,7 @@ button.chip-s:hover, .chip-s.on { transform: scale(1.12); color: var(--ink); }
 .more-s { font-size: 0.625rem; color: var(--dim); height: 18px; }
 .more-s:hover { color: var(--ink); }
 @keyframes turn { to { transform: rotate(1turn); } }
-@keyframes ping { 0% { box-shadow: 0 0 0 2px var(--bg), 0 0 0 2px rgba(242, 193, 78, 0.6); } 100% { box-shadow: 0 0 0 2px var(--bg), 0 0 0 9px rgba(242, 193, 78, 0); } }
-@media (prefers-reduced-motion: reduce) { .chip-s.working::after, .chip-s.needs::before { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .chip-s.working::after { animation: none; } }
 
 /* the peek: beside the chip you're hovering, with quick actions */
 .card.peek { position: absolute; left: 56px; width: 236px; gap: 6px; padding: 9px 11px; z-index: 5; }
