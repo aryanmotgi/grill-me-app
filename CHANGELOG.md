@@ -15,6 +15,29 @@ an entry. "Refactored agent spawn" is not.
 ## Unreleased
 
 **Added**
+- Teammates is a page in the hub now, next to Overview and Brain: people on the left, their sessions on the right, open one of your own from there.
+- "Take over their session" on that page for a teammate with an ssh host and tmux session configured — `tmux new -A` attaches to the terminal they are already in, so you share one rather than watching a copy.
+- A "What teammates can see" setting with four levels: nothing, that you're working, what you're working on, and the list of files you changed.
+
+**Fixed**
+- The Chat/Terminal switcher floated at 60% opacity over the transcript, so the text underneath showed through it. It is solid.
+
+**Removed**
+- Shell and Audit tabs from the session switcher.
+- The team goal, tests, undo, Peek and Ship buttons from the top bar, and the Peek side panel with them.
+- The floating pill no longer launches, and its setting goes with it. `pill.rs` and `pillBridge.ts` stay in the tree, dormant, so the window can come back without being written again.
+- The inline teammates list in the sidebar, replaced by the page.
+
+**Privacy note**
+- The share setting is applied in `digestSessions`, the one place this Mac turns its sessions into something the room can read. A level that withholds a field never publishes it, so there is nothing on a teammate's machine to hide.
+- One stated limit, pinned by a test: at "what I'm working on" the one-line summary can still name a file it is editing. Pick the level below if no filename should leave this Mac.
+- There is no matching "what they can do" setting, because nothing in the room can send input to another Mac's session. The only way someone types into yours is ssh, which your ssh keys govern and Grill Me does not. It gets a setting when it gets a control path.
+
+## #245 — install the dependencies this Mac is missing
+
+`feat(onboarding)` · merged 2026-10-05
+
+**Added**
 - Onboarding offers every dependency you're missing, not just the three that block startup: an "Also useful" group for `gh`, `node`, `tmux`, Tailscale and Homebrew, which never blocks Continue.
 - `node` and `tmux` are checked at all now. Neither was, so the Ship page's README and deck buttons and the tmux session mode could fail with nothing on the setup screen to explain why.
 - Homebrew is checked, because it is how `gh`, `node` and `tmux` get installed for you.

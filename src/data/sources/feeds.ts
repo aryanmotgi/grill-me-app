@@ -247,12 +247,13 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
     const st = store.getState();
     const self = st.roomSelf;
     if (!self) return;
-    const [{ digestSessions, digestChanged }, { sessionTitle }, { lastTestOk }, { upsertShared }] = await Promise.all([
+    const [{ digestSessions, digestChanged }, { sessionTitle }, { lastTestOk }, { upsertShared }, { applyPolicy, policyOf }] = await Promise.all([
       import("../../lib/flow"), import("../../lib/sessionTitle"), import("../../lib/testsStore"), import("../../store"),
+      import("../../lib/share"),
     ]);
     const own = st.members.map((m) => st.teammates.find((t) => t.id === m.id)).filter((t): t is Teammate => !!t);
     const now = Date.now();
-    const next = digestSessions({
+    const built = digestSessions({
       sessions: own,
       titleOf: (t) => sessionTitle(t, st.appSettings.sessionTitles),
       testsOf: lastTestOk,
@@ -261,6 +262,11 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       machine: typeof st.appSettings.installId === "string" ? st.appSettings.installId : undefined,
       now,
     });
+    // Last gate before anything leaves this Mac. Withheld fields are never
+    // published, so there is nothing on the other side to hide — and a policy
+    // of "nothing" publishes an empty list, which also clears what was shared
+    // before it changed.
+    const next = applyPolicy(policyOf(st.appSettings), built);
     if (!digestChanged(lastDigest, next) && now - lastPublish < 30_000) return;
     const removed = lastDigest.filter((d) => !next.some((n) => n.id === d.id)).map((d) => d.id);
     lastDigest = next;

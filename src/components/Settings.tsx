@@ -96,6 +96,8 @@ const SAFETY_PRESETS: { key: string; label: string; detail: string; patterns: st
 // every Row-based control across all tabs filters with zero per-call wiring.
 const SearchContext = createContext("");
 
+import { SEE_LEVELS, SEE_COPY, policyOf } from "../lib/share";
+
 function rowMatches(query: string, label: string, hint?: string) {
   if (!query) return true;
   return `${label} ${hint ?? ""}`.toLowerCase().includes(query);
@@ -112,6 +114,36 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </div>
       <div className="flex-1 flex items-center gap-2 min-w-0">{children}</div>
     </div>
+  );
+}
+
+/** How much of your sessions leaves this Mac.
+ *
+ *  Applied where the data is built, not where it is shown: anything a level
+ *  withholds is never published, so there is nothing on a teammate's machine
+ *  to reveal. Lowering it takes effect on the next publish (within 30s) and
+ *  overwrites what was shared before. */
+function ShareRow() {
+  const appSettings = useApp((s) => s.appSettings);
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const policy = policyOf(appSettings);
+  return (
+    <Row label="What teammates can see" hint="Grill Me publishes only what you pick here. It never sends your code, your chats or your keystrokes.">
+      <div className="flex flex-col gap-1 min-w-0">
+        {SEE_LEVELS.map((lv) => (
+          <button key={lv} type="button"
+            className={`flex items-start gap-2 text-left rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
+              policy.see === lv ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`}
+            onClick={() => setAppSetting("sharePolicy", { see: lv })}>
+            <span className={`status-dot mt-1 flex-none ${policy.see === lv ? "working" : "idle"}`} style={{ width: 6, height: 6 }} />
+            <span className="min-w-0">
+              <span className="block text-[12.5px]">{SEE_COPY[lv].label}</span>
+              <span className="block text-[11.5px] text-faint leading-snug">{SEE_COPY[lv].detail}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </Row>
   );
 }
 
@@ -316,6 +348,7 @@ export function SettingsModal() {
               ) : null}
 
               {tab === "team" ? <WorkModeRow /> : null}
+              {tab === "team" ? <ShareRow /> : null}
 
               {tab === "team" ? (
                 <TeamTab
@@ -354,9 +387,6 @@ export function SettingsModal() {
                       <button key={b} className={`btn ${((appSettings.background as string | undefined) ?? "gradient") === b ? "active" : ""}`}
                         onClick={() => setAppSetting("background", b)}>{b}</button>
                     ))}
-                  </Row>
-                  <Row label="Floating pill" hint="A small bar above your other apps with your sessions' status. ⌃⌥P hides it, ⌃⌥K searches">
-                    <Toggle checked={appSettings.pill !== false} onChange={(v) => void import("../lib/pillBridge").then((m) => m.setPillOn(v))} />
                   </Row>
                   <Row label="Launch animation" hint="The 3D logo when Grill Me opens. Takes effect next launch">
                     <Toggle checked={appSettings.launchAnimation !== false} onChange={(v) => setAppSetting("launchAnimation", v)} />

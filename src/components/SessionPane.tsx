@@ -386,19 +386,16 @@ export function SessionPane({ mate }: { mate: Teammate }) {
         <span className="flex-1 min-w-[8px]" />
         <div className="flex demo-hide items-center gap-1.5 min-w-0">
           {/* view switcher: one quiet segmented control, Monocode-style */}
-          <div className="flex items-center rounded-lg bg-raised/60 p-0.5">
+          <div className="flex items-center rounded-lg bg-raised hairline p-0.5">
             {([
               ["chat", "Chat"],
               ["terminal", "Terminal"],
-              ["shell", "Shell"],
               ["changes", `Changes${mate.changes.length ? ` ${mate.changes.length}` : ""}`],
-              ["audit", "Audit"],
             ] as const).filter(([id]) => !simple || id !== "changes").map(([id, label]) => (
               <button key={id}
                 className={`px-2.5 h-6 rounded-md text-[11.5px] cursor-pointer transition-colors ${
                   tab === id ? "bg-raised text-ink" : "text-faint hover:text-dim"
                 }`}
-                title={id === "audit" ? "Timestamped log of every command this session ran" : undefined}
                 onClick={() => setTab(id)}>
                 {label}
               </button>
