@@ -161,6 +161,121 @@ pub(crate) fn no_prompt(cmd: &mut Command) -> &mut Command {
     cmd.env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never")
 }
 
+// ---------------------------------------------------------------------------
+// Finding the user's CLIs.
+//
+// Launched from a terminal, the app inherits that shell's PATH and everything
+// resolves. Double-clicked, it inherits launchd's — /usr/bin:/bin:/usr/sbin:
+// /sbin — which has git, but not gh (homebrew) and not node (nvm, usually
+// under ~/.nvm). So `Command::new("gh")` works all through `tauri dev` and
+// fails the first time anyone opens the built app.
+//
+// The fix is not to run these through `zsh -lc`: a .zshrc that prints anything
+// would land in stdout and corrupt a `--json` payload (ai_connect::strip_ansi
+// exists because that output really is dirty). Instead ask a login shell *where*
+// the binary is, once, and spawn it afterwards by absolute path.
+// ---------------------------------------------------------------------------
+
+/// Where the standard installers put things, if no shell can say.
+const BIN_DIRS: [&str; 4] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+
+/// First line of `command -v` output that names a file that exists. A shell
+/// prints whatever the user's rc files print, so the answer is not reliably the
+/// only line — or the first.
+fn pick_path(stdout: &str) -> Option<PathBuf> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with('/'))
+        .map(PathBuf::from)
+        .find(|p| p.is_file())
+}
+
+/// Sort key for an nvm directory name like "v24.16.0". Numeric, so v9 does not
+/// sort above v24 the way comparing the strings would.
+fn version_key(name: &str) -> (u64, u64, u64) {
+    let mut it = name
+        .trim_start_matches('v')
+        .split('.')
+        .map(|p| p.trim().parse::<u64>().unwrap_or(0));
+    (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
+}
+
+/// nvm installs node under ~/.nvm/versions/node/<version>/bin and puts it on
+/// PATH from .zshrc, so nothing outside an interactive shell sees it. Newest
+/// version wins — the same one `nvm use` would have picked by default.
+fn nvm_node() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let mut versions: Vec<_> = std::fs::read_dir(PathBuf::from(home).join(".nvm/versions/node"))
+        .ok()?
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    versions.sort_by_key(|v| version_key(v));
+    versions
+        .iter()
+        .rev()
+        .map(|v| {
+            PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join(".nvm/versions/node")
+                .join(v)
+                .join("bin/node")
+        })
+        .find(|p| p.is_file())
+}
+
+/// Ask a shell where a binary is. `interactive` adds -i, which sources .zshrc —
+/// the only way to see a PATH that a version manager (nvm, rbenv, pyenv) sets
+/// up there. It is the slower, noisier probe, so it is the second thing tried.
+/// Bounded, because an rc file that waits on something would otherwise hang the
+/// app at the first click.
+fn probe_shell(name: &str, interactive: bool) -> Option<PathBuf> {
+    let flag = if interactive { "-ilc" } else { "-lc" };
+    let child = Command::new("/bin/zsh")
+        .args([flag, "command -v -- \"$1\"", "zsh", name])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let guard = kill_after(child.id(), 5);
+    let out = child.wait_with_output().ok()?;
+    guard.store(true, std::sync::atomic::Ordering::Relaxed);
+    pick_path(&String::from_utf8_lossy(&out.stdout))
+}
+
+static BINS: OnceLock<Mutex<std::collections::HashMap<String, Option<PathBuf>>>> = OnceLock::new();
+
+/// Absolute path to a CLI the user installed, resolved once per launch.
+///
+/// `None` means it genuinely isn't installed — report that, rather than letting
+/// a caller spawn it and surface a bare "No such file or directory".
+pub(crate) fn user_bin(name: &str) -> Option<PathBuf> {
+    debug_assert!(
+        name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+        "user_bin takes a plain binary name, not a path or a command line"
+    );
+    let cache = BINS.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    if let Some(hit) = lock_or_recover(cache).get(name) {
+        return hit.clone();
+    }
+    let found = probe_shell(name, false)
+        .or_else(|| probe_shell(name, true))
+        .or_else(|| BIN_DIRS.iter().map(|d| Path::new(d).join(name)).find(|p| p.is_file()))
+        .or_else(|| (name == "node").then(nvm_node).flatten());
+    lock_or_recover(cache).insert(name.to_string(), found.clone());
+    found
+}
+
+/// `user_bin`, as a `Command` ready to take args — or the error to show when
+/// the tool isn't installed at all.
+pub(crate) fn user_cmd(name: &str, install: &str) -> Result<Command, String> {
+    match user_bin(name) {
+        Some(p) => Ok(Command::new(p)),
+        None => Err(format!("{name} isn't installed — {install}")),
+    }
+}
+
 fn git(repo: &str, args: &[&str]) -> Result<String, String> {
     let out = no_prompt(Command::new("git").arg("-C").arg(repo).args(args))
         .output()
@@ -624,21 +739,38 @@ fn validate_agent(agent: &str) -> Result<(), String> {
 }
 
 /// The interactive launch line for each agent, run under `zsh -lc` so the
-/// login-shell PATH applies. All strings are static — no interpolation of
-/// user-controlled values. Cursor's installer symlinks both `cursor-agent`
-/// and `agent` into ~/.local/bin; prefer the unambiguous name, fall back to
-/// the short one.
+/// login-shell PATH applies to the agent's own tool calls. All flag strings
+/// are static — no interpolation of user-controlled values.
 /// `resume`: this folder already has a Claude conversation, so pick it back
 /// up (after a restart, the agent remembers what it was doing).
-fn agent_exec_line(agent: &str, resume: bool) -> &'static str {
+/// The flags each agent is started with. Static strings only — the agent id is
+/// validated against KNOWN_AGENTS first, and nothing here is interpolated.
+fn agent_flags(agent: &str, resume: bool) -> &'static [&'static str] {
     match agent {
-        "cursor" => {
-            "if command -v cursor-agent >/dev/null 2>&1; then exec cursor-agent -f; else exec agent -f; fi"
-        }
-        "codex" => "exec codex --dangerously-bypass-approvals-and-sandbox",
-        _ if resume => "exec claude --continue --dangerously-skip-permissions",
-        _ => "exec claude --dangerously-skip-permissions",
+        "cursor" => &["-f"],
+        "codex" => &["--dangerously-bypass-approvals-and-sandbox"],
+        _ if resume => &["--continue", "--dangerously-skip-permissions"],
+        _ => &["--dangerously-skip-permissions"],
     }
+}
+
+/// Absolute path to the CLI behind an agent id.
+///
+/// The installers put these where only an interactive shell looks — Claude Code
+/// in ~/.local/bin, which .zshrc adds — so a session started from a
+/// double-clicked app used to die on `command not found: claude` before it
+/// printed anything. Cursor's installer symlinks both `cursor-agent` and
+/// `agent`; prefer the unambiguous name.
+fn agent_bin_names(agent: &str) -> &'static [&'static str] {
+    match agent {
+        "cursor" => &["cursor-agent", "agent"],
+        "codex" => &["codex"],
+        _ => &["claude"],
+    }
+}
+
+fn agent_bin(agent: &str) -> Option<PathBuf> {
+    agent_bin_names(agent).iter().find_map(|n| user_bin(n))
 }
 
 #[derive(Serialize, Clone)]
@@ -828,8 +960,21 @@ fn pty_ensure_inner(
             // (tmux may live in /opt/homebrew/bin). The session name is
             // validated first, so no shell metacharacters can be interpolated.
             validate_tmux_session(sess)?;
+            let tmux = user_bin("tmux")
+                .ok_or_else(|| "tmux isn't installed — brew install tmux".to_string())?;
             let mut c = CommandBuilder::new("/bin/zsh");
-            c.args(["-lc", &format!("exec tmux new -A -s {sess}")]);
+            // the session name goes in as an argument, so it is not interpolated
+            // into a script at all any more
+            c.args([
+                "-lc",
+                "exec \"$@\"",
+                "zsh",
+                &tmux.to_string_lossy(),
+                "new",
+                "-A",
+                "-s",
+                sess,
+            ]);
             c
         }
         (None, None) => {
@@ -838,12 +983,23 @@ fn pty_ensure_inner(
                 c.args(["-l"]);
             } else {
                 // per-session agent choice: claude (default), cursor, codex.
-                // agent_exec_line returns only static strings, and the agent
-                // id is validated first — nothing user-controlled reaches zsh.
+                // The agent id is validated first and the flags are static, so
+                // nothing user-controlled reaches zsh. The binary goes in as an
+                // argument rather than a name in the script: PATH lookup is why
+                // sessions failed to start in a bundled app. zsh -l stays,
+                // because the agent shells out for its own tools and needs the
+                // login environment — only the lookup of the agent moves out.
                 let agent = agent.as_deref().unwrap_or("claude");
                 validate_agent(agent)?;
+                let bin = agent_bin(agent).ok_or_else(|| {
+                    format!("{agent} isn't installed, or isn't where this app can see it")
+                })?;
                 let resume = agent == "claude" && newest_transcript_exact(&cwd).is_some();
-                c.args(["-lc", agent_exec_line(agent, resume)]);
+                let mut argv = vec!["-lc", "exec \"$@\"", "zsh"];
+                let bin = bin.to_string_lossy().into_owned();
+                argv.push(&bin);
+                argv.extend_from_slice(agent_flags(agent, resume));
+                c.args(&argv);
             }
             c
         }
@@ -1687,6 +1843,67 @@ fn git_revert_file(repo_path: String, file: String) -> Result<(), String> {
 }
 
 #[cfg(test)]
+mod user_bin_tests {
+    use super::{pick_path, user_bin, version_key};
+
+    #[test]
+    fn takes_the_path_even_when_a_chatty_zshrc_speaks_first() {
+        // the reason this is not run through `zsh -lc` in the first place
+        let out = "nvm: using node v24.16.0\nwelcome back!\n/bin/sh\n";
+        assert_eq!(pick_path(out).unwrap().to_str().unwrap(), "/bin/sh");
+    }
+
+    #[test]
+    fn ignores_lines_that_are_not_paths_and_paths_that_do_not_exist() {
+        assert!(pick_path("gh not found\n").is_none());
+        assert!(pick_path("/nope/not/here/gh\n").is_none());
+        // a shell builtin answer is a word, not a path, and must not be spawned
+        assert!(pick_path("command\n").is_none());
+    }
+
+    #[test]
+    fn newest_nvm_version_wins_and_v9_does_not_outrank_v24() {
+        let mut v = vec!["v9.0.0", "v24.16.0", "v18.20.4", "v24.2.0"];
+        v.sort_by_key(|x| version_key(x));
+        assert_eq!(*v.last().unwrap(), "v24.16.0");
+        assert_eq!(version_key("v24.16.0"), (24, 16, 0));
+        assert_eq!(version_key("nonsense"), (0, 0, 0));
+    }
+
+    #[test]
+    fn resolves_a_binary_launchd_does_hand_us_and_caches_the_answer() {
+        // git is on the bare PATH, so this holds wherever the test runs
+        let first = user_bin("git").expect("git should resolve");
+        assert!(first.is_absolute() && first.is_file());
+        assert_eq!(user_bin("git"), Some(first), "second call must hit the cache");
+    }
+
+    #[test]
+    fn a_missing_binary_is_none_rather_than_a_path_that_fails_to_spawn() {
+        assert_eq!(user_bin("grill-me-no-such-binary"), None);
+    }
+
+    /// The regression this whole helper exists for. Run it the way a
+    /// double-clicked .app is launched — launchd hands over a PATH with none of
+    /// the user's tools on it — and check both still resolve:
+    ///
+    ///   env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+    ///     cargo test --lib -- --ignored --nocapture
+    ///
+    /// Ignored by default: it asserts this machine has gh and node installed,
+    /// which is a fact about the machine, not about the code.
+    #[test]
+    #[ignore]
+    fn finds_gh_and_node_under_the_path_a_double_clicked_app_gets() {
+        for name in ["claude", "gh", "node"] {
+            let p = user_bin(name).unwrap_or_else(|| panic!("{name} did not resolve"));
+            assert!(p.is_absolute() && p.is_file(), "{name} -> {p:?}");
+            println!("  {name} -> {}", p.display());
+        }
+    }
+}
+
+#[cfg(test)]
 mod parent_env_tests {
     #[test]
     fn drops_only_claude_code_session_markers() {
@@ -1984,9 +2201,9 @@ fn usage_stats(repo_path: String, since: Option<u64>) -> UsageStats {
 
 #[tauri::command(async)]
 fn ci_state(repo_path: String) -> Result<String, String> {
+    let mut gh = user_cmd("gh", "install the GitHub CLI (brew install gh), then run gh auth login")?;
     let out = no_prompt(
-        Command::new("gh")
-            .args(["run", "list", "--limit", "5", "--json", "name,displayTitle,status,conclusion,headBranch"])
+        gh.args(["run", "list", "--limit", "5", "--json", "name,displayTitle,status,conclusion,headBranch"])
             .current_dir(&repo_path),
     )
     .output()
@@ -2003,9 +2220,9 @@ fn ci_state(repo_path: String) -> Result<String, String> {
 /// shape — no fabricated fields.
 #[tauri::command]
 fn pr_list(repo_path: String) -> Result<String, String> {
+    let mut gh = user_cmd("gh", "install the GitHub CLI (brew install gh), then run gh auth login")?;
     let out = no_prompt(
-        Command::new("gh")
-            .args([
+        gh.args([
                 "pr", "list", "--state", "open", "--json",
                 "number,title,headRefName,statusCheckRollup,reviewDecision,isDraft,author",
             ])
@@ -2024,9 +2241,9 @@ fn pr_list(repo_path: String) -> Result<String, String> {
 /// under no_prompt like the other gh helpers.
 #[tauri::command]
 fn pr_merge(repo_path: String, number: u64) -> Result<String, String> {
+    let mut gh = user_cmd("gh", "install the GitHub CLI (brew install gh), then run gh auth login")?;
     let out = no_prompt(
-        Command::new("gh")
-            .args(["pr", "merge", &number.to_string(), "--squash"])
+        gh.args(["pr", "merge", &number.to_string(), "--squash"])
             .current_dir(&repo_path),
     )
     .output()
@@ -2928,7 +3145,8 @@ fn release_notes_brief_json(range: &str, commits: &[String], prs: &[String]) -> 
 /// absent, unauthenticated, or the repo may have no remote — any failure yields
 /// an empty list so release notes still work from commit subjects alone.
 fn merged_prs(repo_path: &str) -> Vec<String> {
-    let out = no_prompt(Command::new("gh").args([
+    let Some(gh) = user_bin("gh") else { return Vec::new() };
+    let out = no_prompt(Command::new(gh).args([
         "pr",
         "list",
         "--state",
@@ -3139,7 +3357,7 @@ fn deck_kit_run(script: String, repo_path: String, pitch_file: String, slug: Str
             args.push("--write".into());
         }
     }
-    let mut child = std::process::Command::new("node")
+    let child = user_cmd("node", "install Node (brew install node, or nodejs.org)")?
         .args(&args)
         .current_dir(&repo_path)
         .stdout(std::process::Stdio::piped())
@@ -6279,9 +6497,20 @@ mod default_repo_tests {
 mod api_port_tests {
     #[test]
     fn a_restarted_claude_session_picks_its_conversation_back_up() {
-        assert_eq!(super::agent_exec_line("claude", true), "exec claude --continue --dangerously-skip-permissions");
-        assert_eq!(super::agent_exec_line("claude", false), "exec claude --dangerously-skip-permissions");
-        assert!(!super::agent_exec_line("codex", true).contains("--continue"));
+        assert_eq!(super::agent_flags("claude", true), &["--continue", "--dangerously-skip-permissions"]);
+        assert_eq!(super::agent_flags("claude", false), &["--dangerously-skip-permissions"]);
+        assert!(!super::agent_flags("codex", true).contains(&"--continue"));
+    }
+
+    #[test]
+    fn each_agent_id_names_the_cli_it_actually_runs() {
+        // whether these resolve is a fact about the machine — the mapping is
+        // the part this file decides, so it is the part under test here
+        assert_eq!(super::agent_bin_names("claude"), &["claude"]);
+        assert_eq!(super::agent_bin_names("codex"), &["codex"]);
+        // cursor's installer symlinks both; the unambiguous name is preferred
+        assert_eq!(super::agent_bin_names("cursor"), &["cursor-agent", "agent"]);
+        assert_eq!(super::agent_bin_names("anything-else"), &["claude"], "default agent");
     }
 
     #[test]
