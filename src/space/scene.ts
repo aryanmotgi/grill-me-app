@@ -23,11 +23,13 @@ import type { Placed } from "./layout";
 
 export type Glow = "working" | "needs" | "done";
 export interface Hub { id: string; label: string; color: string; pos: [number, number, number]; files: [number, number, number][] }
+/** A session on the map: a glowing orb above what it's on, a thread down. */
+export interface Marker { id: string; label: string; color: string; at: [number, number, number]; working: boolean; needs: boolean }
 
 const BG = 0x07060a;
 const EMBER = "#e0793a";
 const GOLD = "#f2c14e";
-const FOLDER = "#8a93b8";
+const FOLDER = "#7d86ad";
 const SHEET = "#c9c6d6";
 
 function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
@@ -42,21 +44,38 @@ function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D)
 }
 
 function folderTexture(color: string): THREE.CanvasTexture {
-  return canvasTexture(128, 104, (g) => {
-    const grad = g.createLinearGradient(0, 0, 0, 104);
+  return canvasTexture(256, 208, (g) => {
+    g.scale(2, 2);
+    // the back and its tab, a shade darker
+    g.fillStyle = `${color}cc`;
+    g.beginPath();
+    g.roundRect(8, 10, 50, 22, 8);
+    g.fill();
+    g.beginPath();
+    g.roundRect(6, 20, 116, 70, 11);
+    g.fill();
+    // the front, glassy: light at the top, deeper below
+    const grad = g.createLinearGradient(0, 30, 0, 98);
     grad.addColorStop(0, color);
-    grad.addColorStop(1, `${color}aa`);
+    grad.addColorStop(1, `${color}b0`);
     g.fillStyle = grad;
     g.beginPath();
-    // tab, then body
-    g.roundRect(8, 10, 46, 20, 7);
+    g.roundRect(6, 30, 116, 68, 11);
     g.fill();
+    // rim light along the top edge
+    g.strokeStyle = "rgba(255,255,255,0.45)";
+    g.lineWidth = 1.5;
     g.beginPath();
-    g.roundRect(6, 22, 116, 76, 10);
-    g.fill();
-    g.fillStyle = "rgba(255,255,255,0.18)";
+    g.moveTo(16, 31.5);
+    g.lineTo(112, 31.5);
+    g.stroke();
+    // a soft sheen
+    const sheen = g.createLinearGradient(0, 30, 0, 64);
+    sheen.addColorStop(0, "rgba(255,255,255,0.22)");
+    sheen.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = sheen;
     g.beginPath();
-    g.roundRect(6, 30, 116, 6, 3);
+    g.roundRect(6, 30, 116, 34, 11);
     g.fill();
   });
 }
@@ -79,6 +98,15 @@ const glowTexture = () => canvasTexture(64, 64, (g) => {
   r.addColorStop(1, "rgba(255,255,255,0)");
   g.fillStyle = r;
   g.fillRect(0, 0, 64, 64);
+});
+
+const ringTexture = () => canvasTexture(64, 64, (g) => {
+  g.strokeStyle = "#ffffff";
+  g.lineWidth = 3;
+  g.setLineDash([7, 5]);
+  g.beginPath();
+  g.arc(32, 32, 26, 0, Math.PI * 2);
+  g.stroke();
 });
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -104,7 +132,10 @@ export class SpaceScene {
   private hovered: number | null = null;
   private selected: number | null = null;
   private hubs: { hub: Hub; sprite: THREE.Sprite }[] = [];
-  private tex = { folder: folderTexture(FOLDER), repo: folderTexture(EMBER), sheet: sheetTexture(), glow: glowTexture() };
+  private markers: { m: Marker; orb: THREE.Sprite; halo: THREE.Sprite; seed: number }[] = [];
+  private markerGroup = new THREE.Group();
+  private rings = new THREE.Group();
+  private tex = { folder: folderTexture(FOLDER), repo: folderTexture(EMBER), sheet: sheetTexture(), glow: glowTexture(), ring: ringTexture() };
   private ro: ResizeObserver;
   private dirty = true;
   onHover: (p: Placed | null) => void = () => {};
@@ -142,6 +173,15 @@ export class SpaceScene {
     this.selectRing = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex.glow, color: new THREE.Color(EMBER), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.selectRing.visible = false;
     this.scene.add(this.selectRing);
+    this.scene.add(this.markerGroup, this.rings);
+
+    // a faint nebula far behind everything: ember on one side, indigo on the other
+    for (const [color, x, y, z, size, op] of [["#e0793a", -420, 120, -620, 900, 0.10], ["#5b5bd6", 520, -60, -560, 1000, 0.09], ["#2ac3de", 80, 320, -700, 700, 0.05]] as const) {
+      const n = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex.glow, color: new THREE.Color(color), transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      n.scale.set(size, size, 1);
+      n.position.set(x, y, z);
+      this.scene.add(n);
+    }
 
     const el = this.renderer.domElement;
     el.addEventListener("pointermove", (e) => {
@@ -294,6 +334,49 @@ export class SpaceScene {
     this.dirty = true;
   }
 
+  /** Sessions on the map: an orb floating above what each is on, with a
+   *  thread down to it. Working ones breathe; ones that need you pulse gold. */
+  setMarkers(list: Marker[]) {
+    this.markerGroup.clear();
+    this.markers = [];
+    const thread: number[] = [];
+    // sessions on the same spot stack upward instead of overlapping
+    const seen = new Map<string, number>();
+    for (const m of list) {
+      const key = m.at.map((n) => n.toFixed(1)).join();
+      const n = seen.get(key) ?? 0;
+      seen.set(key, n + 1);
+      const top: [number, number, number] = [m.at[0], m.at[1] + 4.2 + n * 2.2, m.at[2]];
+      const orb = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex.glow, color: new THREE.Color(m.needs ? GOLD : m.color), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      orb.scale.set(1.6, 1.6, 1);
+      orb.position.set(...top);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex.glow, color: new THREE.Color(m.needs ? GOLD : m.color), transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
+      halo.scale.set(4.5, 4.5, 1);
+      halo.position.set(...top);
+      this.markerGroup.add(orb, halo);
+      this.markers.push({ m: { ...m, at: top }, orb, halo, seed: Math.random() * 6 });
+      thread.push(...top, ...m.at);
+    }
+    if (thread.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(thread, 3));
+      this.markerGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 })));
+    }
+    this.dirty = true;
+  }
+
+  /** Rings around spots where two sessions' changes could collide. */
+  setRings(spots: [number, number, number][]) {
+    this.rings.clear();
+    for (const p of spots.slice(0, 60)) {
+      const r = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex.ring, color: new THREE.Color("#f7768e"), transparent: true, depthWrite: false }));
+      r.scale.set(2.4, 2.4, 1);
+      r.position.set(...p);
+      this.rings.add(r);
+    }
+    this.dirty = true;
+  }
+
   /** Fly the camera so it looks at `target` from `camera`. */
   flyTo(target: [number, number, number], camera: [number, number, number], ms = 900) {
     this.tween = {
@@ -340,9 +423,16 @@ export class SpaceScene {
     // draw only when something changed: the camera moved, something glows,
     // or the pointer moved (idle, it costs nothing)
     if (this.controls.update()) this.dirty = true;
-    if (!this.dirty && !this.glows.length) return;
+    if (!this.dirty && !this.glows.length && !this.markers.length) return;
     this.stars.rotation.y = t * 0.000008;
     // working folders breathe, ones that need you pulse a little faster
+    for (const k of this.markers) {
+      const speed = k.m.needs ? 0.005 : k.m.working ? 0.0028 : 0;
+      const b = speed ? 0.5 + 0.5 * Math.sin(t * speed + k.seed) : 0.4;
+      (k.halo.material as THREE.SpriteMaterial).opacity = 0.18 + 0.35 * b;
+      const s = 4 + b * 1.4;
+      k.halo.scale.set(s, s, 1);
+    }
     for (const g of this.glows) {
       const speed = g.kind === "needs" ? 0.004 : 0.0022;
       (g.sprite.material as THREE.SpriteMaterial).opacity = g.kind === "done" ? 0.5 : 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(t * speed + g.seed));
@@ -365,13 +455,14 @@ export class SpaceScene {
   private placeLabels() {
     const w = this.host.clientWidth, h = this.host.clientHeight;
     const v = new THREE.Vector3();
-    type L = { text: string; x: number; y: number; score: number; cls: string };
+    type L = { text: string; x: number; y: number; score: number; cls: string; color?: string };
     const out: L[] = [];
-    const add = (text: string, pos: [number, number, number], score: number, cls: string) => {
+    const add = (text: string, pos: [number, number, number], score: number, cls: string, color?: string) => {
       v.set(...pos).project(this.camera);
       if (v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) return;
-      out.push({ text, x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, score, cls });
+      out.push({ text, x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, score, cls, color });
     };
+    for (const { m } of this.markers) add(m.label, [m.at[0], m.at[1] + 0.9, m.at[2]], 2e9, `marker${m.needs ? " needs" : ""}`, m.color);
     const cam = this.camera.position;
     this.placed.forEach((p, i) => {
       const d = cam.distanceTo(v.set(...p.pos));
@@ -388,7 +479,8 @@ export class SpaceScene {
     for (const l of out) {
       if (show.length >= 44) break;
       const bw = l.text.length * (l.cls.includes("file") ? 6 : 7) + 10, bh = 16;
-      const b: [number, number, number, number] = [l.x - bw / 2, l.y + 8, bw, bh];
+      // session chips sit above their point, other labels below it
+      const b: [number, number, number, number] = l.cls.startsWith("marker") ? [l.x - bw / 2 - 12, l.y - 30, bw + 24, 24] : [l.x - bw / 2, l.y + 8, bw, bh];
       if (!l.cls.includes(" on") && boxes.some((o) => b[0] < o[0] + o[2] && b[0] + b[2] > o[0] && b[1] < o[1] + o[3] && b[1] + b[3] > o[1])) continue;
       boxes.push(b);
       show.push(l);
@@ -405,6 +497,8 @@ export class SpaceScene {
       d.style.display = "";
       if (d.textContent !== l.text) d.textContent = l.text;
       if (d.dataset.cls !== l.cls) { d.dataset.cls = l.cls; d.className = `space-label ${l.cls}`; }
+      const col = l.color ?? "";
+      if (d.dataset.col !== col) { d.dataset.col = col; d.style.setProperty("--c", col || "transparent"); }
       d.style.transform = `translate(${Math.round(l.x)}px, ${Math.round(l.y)}px)`;
     });
   }
