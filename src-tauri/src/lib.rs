@@ -30,6 +30,7 @@ mod impact;
 mod explain;
 mod pill;
 mod outside;
+mod space;
 pub mod mcp;
 
 // ---------------------------------------------------------------------------
@@ -5001,6 +5002,13 @@ pub fn run() {
             pill::pill_say,
             outside::outside_sessions,
             outside::spend_since,
+            space::space_scan,
+            space::space_find_repos,
+            space::space_read,
+            space::space_changes,
+            space::space_archify,
+            space::space_explain,
+            space::space_roots,
             usage::agent_usage,
             usage::transcript_recent,
             projectmap::archify_installed,

@@ -219,6 +219,13 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M3.9 3.9 6.4 6.4M12.1 3.9 9.6 6.4M3.9 12.1 6.4 9.6M12.1 12.1 9.6 9.6" />
     </>
   ),
+  space: (
+    <>
+      <circle cx="8" cy="8" r="2.2" />
+      <ellipse cx="8" cy="8" rx="6.2" ry="2.6" transform="rotate(-24 8 8)" />
+      <circle cx="13.2" cy="4.6" r="0.6" />
+    </>
+  ),
   spark: (
     <>
       <path d="M8 2.2c.5 2.6 1.2 3.3 3.8 3.8-2.6.5-3.3 1.2-3.8 3.8-.5-2.6-1.2-3.3-3.8-3.8C6.8 5.5 7.5 4.8 8 2.2Z" />
