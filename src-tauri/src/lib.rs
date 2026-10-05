@@ -761,12 +761,16 @@ fn agent_flags(agent: &str, resume: bool) -> &'static [&'static str] {
 /// double-clicked app used to die on `command not found: claude` before it
 /// printed anything. Cursor's installer symlinks both `cursor-agent` and
 /// `agent`; prefer the unambiguous name.
-fn agent_bin(agent: &str) -> Option<PathBuf> {
+fn agent_bin_names(agent: &str) -> &'static [&'static str] {
     match agent {
-        "cursor" => user_bin("cursor-agent").or_else(|| user_bin("agent")),
-        "codex" => user_bin("codex"),
-        _ => user_bin("claude"),
+        "cursor" => &["cursor-agent", "agent"],
+        "codex" => &["codex"],
+        _ => &["claude"],
     }
+}
+
+fn agent_bin(agent: &str) -> Option<PathBuf> {
+    agent_bin_names(agent).iter().find_map(|n| user_bin(n))
 }
 
 #[derive(Serialize, Clone)]
@@ -1891,7 +1895,7 @@ mod user_bin_tests {
     #[test]
     #[ignore]
     fn finds_gh_and_node_under_the_path_a_double_clicked_app_gets() {
-        for name in ["gh", "node"] {
+        for name in ["claude", "gh", "node"] {
             let p = user_bin(name).unwrap_or_else(|| panic!("{name} did not resolve"));
             assert!(p.is_absolute() && p.is_file(), "{name} -> {p:?}");
             println!("  {name} -> {}", p.display());
@@ -6499,12 +6503,14 @@ mod api_port_tests {
     }
 
     #[test]
-    fn an_agent_is_spawned_by_absolute_path_not_by_name() {
-        // the regression: a bundled app's PATH has no ~/.local/bin, so looking
-        // "claude" up inside the script meant no session ever started
-        let p = super::agent_bin("claude").expect("claude should resolve");
-        assert!(p.is_absolute() && p.is_file(), "{p:?}");
-        assert_eq!(super::agent_bin("grillme-not-an-agent"), Some(p), "unknown ids fall back to claude");
+    fn each_agent_id_names_the_cli_it_actually_runs() {
+        // whether these resolve is a fact about the machine — the mapping is
+        // the part this file decides, so it is the part under test here
+        assert_eq!(super::agent_bin_names("claude"), &["claude"]);
+        assert_eq!(super::agent_bin_names("codex"), &["codex"]);
+        // cursor's installer symlinks both; the unambiguous name is preferred
+        assert_eq!(super::agent_bin_names("cursor"), &["cursor-agent", "agent"]);
+        assert_eq!(super::agent_bin_names("anything-else"), &["claude"], "default agent");
     }
 
     #[test]
