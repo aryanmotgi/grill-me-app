@@ -448,7 +448,7 @@ export function SpacePage() {
       ) : null}
 
       {!needsRoots && !placed.length && !loading ? (
-        <div className="space-center"><p className="dim">{scope === "projects" ? "No projects yet." : root ? "Nothing to show in this folder." : "No git projects found in those folders."}</p></div>
+        <div className="space-center"><p className="dim">{scope === "project" && !root ? "Open a project to see its map." : scope === "projects" ? "No projects yet." : root ? "Nothing to show in this folder." : "No git projects found in those folders."}</p></div>
       ) : null}
       {loading ? <div className="space-loading">Mapping…</div> : null}
       {scan?.truncated ? <div className="space-note">Showing the first {scan.nodes.length} items. Open a folder to see deeper.</div> : null}

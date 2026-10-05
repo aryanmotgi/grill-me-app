@@ -371,6 +371,15 @@ export function BridgePanel() {
   const toast = useApp((s) => s.toast);
   const [busy, setBusy] = useState("");
 
+  // Esc closes it, like every other panel (before the early return: hooks
+  // must run the same way every render)
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, setOpen]);
+
   if (!open) return null;
   const p = pending(state);
   const connected = !!(conn?.desktop || conn?.code);
