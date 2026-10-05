@@ -8,8 +8,8 @@
 //                     when you fly in.
 //   space_find_repos  every git repository under the folders you picked
 //   space_read        one text file, for the code preview
-//   space_changes     files changed today in a repository (uncommitted, and
-//                     in today's commits)
+//   space_changes     files a repository changed today, or in the last few
+//                     days (uncommitted, and in commits)
 //   space_archify     the Archify architecture map a repo already has, so its
 //                     files can be grouped by the part of the app they're in
 //   space_explain     "Explain this" / "Teach me" for any file (Claude Code,
@@ -206,15 +206,21 @@ fn git(repo: &str, args: &[&str]) -> String {
         .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default()
 }
 
-/// Files a repository changed today: uncommitted, plus today's commits.
+/// Files a repository changed: uncommitted, plus commits since midnight
+/// (`days` 0, the default) or the last `days` days.
 #[tauri::command(async)]
-pub fn space_changes(repo: String) -> Vec<String> {
+pub fn space_changes(repo: String, days: Option<u32>) -> Vec<String> {
+    let since = match days.unwrap_or(0) { 0 => "midnight".to_string(), d => format!("{} days ago", d.min(90)) };
+    let since_arg = format!("--since={since}");
     let base = PathBuf::from(&repo);
-    let mut files: Vec<String> = git(&repo, &["status", "--porcelain"]).lines()
+    let mut files: Vec<String> = git(&repo, &["status", "--porcelain", "-uall"]).lines()
         .filter_map(|l| l.get(3..)).map(|f| f.trim().trim_matches('"').rsplit(" -> ").next().unwrap_or("").to_string())
-        .chain(git(&repo, &["log", "--since=midnight", "--name-only", "--pretty=format:"]).lines().map(str::to_string))
+        .chain(git(&repo, &["log", &since_arg, "--name-only", "--pretty=format:"]).lines().map(str::to_string))
         .filter(|f| !f.trim().is_empty())
-        .map(|f| base.join(f.trim()).to_string_lossy().into_owned())
+        .map(|f| base.join(f.trim()))
+        // files since deleted aren't "changed" in a way you can look at
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
         .collect();
     files.sort();
     files.dedup();
@@ -315,6 +321,24 @@ mod tests {
         // the cap
         let small = scan(&d, 3, 3);
         assert!(small.truncated && small.nodes.len() == 3);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn lists_changed_files_today_and_this_week() {
+        let d = tree();
+        let r = d.to_string_lossy().to_string();
+        let git = |a: &[&str]| assert!(Command::new("git").arg("-C").arg(&d).args(["-c", "commit.gpgsign=false"]).args(a)
+            .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t")
+            .output().unwrap().status.success());
+        git(&["init", "-q"]);
+        git(&["add", "README.md"]);
+        git(&["commit", "-qm", "x"]);
+        std::fs::write(d.join("src/app.ts"), "changed\n").unwrap();
+        let today = space_changes(r.clone(), None);
+        assert!(today.iter().any(|f| f.ends_with("README.md")));
+        assert!(today.iter().any(|f| f.ends_with("src/app.ts")));
+        assert!(!space_changes(r, Some(7)).is_empty());
         let _ = std::fs::remove_dir_all(&d);
     }
 
