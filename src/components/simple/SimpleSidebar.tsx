@@ -40,6 +40,7 @@ function TeammateSessions({ rows }: { rows: TeamSession[] }) {
 const HUB: { view: MainView; icon: string; label: string; title: string }[] = [
   { view: "home", icon: "layout", label: "Overview", title: "Every session at a glance: who's working, who needs you, what it cost (⌘H)" },
   { view: "brain", icon: "note", label: "Brain", title: "What the project knows: goal, decisions, where you left off. Every agent reads it." },
+  { view: "space", icon: "space", label: "Code Space", title: "Fly through the folders on your Mac: see the code, what changed today, and how each app fits together" },
   { view: "flow", icon: "broadcast", label: "Flow", title: "Who's talking to whom: the Claude app, your sessions and teammates" },
   { view: "dna", icon: "spark", label: "Coding DNA", title: "How you build, what Grill Me learned, and tools that would help (Evolutions)" },
   { view: "automations", icon: "bolt", label: "Automations", title: "Things Grill Me does for you: tests, checks, reminders, phone pings" },

@@ -103,11 +103,11 @@ pub fn input(ask: &str, reply: &str, stat: &str, diff: &str) -> String {
     )
 }
 
-fn cache_dir() -> std::path::PathBuf {
+pub(crate) fn cache_dir() -> std::path::PathBuf {
     crate::grillme_root().join("explain")
 }
 
-fn ask_claude(prompt: &str, input: &str) -> Result<String, String> {
+pub(crate) fn ask_claude(prompt: &str, input: &str) -> Result<String, String> {
     crate::claude_ready()?;
     // an empty folder of its own, with no project or user settings: a
     // project's hooks would report this as your session's work, and user

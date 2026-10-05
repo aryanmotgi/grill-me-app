@@ -18,6 +18,9 @@ import { SessionHandoff } from "./SessionHandoff";
 import { HomeDashboard } from "./HomeDashboard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SimpleOverview } from "./simple/SimpleOverview";
+import { lazy, Suspense } from "react";
+// three.js and the 3D map load only when Code Space is opened
+const SpacePage = lazy(() => import("../space/SpacePage").then((m) => ({ default: m.SpacePage })));
 import { SimpleBrain } from "./simple/SimpleBrain";
 import { uiLayoutOf } from "../lib/uiLayout";
 import { FeatureIndex } from "./FeatureIndex";
@@ -78,6 +81,8 @@ function CenterStageInner({ active, split }: { active: Teammate | undefined; spl
       <AutomationsPage />
     ) : view === "brain" ? (
       simple ? <SimpleBrain /> : <BrainPage />
+    ) : view === "space" ? (
+      <Suspense fallback={<div className="flex-1 bg-[#07060a]" />}><SpacePage /></Suspense>
     ) : view === "dna" ? (
       <DNAPage />
     ) : view === "flow" ? (
