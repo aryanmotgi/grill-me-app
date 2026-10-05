@@ -80,6 +80,37 @@ function CostChip({ mate }: { mate: Teammate }) {
   return <Chip title={`Spent about ${money(st.cost)} over ${st.turns} messages (estimate at list prices). Each message re-reads ~${kTokens(st.perTurn)} tokens.`}>{money(st.cost)}</Chip>;
 }
 
+/** Background Claude calls Grill Me made on your behalf (checks, reviews,
+ *  drafts). They run on Haiku with no tools and never appear in the session's
+ *  own token counts, so without this they are spend you cannot see. It sits
+ *  next to the cost chip because that is the number it is missing from. */
+function useBgCalls(): number | null {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    if (!native()) return;
+    let live = true;
+    const read = async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const v = await invoke<number>("bg_call_count").catch(() => null);
+      if (live && typeof v === "number") setN(v);
+    };
+    void read();
+    const t = setInterval(() => void read(), 10_000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+  return n;
+}
+
+function BgChip() {
+  const bg = useBgCalls();
+  if (bg === null || bg === 0) return null;
+  return (
+    <Chip title={`Grill Me made ${bg} background Claude ${bg === 1 ? "call" : "calls"} for you since launch — checks, reviews and drafts. They run on Haiku with no tools, and are not counted in the session spend to the left.`}>
+      <Icon name="bolt" size={11} /> {bg}
+    </Chip>
+  );
+}
+
 function TestsChip({ id }: { id: string }) {
   const settings = useApp((s) => s.appSettings);
   const setAppSetting = useApp((s) => s.setAppSetting);
@@ -227,6 +258,7 @@ export function TopBar({ active, peekOpen, onTogglePeek }: { active: Teammate | 
       {onSession ? (
         <>
           <CostChip mate={active!} />
+          <BgChip />
           <TestsChip id={active!.id} />
           {repo ? <UndoChips repo={repo} /> : null}
         </>
