@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useApp, ptyIdFor } from "../store";
 import { Icon } from "./Icon";
 import { teamSessionsByMember } from "../lib/flow";
+import { sessionTitle } from "../lib/sessionTitle";
+import { sessionSentence } from "../lib/sessionSentence";
 import type { TeamSession } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -20,9 +22,12 @@ function Dot({ status }: { status: string }) {
   return <span className={`status-dot ${status} flex-none`} style={{ width: 7, height: 7 }} aria-hidden />;
 }
 
-function SessionRow({ d, onOpen }: { d: TeamSession; onOpen?: () => void }) {
+function SessionRow({ d, on, onPick, onOpen }: {
+  d: TeamSession; on?: boolean; onPick?: () => void; onOpen?: () => void;
+}) {
   return (
-    <div className="hairline rounded-lg px-3 py-2.5 flex items-start gap-2.5">
+    <div className={`hairline rounded-lg px-3 py-2.5 flex items-start gap-2.5 ${onPick ? "cursor-pointer" : ""} ${on ? "bg-raised" : ""}`}
+      onClick={onPick}>
       <Dot status={d.status} />
       <div className="min-w-0 flex-1">
         <div className="text-[13px] text-ink truncate">{d.title}</div>
@@ -33,7 +38,10 @@ function SessionRow({ d, onOpen }: { d: TeamSession; onOpen?: () => void }) {
           {d.tests === true ? <span className="text-ok">tests pass</span> : d.tests === false ? <span className="text-danger">tests fail</span> : null}
         </div>
       </div>
-      {onOpen ? <button className="btn flex-none" onClick={onOpen}>Open</button> : null}
+      {onOpen ? (
+        <button className="btn flex-none" title="Leave this page and work in the session"
+          onClick={(e) => { e.stopPropagation(); onOpen(); }}>Open in workspace</button>
+      ) : null}
     </div>
   );
 }
@@ -44,24 +52,44 @@ export function TeammatesPage() {
   const setView = useApp((s) => s.setView);
   const setActive = useApp((s) => s.setActive);
   const toast = useApp((s) => s.toast);
+  // Two ids for the same person: the local config calls you "me", the room
+  // publishes your sessions under roomSelf.memberId. Mixing them up listed you
+  // twice, once with your sessions and once without.
+  const roomSelf = useApp((s) => s.roomSelf?.memberId);
+  const titles = useApp((s) => s.appSettings.sessionTitles);
+  const local = useApp((s) => s.teammates);
   const selfId = members[0]?.id ?? "me";
   const [pick, setPick] = useState<string>(selfId);
   const [busy, setBusy] = useState(false);
 
   const byMember = teamSessionsByMember(teamSessions, Date.now());
-  // everyone config knows about, plus anyone who published a session but isn't
-  // in this Mac's config — otherwise a teammate who joined the room is invisible
+  // anyone who published a session and is neither you nor in this Mac's config —
+  // a teammate who joined the room would otherwise be invisible
   const extra = [...byMember.keys()]
-    .filter((m) => !members.some((x) => x.id === m))
+    .filter((m) => m !== roomSelf && !members.some((x) => x.id === m))
     .map((m) => ({ id: m, name: byMember.get(m)?.[0]?.memberName ?? m, repoPath: "" }));
   const people = [...members, ...extra];
   const chosen = people.find((p) => p.id === pick) ?? people[0];
   const cfg = members.find((m) => m.id === chosen?.id);
   const mine = chosen?.id === selfId;
-  const rows = byMember.get(chosen?.id ?? "") ?? [];
+  // your own sessions come from this Mac, not from the round trip through the
+  // room: they are live, they are right in solo mode, and they can be opened
+  const rows: TeamSession[] = mine
+    ? local.map((t) => ({
+        id: t.id, member: selfId, memberName: chosen?.name ?? "You", session: t.id,
+        title: sessionTitle(t, titles), status: t.status, sentence: sessionSentence(t).text,
+        branch: t.branch, tests: null, files: (t.changes ?? []).map((c) => c.file),
+      } as TeamSession))
+    : byMember.get(chosen?.id ?? "") ?? [];
   const canAttach = !!cfg?.remote && !!cfg?.tmuxSession;
 
-  const open = (d: TeamSession) => { setActive(d.member); setView("session"); };
+  const open = (d: TeamSession) => { setActive(d.session); setView("session"); };
+  // clicking a session previews it here; going to the workspace is the explicit
+  // button, so looking at a teammate never throws you out of this page
+  const [peek, setPeek] = useState("");
+  const peeked = rows.find((r) => r.session === peek) ?? rows[0];
+  const peekedLocal = mine ? local.find((t) => t.id === peeked?.session) : undefined;
+  const tail = (peekedLocal?.terminal ?? []).slice(-24);
 
   // shares the terminal they are in, rather than showing a copy of it
   const attach = async () => {
@@ -106,9 +134,9 @@ export function TeammatesPage() {
             <h2 className="text-[16px] font-semibold text-ink">{chosen?.name ?? "Teammates"}</h2>
             <span className="flex-1" />
             {canAttach ? (
-              <button className="btn" disabled={busy} title={`Attach to ${cfg?.tmuxSession} on ${cfg?.remote} over ssh`}
+              <button className="btn" disabled={busy} title={`Start or rejoin tmux session "${cfg?.tmuxSession}" on ${cfg?.remote} over ssh. Joins it only if it is already running there.`}
                 onClick={() => void attach()}>
-                {busy ? "Attaching…" : "Take over their session"}
+                {busy ? "Attaching…" : "Open their tmux session"}
               </button>
             ) : null}
           </div>
@@ -117,13 +145,33 @@ export function TeammatesPage() {
             <div className="text-[12.5px] text-faint">
               {mine ? "You have no sessions running." : `${chosen?.name ?? "They"} hasn't published a session yet.`}
             </div>
-          ) : rows.map((d) => <SessionRow key={d.id} d={d} onOpen={mine ? () => open(d) : undefined} />)}
+          ) : rows.map((d) => (
+            <SessionRow key={d.id} d={d} on={d.session === peeked?.session}
+              onPick={() => setPeek(d.session)} onOpen={mine ? () => open(d) : undefined} />
+          ))}
+
+          {peeked && mine ? (
+            <div className="hairline rounded-lg overflow-hidden">
+              <div className="px-3 py-1.5 border-b border-line text-[11px] tracking-[0.12em] uppercase text-faint">
+                {peeked.title} — last output
+              </div>
+              {tail.length ? (
+                <pre className="px-3 py-2 text-[11.5px] leading-[1.45] font-mono text-dim whitespace-pre-wrap break-words max-h-[320px] overflow-y-auto">
+                  {tail.map((l) => l.text).join("\n")}
+                </pre>
+              ) : (
+                <div className="px-3 py-2 text-[12px] text-faint">Nothing on screen yet.</div>
+              )}
+            </div>
+          ) : null}
 
           {!mine && !canAttach && rows.length > 0 ? (
             <div className="hairline rounded-lg px-3 py-2.5 text-[12px] text-dim">
-              You're seeing what {chosen?.name} publishes, not their terminal. To type into the session
-              they're actually in, their teammate entry needs an ssh host and a tmux session name —
-              then "Take over their session" shares one terminal between you.
+              You're seeing what {chosen?.name} publishes — title, branch, status, files — not their
+              terminal. Nothing of their output crosses the room.
+              {" "}Joining the session they're in needs it to have been started inside tmux on their
+              Mac, plus ssh access. A session they started themselves cannot be joined after the
+              fact: there is no tmux session to attach to.
             </div>
           ) : null}
         </div>
