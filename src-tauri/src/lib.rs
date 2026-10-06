@@ -3318,6 +3318,41 @@ fn strip_md_fence(raw: &str) -> String {
 /// fixed list, the only interpolated value is a file name validated below, and
 /// nothing reaches a shell — argv goes straight to `node`. Adding a script here
 /// is a deliberate act; a caller cannot invent one.
+/// Write (or remove) the manager agent at `<repo>/.claude/agents/manager.md`.
+///
+/// The body is composed in the frontend from the chosen mode, because the mode
+/// *is* the agent's `tools:` line — report-only means the writing tools are
+/// absent, so Claude Code never offers them. Switching mode rewrites the file;
+/// turning the manager off deletes it, so a stale definition can't outlive the
+/// setting that asked for it.
+#[tauri::command]
+fn manager_agent_write(repo_path: String, body: Option<String>) -> Result<String, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.join(".git").exists() {
+        return Err("that folder isn't a git repo".into());
+    }
+    let dir = repo.join(".claude").join("agents");
+    let file = dir.join("manager.md");
+    match body {
+        None => {
+            if file.exists() {
+                std::fs::remove_file(&file).map_err(|e| e.to_string())?;
+                return Ok("manager agent removed".into());
+            }
+            Ok("no manager agent to remove".into())
+        }
+        Some(text) => {
+            // a definition this small is never worth half-writing
+            if text.len() > 32_000 || !text.starts_with("---\n") {
+                return Err("that doesn't look like an agent definition".into());
+            }
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            std::fs::write(&file, text).map_err(|e| e.to_string())?;
+            Ok(file.to_string_lossy().into_owned())
+        }
+    }
+}
+
 #[tauri::command]
 fn deck_kit_run(script: String, repo_path: String, pitch_file: String, slug: String, layout: Option<String>) -> Result<String, String> {
     const SCRIPTS: [&str; 4] = ["readme.cjs", "pitch-to-project.cjs", "build.cjs", "catalog.cjs"];
@@ -5431,6 +5466,7 @@ pub fn run() {
             project_export,
             activity_series,
             bg_call_count,
+            manager_agent_write,
             deck_kit_run,
             install_hooks,
             events_tail,
