@@ -50,11 +50,6 @@ export function DoctorTab() {
     catch (e) { toast(`Couldn't install ${c.label}: ${e}`, "warn"); }
     finally { setBusy(""); }
   };
-  const uninstall = async () => {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const r = await invoke<{ checked: number; cleaned: number }>("uninstall_all").catch(() => null);
-    toast(r ? `Cleaned ${r.cleaned} of ${r.checked} repos — quit Grill Me now or it re-adds them on the next session` : "Couldn't clean up", r ? "info" : "warn");
-  };
   const copyDiagnostics = async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const text = await invoke<string>("diagnostics").catch((e) => `diagnostics failed: ${e}`);
@@ -104,10 +99,6 @@ export function DoctorTab() {
           </div>
         </div>
       ))}
-      <div className="hairline rounded-md px-3 py-2 mt-2 flex items-center gap-2.5 text-[11px]">
-        <span className="flex-1 text-dim">Uninstalling? First remove Grill Me's hooks and <span className="font-mono">/ship</span> command from your repos. Your own settings stay.</span>
-        <button className="btn" onClick={() => void uninstall()}>Remove from my repos</button>
-      </div>
     </div>
   );
 }

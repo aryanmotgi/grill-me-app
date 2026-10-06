@@ -16,31 +16,27 @@ import { CHECKPOINT_MIN_MINUTES, checkpointIntervalMinutes, clampCheckpointInter
 // Phase 2 Settings redesign; every prior toggle/action is preserved.
 // ---------------------------------------------------------------------------
 
-type Tab = "setup" | "team" | "appearance" | "terminal" | "notifications" | "safety" | "checkpoints" | "panels" | "shortcuts";
+type Tab = "setup" | "team" | "appearance" | "sessions" | "notifications" | "safety" | "shortcuts";
 
 const TABS: { id: Tab; label: string; blurb: string; icon: string }[] = [
   { id: "setup", label: "Setup check", blurb: "What this Mac has, and what it's missing", icon: "check" },
   { id: "team", label: "Team", blurb: "Who's on this project and where their code lives", icon: "team" },
-  { id: "appearance", label: "Appearance", blurb: "App-wide colors and density", icon: "palette" },
-  { id: "terminal", label: "Terminal", blurb: "How the embedded Claude terminals look", icon: "terminal" },
+  { id: "appearance", label: "Appearance", blurb: "How the app and its terminals look", icon: "palette" },
+  { id: "sessions", label: "Sessions", blurb: "How sessions behave on their own: pausing, spend, recovery, snapshots", icon: "bolt" },
   { id: "notifications", label: "Notifications", blurb: "What interrupts you, and how", icon: "bell" },
   { id: "safety", label: "Safety", blurb: "Commands that always require confirmation", icon: "lock" },
-  { id: "checkpoints", label: "Checkpoints", blurb: "Periodic local snapshot commits so work is never lost", icon: "commit" },
-  { id: "panels", label: "Panels", blurb: "Show or hide parts of the app", icon: "layout" },
   { id: "shortcuts", label: "Shortcuts", blurb: "Keyboard reference", icon: "keyboard" },
 ];
 
 // Searchable keywords per tab — powers the rail match indicator and the
 // "no matches here" hint. Row-level filtering below is automatic via context.
 const SEARCH_INDEX: Record<Tab, string[]> = {
-  setup: ["setup", "doctor", "install", "missing", "node", "claude", "git", "gh", "github", "tailscale", "health"],
-  team: ["team", "solo", "mode", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission"],
-  appearance: ["layout", "simple", "classic", "theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "launch", "animation", "splash", "backup", "restore", "export", "import"],
-  terminal: ["font", "size", "line spacing", "color scheme", "palette", "text color", "background", "cursor", "blink", "ansi"],
-  notifications: ["message", "input", "digest", "auto-pause", "idle", "self-healing", "mute", "sound", "mention", "conflict", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat", "budget", "token", "rate", "limit", "cap"],
+  setup: ["setup", "doctor", "install", "missing", "node", "claude", "git", "gh", "github", "tailscale", "health", "tour", "onboarding"],
+  team: ["team", "solo", "mode", "member", "worktree", "repo", "path", "ssh", "remote", "tmux", "role", "permission", "inbox", "clear", "danger"],
+  appearance: ["layout", "simple", "classic", "theme", "color", "density", "compact", "translucent", "background", "vibrancy", "glass", "font", "size", "line spacing", "color scheme", "palette", "cursor", "blink", "ansi", "terminal"],
+  sessions: ["auto-pause", "idle", "self-healing", "stall", "stalled", "loop", "looping", "stuck", "silent", "repeat", "budget", "token", "rate", "limit", "cap", "checkpoint", "snapshot", "commit", "interval", "minutes", "periodic", "save", "recover", "lost work"],
+  notifications: ["message", "input", "digest", "mute", "sound", "mention", "conflict", "quiet", "volume"],
   safety: ["delete", "force push", "reset", "clean", "database", "drop", "disk", "system", "blocklist", "regex", "pattern"],
-  checkpoints: ["checkpoint", "snapshot", "auto", "commit", "backup", "interval", "minutes", "periodic", "save", "recover", "lost work"],
-  panels: ["preview", "dev", "tour", "onboarding", "inbox", "clear"],
   shortcuts: ["command palette", "home", "ship", "focus", "shortcut", "keyboard", "esc", "cheatsheet", "navigation", "jump", "session", "search"],
 };
 
@@ -97,6 +93,8 @@ const SAFETY_PRESETS: { key: string; label: string; detail: string; patterns: st
 const SearchContext = createContext("");
 
 import { SEE_LEVELS, SEE_COPY, policyOf } from "../lib/share";
+import { MANAGER_MODES, MODE_COPY, managerAgentFile, managerOf, managerUsage } from "../lib/manager";
+import { money, sessionStats } from "../lib/coach";
 
 function rowMatches(query: string, label: string, hint?: string) {
   if (!query) return true;
@@ -114,6 +112,90 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </div>
       <div className="flex-1 flex items-center gap-2 min-w-0">{children}</div>
     </div>
+  );
+}
+
+/** The manager session: what it may do, and what it has spent.
+ *
+ *  Report mode is enforced by launching it with --disallowedTools, so the
+ *  refusal comes from Claude Code rather than from the manager choosing to
+ *  behave. The hourly cap is the weaker of the two and the copy says so: it
+ *  bounds what Grill Me performs on the manager's behalf. */
+function ManagerRows() {
+  const appSettings = useApp((s) => s.appSettings);
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const teammates = useApp((s) => s.teammates);
+  const policy = managerOf(appSettings);
+  const mate = teammates.find((t) => t.id === policy.session);
+  const actions = Array.isArray(appSettings.managerActions) ? (appSettings.managerActions as number[]) : [];
+  const usage = managerUsage(sessionStats(mate), actions, policy, Date.now());
+  const [wrote, setWrote] = useState("");
+  const repo = useApp((st) => st.members[0]?.repoPath ?? "");
+
+  // the mode is the agent's tools line, so changing it rewrites the agent —
+  // off deletes it, rather than leaving a definition the setting disowns
+  const set = async (patch: Partial<typeof policy>) => {
+    const next = { ...policy, ...patch };
+    setAppSetting("manager", next);
+    if (!isTauri() || !repo) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    const body = next.mode === "off" ? null : managerAgentFile(next.mode);
+    try {
+      await invoke("manager_agent_write", { repoPath: repo, body });
+      setWrote(next.mode === "off" ? "Agent removed from this repo." : ".claude/agents/manager.md written — Claude Code picks it up on the next session.");
+    } catch (e) {
+      setWrote(`Couldn't write the agent: ${e}`);
+    }
+  };
+
+  return (
+    <>
+      <Row label="Manager session" hint="One session whose job is the other sessions: it reads every teammate's work and says who's blocked and what's drifting.">
+        <div className="flex flex-col gap-1 min-w-0">
+          {MANAGER_MODES.map((m) => (
+            <button key={m} type="button"
+              className={`flex items-start gap-2 text-left rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
+                policy.mode === m ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`}
+              onClick={() => void set({ mode: m })}>
+              <span className={`status-dot mt-1 flex-none ${policy.mode === m ? "working" : "idle"}`} style={{ width: 6, height: 6 }} />
+              <span className="min-w-0">
+                <span className="block text-[12.5px]">{MODE_COPY[m].label}</span>
+                <span className="block text-[11.5px] text-faint leading-snug">{MODE_COPY[m].detail}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Row>
+      {wrote ? <Row label="Agent file"><span className="text-[11.5px] text-dim">{wrote}</span></Row> : null}
+      {policy.mode !== "off" ? (
+        <Row label="Which session manages" hint="Pick the session that does the managing. It still runs on your own Claude plan.">
+          <select className="input" value={policy.session} onChange={(e) => void set({ session: e.target.value })}>
+            <option value="">Choose a session…</option>
+            {teammates.map((t) => <option key={t.id} value={t.id}>{t.name || t.id}</option>)}
+          </select>
+        </Row>
+      ) : null}
+      {policy.mode === "act" ? (
+        <Row label="Actions per hour" hint="Bounds what Grill Me carries out for the manager. It is a budget, not a sandbox — report mode is the setting that actually prevents acting.">
+          <input className="input w-[90px]" type="number" min={0} max={100} value={policy.maxActionsPerHour}
+            onChange={(e) => void set({ maxActionsPerHour: Number(e.target.value) })} />
+        </Row>
+      ) : null}
+      {policy.mode !== "off" && policy.session ? (
+        <Row label="Manager usage" hint="This session's own spend, estimated from its token counts at list prices.">
+          <div className="flex items-center gap-4 text-[12px]">
+            <span><span className="num text-ink">{money(usage.cost)}</span> <span className="text-faint">spent</span></span>
+            <span><span className="num text-ink">{usage.turns}</span> <span className="text-faint">{usage.turns === 1 ? "turn" : "turns"}</span></span>
+            {policy.mode === "act" ? (
+              <span className={usage.capped ? "text-warn" : ""}>
+                <span className="num">{usage.actionsThisHour}</span>
+                <span className="text-faint">/{usage.cap} actions this hour</span>
+              </span>
+            ) : null}
+          </div>
+        </Row>
+      ) : null}
+    </>
   );
 }
 
@@ -254,28 +336,6 @@ export function SettingsModal() {
   const edit = (i: number, key: keyof TeamMemberConfig, val: string) =>
     setDraft((d) => d.map((m, j) => (j === i ? { ...m, [key]: val } : m)));
 
-  const exportSettings = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(appSettings, null, 2)], { type: "application/json" }));
-    a.download = "grillme-settings.json";
-    a.click();
-    toast("Settings exported");
-  };
-
-  const importSettings = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const imported = JSON.parse(String(reader.result));
-        for (const [k, v] of Object.entries(imported)) setAppSetting(k, v);
-        toast("Settings imported — some changes apply after relaunch");
-      } catch {
-        toast("Import failed: not valid JSON", "warn");
-      }
-    };
-    reader.readAsText(file);
-  };
-
   const active = TABS.find((t) => t.id === tab)!;
 
   return (
@@ -388,25 +448,12 @@ export function SettingsModal() {
                         onClick={() => setAppSetting("background", b)}>{b}</button>
                     ))}
                   </Row>
-                  <Row label="Launch animation" hint="The 3D logo when Grill Me opens. Takes effect next launch">
-                    <Toggle checked={appSettings.launchAnimation !== false} onChange={(v) => setAppSetting("launchAnimation", v)} />
-                  </Row>
-                  <Row label="Session details strip" hint="Show cpu, memory and token counts under each session">
-                    <Toggle checked={appSettings.showVitals === true} onChange={(v) => setAppSetting("showVitals", v)} />
-                  </Row>
-                  <Row label="Backup & restore" hint="Move your preferences to another machine">
-                    <button className="btn" onClick={exportSettings}><Icon name="download" size={10} /> export</button>
-                    <label className="btn cursor-pointer">
-                      import
-                      <input type="file" accept=".json" className="hidden"
-                        onChange={(e) => e.target.files?.[0] && importSettings(e.target.files[0])} />
-                    </label>
-                  </Row>
                   {!q ? <ThemePreview themeName={themeName} /> : null}
                 </>
               ) : null}
 
-              {tab === "terminal" ? (
+              {/* terminal look sits with the rest of the app's look */}
+              {tab === "appearance" ? (
                 <>
                   <Row label="Font">
                     <select className="btn" value={termSettings.font} onChange={(e) => setTermSetting("font", e.target.value)}>
@@ -436,13 +483,6 @@ export function SettingsModal() {
                         </button>
                       ))}
                     </div>
-                  </Row>
-                  <Row label="Text color" hint="Overrides the scheme's default text color">
-                    <input type="color" value={termSettings.fgOverride ?? "#cfd6cf"}
-                      onChange={(e) => setTermSetting("fgOverride", e.target.value)} />
-                    {termSettings.fgOverride ? (
-                      <button className="btn" onClick={() => setTermSetting("fgOverride", null)}>reset</button>
-                    ) : <span className="text-faint text-[10px]">scheme default</span>}
                   </Row>
                   <Row label="Background">
                     <input type="color" value={termSettings.bgOverride ?? "#0a0c0b"}
@@ -510,50 +550,8 @@ export function SettingsModal() {
                     </select>
                     <span className="text-faint text-[10px]">blocking / questions / @mentions are always instant</span>
                   </Row>
-                  <Row label="Auto-pause idle sessions" hint="Idle Claude terminals burn CPU repainting — freeze after quiet period, instant resume on view/type">
-                    <Toggle checked={appSettings.autoPauseIdle !== false} onChange={(v) => setAppSetting("autoPauseIdle", v)} />
-                    <select className="btn" value={String(appSettings.autoPauseIdleMin ?? 5)}
-                      onChange={(e) => setAppSetting("autoPauseIdleMin", Number(e.target.value))}>
-                      <option value="5">after 5 min</option>
-                      <option value="10">after 10 min</option>
-                      <option value="20">after 20 min</option>
-                    </select>
-                  </Row>
-                  <Row label="Token budget cap" hint="Hard-stop a session that blows its token budget — auto-pauses it (never one waiting on you). Resume grants another cap's worth.">
-                    <select className="btn" value={String(appSettings.sessionTokenCap ?? 0)}
-                      onChange={(e) => setAppSetting("sessionTokenCap", Number(e.target.value))}>
-                      <option value="0">off</option>
-                      <option value="100000">100k tokens</option>
-                      <option value="200000">200k tokens</option>
-                      <option value="500000">500k tokens</option>
-                      <option value="1000000">1M tokens</option>
-                    </select>
-                  </Row>
-                  <Row label="Self-healing sessions" hint="Auto-restart crashed sessions (max 3/10min); flag stuck ones; ride out rate limits">
-                    <Toggle checked={appSettings.selfHeal !== false} onChange={(v) => setAppSetting("selfHeal", v)} />
-                  </Row>
-                  <Row label="Stall & loop detection" hint="Flag a session that goes silent, or whose output keeps repeating, so it surfaces in Needs-you">
-                    <Toggle checked={appSettings.stallDetect !== false} onChange={(v) => setAppSetting("stallDetect", v)} />
-                    <select className="btn" value={String(appSettings.stallThresholdMin ?? 5)}
-                      onChange={(e) => setAppSetting("stallThresholdMin", Number(e.target.value))}>
-                      <option value="3">silent 3 min</option>
-                      <option value="5">silent 5 min</option>
-                      <option value="10">silent 10 min</option>
-                      <option value="15">silent 15 min</option>
-                    </select>
-                  </Row>
                   <Row label="Mute everything" hint="Silences all notifications and sounds">
                     <Toggle checked={Boolean(appSettings.muteAll)} onChange={(v) => setAppSetting("muteAll", v)} />
-                  </Row>
-                  <Row label="Team token budget" hint="Soft daily cap across all sessions — the home meter warns at 50/80/100% and chimes at 80/100. Never blocks anything.">
-                    <input type="number" min={0} step={0.5}
-                      value={(typeof appSettings.tokenBudget === "number" ? appSettings.tokenBudget : 5_000_000) / 1_000_000}
-                      className="w-20 bg-raised hairline rounded-md px-2 py-1 text-[11px] num"
-                      onChange={(e) => {
-                        const m = Number(e.target.value);
-                        setAppSetting("tokenBudget", Number.isFinite(m) && m > 0 ? Math.round(m * 1_000_000) : 5_000_000);
-                      }} />
-                    <span className="text-dim text-[10px]">million tokens</span>
                   </Row>
                   {(() => {
                     const qh = (appSettings.quietHours as { enabled?: boolean; start?: string; end?: string }) ?? {};
@@ -612,22 +610,73 @@ export function SettingsModal() {
                   </div>
                 </>
               ) : null}
+              {/* how a session behaves when you are not watching it:
+                  these were filed under Notifications because they can
+                  raise one, which is not what they are. */}
+              {tab === "sessions" ? (
+                <>
+                  <ManagerRows />
+                  <Row label="Auto-pause idle sessions" hint="Idle Claude terminals burn CPU repainting — freeze after quiet period, instant resume on view/type">
+                    <Toggle checked={appSettings.autoPauseIdle !== false} onChange={(v) => setAppSetting("autoPauseIdle", v)} />
+                    <select className="btn" value={String(appSettings.autoPauseIdleMin ?? 5)}
+                      onChange={(e) => setAppSetting("autoPauseIdleMin", Number(e.target.value))}>
+                      <option value="5">after 5 min</option>
+                      <option value="10">after 10 min</option>
+                      <option value="20">after 20 min</option>
+                    </select>
+                  </Row>
+                  <Row label="Token budget cap" hint="Hard-stop a session that blows its token budget — auto-pauses it (never one waiting on you). Resume grants another cap's worth.">
+                    <select className="btn" value={String(appSettings.sessionTokenCap ?? 0)}
+                      onChange={(e) => setAppSetting("sessionTokenCap", Number(e.target.value))}>
+                      <option value="0">off</option>
+                      <option value="100000">100k tokens</option>
+                      <option value="200000">200k tokens</option>
+                      <option value="500000">500k tokens</option>
+                      <option value="1000000">1M tokens</option>
+                    </select>
+                  </Row>
+                  <Row label="Self-healing sessions" hint="Auto-restart crashed sessions (max 3/10min); flag stuck ones; ride out rate limits">
+                    <Toggle checked={appSettings.selfHeal !== false} onChange={(v) => setAppSetting("selfHeal", v)} />
+                  </Row>
+                  <Row label="Stall & loop detection" hint="Flag a session that goes silent, or whose output keeps repeating, so it surfaces in Needs-you">
+                    <Toggle checked={appSettings.stallDetect !== false} onChange={(v) => setAppSetting("stallDetect", v)} />
+                    <select className="btn" value={String(appSettings.stallThresholdMin ?? 5)}
+                      onChange={(e) => setAppSetting("stallThresholdMin", Number(e.target.value))}>
+                      <option value="3">silent 3 min</option>
+                      <option value="5">silent 5 min</option>
+                      <option value="10">silent 10 min</option>
+                      <option value="15">silent 15 min</option>
+                    </select>
+                  </Row>
+                  <Row label="Team token budget" hint="Soft daily cap across all sessions — the home meter warns at 50/80/100% and chimes at 80/100. Never blocks anything.">
+                    <input type="number" min={0} step={0.5}
+                      value={(typeof appSettings.tokenBudget === "number" ? appSettings.tokenBudget : 5_000_000) / 1_000_000}
+                      className="w-20 bg-raised hairline rounded-md px-2 py-1 text-[11px] num"
+                      onChange={(e) => {
+                        const m = Number(e.target.value);
+                        setAppSetting("tokenBudget", Number.isFinite(m) && m > 0 ? Math.round(m * 1_000_000) : 5_000_000);
+                      }} />
+                    <span className="text-dim text-[10px]">million tokens</span>
+                  </Row>
+                </>
+              ) : null}
 
               {tab === "safety" ? <SafetyTab toast={toast} query={q} /> : null}
 
               {tab === "setup" ? <DoctorTab /> : null}
 
-              {tab === "checkpoints" ? <CheckpointsTab query={q} /> : null}
+              {tab === "sessions" ? <CheckpointsTab query={q} /> : null}
 
-              {tab === "panels" ? (
+              {tab === "setup" ? (
+                <Row label="Replay onboarding tour" hint="Shows the walkthrough again on next view">
+                  <button className="btn" onClick={() => { setAppSetting("onboarded", false); toast("Tour will replay"); }}>replay</button>
+                </Row>
+              ) : null}
+              {/* the two actions that cannot be undone, together and last, so
+                  neither is stumbled into while looking for something else */}
+              {tab === "team" ? (
                 <>
-                  <Row label="Dev preview tab" hint="Live dev server of the project being built — hide if this project has no web UI">
-                    <Toggle checked={appSettings.showPreview !== false} onChange={(v) => setAppSetting("showPreview", v)} />
-                  </Row>
-                  {!q ? <div className="panel-label mt-4 mb-1">housekeeping</div> : null}
-                  <Row label="Replay onboarding tour" hint="Shows the walkthrough again on next view">
-                    <button className="btn" onClick={() => { setAppSetting("onboarded", false); toast("Tour will replay"); }}>replay</button>
-                  </Row>
+                  {!q ? <div className="panel-label mt-6 mb-1 text-danger">danger zone</div> : null}
                   <Row label="Clear all inbox messages" hint="Empties the shared inbox for this project — cannot be undone">
                     <button className="btn" onClick={async () => {
                       // capture BEFORE clearing local state — these are the ids we delete
@@ -641,6 +690,14 @@ export function SettingsModal() {
                       }
                       toast("Inbox cleared", "warn");
                     }}>clear inbox</button>
+                  </Row>
+                  <Row label="Remove Grill Me from my repos" hint="Takes out the hooks and the /ship command. Your own settings stay. Do this before uninstalling.">
+                    <button className="btn" onClick={async () => {
+                      if (!isTauri()) return;
+                      const { invoke } = await import("@tauri-apps/api/core");
+                      const r = await invoke<{ checked: number; cleaned: number }>("uninstall_all").catch(() => null);
+                      toast(r ? `Cleaned ${r.cleaned} of ${r.checked} repos — quit Grill Me now or it re-adds them on the next session` : "Couldn't clean up", r ? "info" : "warn");
+                    }}>remove</button>
                   </Row>
                 </>
               ) : null}
