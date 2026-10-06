@@ -1,11 +1,9 @@
 import { useApp } from "../../store";
 import { CenterStage, Overlays } from "../ShellParts";
 import { BottomTerminal } from "../BottomTerminal";
-import { DragHandle } from "../DragHandle";
 import { OverlapWatch } from "../Chrome";
 import { SimpleSidebar } from "./SimpleSidebar";
 import { TopBar } from "./TopBar";
-import { RightPanel } from "./RightPanel";
 import type { Teammate } from "../../types";
 
 // ---------------------------------------------------------------------------
@@ -19,12 +17,6 @@ import type { Teammate } from "../../types";
 export function SimpleShell({ active, split }: { active: Teammate | undefined; split: Teammate | undefined }) {
   const dense = useApp((s) => s.dense);
   const focusMode = useApp((s) => s.focusMode);
-  const width = useApp((s) => s.panelSizes.right);
-  const setPanelSize = useApp((s) => s.setPanelSize);
-  // Peek (changes, preview, plan, team) stays closed until you want it:
-  // the conversation already says what changed, what it cost, and undo
-  const rightOpen = useApp((s) => s.appSettings.peekOpen === true);
-  const setAppSetting = useApp((s) => s.setAppSetting);
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
   const onPage = view !== "session" && view !== "new";
@@ -36,9 +28,7 @@ export function SimpleShell({ active, split }: { active: Teammate | undefined; s
       <div className="flex-1 min-h-0 flex">
         {focusMode ? null : <SimpleSidebar />}
         <main className="flex-1 min-w-0 flex flex-col">
-          {focusMode ? null : (
-            <TopBar active={active} peekOpen={rightOpen} onTogglePeek={() => setAppSetting("peekOpen", !rightOpen)} />
-          )}
+          {focusMode ? null : <TopBar active={active} />}
           {onPage ? (
             <button className="flex-none flex items-center gap-1.5 h-8 px-3 text-[12px] text-dim hover:text-ink border-b border-line cursor-pointer"
               onClick={() => setView(active ? "session" : "new")}>
@@ -48,13 +38,6 @@ export function SimpleShell({ active, split }: { active: Teammate | undefined; s
           <CenterStage active={active} split={split} />
           <BottomTerminal active={active} />
         </main>
-        {rightOpen && !focusMode ? (
-          <>
-            <DragHandle onDrag={(dx) => setPanelSize("right", Math.min(680, Math.max(280, width - dx)))}
-              onDone={() => setPanelSize("right", width, true)} />
-            <RightPanel active={active} width={width} />
-          </>
-        ) : null}
       </div>
       <Overlays />
     </div>

@@ -51,6 +51,7 @@ import { ShipQueue } from "./ShipQueue";
 import { PreviewPage } from "./PreviewPage";
 import { BridgePanel } from "./BridgePanel";
 import { TeamView } from "./TeamView";
+import { TeammatesPage } from "./TeammatesPage";
 import { MergeSessions } from "./MergeSessions";
 
 /** What fills the middle: the active session (optionally split), the
@@ -86,6 +87,8 @@ function CenterStageInner({ active, split }: { active: Teammate | undefined; spl
       <AutomationsPage />
     ) : view === "brain" ? (
       simple ? <SimpleBrain /> : <BrainPage />
+    ) : view === "teammates" ? (
+      <TeammatesPage />
     ) : view === "space" ? (
       <Suspense fallback={<div className="flex-1 bg-[#07060a]" />}><SpacePage /></Suspense>
     ) : view === "dna" ? (

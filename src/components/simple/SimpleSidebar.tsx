@@ -2,7 +2,6 @@ import { useApp } from "../../store";
 import { SessionList } from "../SessionList";
 import { Icon } from "../Icon";
 import { ProjectIcon } from "../ProjectIcon";
-import type { TeamSession } from "../../types";
 import type { MainView } from "../../store";
 import { useEffect, useState } from "react";
 import { projectStates, stateLabel, type ProjectState, type PtyLite } from "../../lib/projectStatus";
@@ -18,29 +17,13 @@ import { pendingCount } from "../../lib/bridge";
 // first-timer needs to orient; the rest lives in ⌘K.
 // ---------------------------------------------------------------------------
 
-function TeammateSessions({ rows }: { rows: TeamSession[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <div className="flex-none border-t border-line px-2 py-2 max-h-[34%] overflow-y-auto">
-      <div className="px-2 pb-1 text-[11px] tracking-[0.12em] uppercase text-faint font-semibold">Teammates</div>
-      {rows.map((d) => (
-        <div key={d.id} className="flex items-start gap-2 px-2 py-1.5 rounded-md" title={d.sentence || d.title}>
-          <span className={`status-dot ${d.status} flex-none mt-1.5`} style={{ width: 6, height: 6 }} aria-hidden />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[12.5px] text-ink truncate">{d.title}</span>
-            <span className="block text-[11px] text-faint truncate">{d.memberName}{d.sentence ? ` · ${d.sentence}` : ""}</span>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /** Everything the classic rail had, in plain words, one click away. */
 const HUB: { view: MainView; icon: string; label: string; title: string }[] = [
   { view: "home", icon: "layout", label: "Overview", title: "Every session at a glance: who's working, who needs you, what it cost (⌘H)" },
   { view: "brain", icon: "note", label: "Brain", title: "What the project knows: goal, decisions, where you left off. Every agent reads it." },
   { view: "space", icon: "space", label: "Code Space", title: "Fly through the folders on your Mac: see the code, what changed today, and how each app fits together" },
+  { view: "teammates", icon: "team", label: "Teammates", title: "Who's on this project and what each of them is running — open a session, or take one over" },
   { view: "flow", icon: "broadcast", label: "Flow", title: "Who's talking to whom: the Claude app, your sessions and teammates" },
   { view: "dna", icon: "spark", label: "Coding DNA", title: "How you build, what Grill Me learned, and tools that would help (Evolutions)" },
   { view: "ship", icon: "push", label: "Ship", title: "The last two hours: demo path, preview, pitch readiness, deck and README" },
@@ -123,12 +106,12 @@ function Projects() {
 }
 
 function Footer() {
-  const appMode = useApp((s) => s.appMode);
   const room = useApp((s) => s.room);
   const setAppMode = useApp((s) => s.setAppMode);
   const setSettingsOpen = useApp((s) => s.setSettingsOpen);
   const invite = useApp((s) => s.roomInvite);
   const toast = useApp((s) => s.toast);
+  const appMode = useApp((s) => s.appMode);
   const members = room?.members ?? [];
   const now = Date.now();
   return (
@@ -171,10 +154,6 @@ export function SimpleSidebar() {
   const setPickerOpen = useApp((s) => s.setPickerOpen);
   const setSwitcherOpen = useApp((s) => s.setSwitcherOpen);
   const setView = useApp((s) => s.setView);
-  const selfId = useApp((s) => s.roomSelf?.memberId);
-  const teamSessions = useApp((s) => s.teamSessions);
-  const appMode = useApp((s) => s.appMode);
-  const others = appMode === "team" ? teamSessions.filter((d) => d.member !== selfId) : [];
 
   return (
     <aside className="w-[264px] flex-none border-r border-line bg-panel flex flex-col overflow-hidden" aria-label="Sessions">
@@ -210,7 +189,6 @@ export function SimpleSidebar() {
       <div className="flex-1 min-h-0 flex flex-col mt-1">
         <SessionList bare />
       </div>
-      <TeammateSessions rows={others} />
       <Projects />
       <Hub />
       <Footer />

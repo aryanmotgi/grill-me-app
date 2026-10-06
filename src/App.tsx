@@ -31,7 +31,6 @@ import { useBridgeFeed } from "./components/BridgePanel";
 import { useTeamChatFeed } from "./components/teamChatActions";
 import { visibleRailTabs } from "./lib/soloVisibility";
 import { isTypingTarget, stepSelection, visibleSessions } from "./lib/sessionNav";
-import { startPill } from "./lib/pillBridge";
 
 /** Overlays that own the screen — bare-key session nav is suspended while any
  *  is open so a "?" or "j" behind a modal can't move the list underneath. */
@@ -61,11 +60,6 @@ export default function App() {
   useEffect(() => {
     applyTheme(themes[themeName] ?? themes.forge);
   }, [themeName]);
-
-  // the floating pill, once setup is done (it's on unless turned off)
-  useEffect(() => {
-    if (appMode !== null) void startPill();
-  }, [appMode]);
 
   // Background style (monocode theme): "gradient" (default) paints a soft
   // graphite ground with blurred warm/cool color pools; "translucent" uses
