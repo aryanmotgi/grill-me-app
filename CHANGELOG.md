@@ -12,6 +12,40 @@ an entry. "Refactored agent spawn" is not.
 
 ---
 
+## Unreleased
+
+**Added**
+- Onboarding offers every dependency you're missing, not just the three that block startup: an "Also useful" group for `gh`, `node`, `tmux`, Tailscale and Homebrew, which never blocks Continue.
+- `node` and `tmux` are checked at all now. Neither was, so the Ship page's README and deck buttons and the tmux session mode could fail with nothing on the setup screen to explain why.
+- Homebrew is checked, because it is how `gh`, `node` and `tmux` get installed for you.
+- Settings → Setup check can install too, instead of only copying the command to your clipboard.
+- Each check carries the exact command its Install button would run, so the screen shows a button for what can be installed unattended and the instructions for what can't.
+- An ignored test that prints this Mac's doctor table: `cargo test --lib doctor -- --ignored --nocapture`.
+
+**Fixed**
+- The doctor's own header claimed "Node is no longer needed" — untrue since the deck kit landed in #241.
+- `gh` advertised `brew install gh` as its fix with no check that Homebrew existed. Brew-based installs are now offered only when brew is actually present; without it the screen gives instructions instead of a button that fails.
+- Missing entries for #243 and #244 (below) — the check in #243 caught both, including its own.
+
+## #244 — fixes from a full click-through of the app
+
+merged 2026-10-05 · authored and merged by @aryanmotgi
+
+**Fixed**
+- Touches `BridgePanel.tsx`, `NavRail.tsx`, `Settings.tsx` and `SpacePage.tsx`. (Not my change; described from its title and file list only.)
+
+## #243 — a per-PR record of what was added and fixed
+
+`docs(changelog)` · merged 2026-10-05
+
+**Added**
+- This file: an Added/Fixed list per PR, one line per item.
+- `scripts/changelog.cjs check` reports merged PRs with no entry, taking the list from git rather than from memory; `skeleton <n>` prints a block with the title and tag pre-filled.
+- The convention in `CLAUDE.md`, including that entries say what changed for the person using Grill Me, not which function moved.
+
+**Known gap**
+- A PR cannot contain its own entry: the number doesn't exist until the PR is opened. So entries land in `## Unreleased` and get their number on the next pass — which is how #243's own entry came to be written here rather than in #243.
+
 ## #242 — a double-clicked app couldn't find claude
 
 `fix(launch)` · merged 2026-10-05

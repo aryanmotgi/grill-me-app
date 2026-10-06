@@ -37,6 +37,9 @@ const native = () => "__TAURI_INTERNALS__" in window;
 /** Set while a project opens: the app reloads, and setup stays on this step until it does. */
 let holdStep: FirstRunStep | null = null;
 const REQUIRED = ["claude", "git", "python3"];
+// Offered in onboarding too, but never blocking: each one switches on a feature
+// rather than the app. Order is the order they appear.
+const ALSO_USEFUL = ["gh", "node", "tmux", "tailscale", "brew"];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const STEP_NAMES: Record<string, string> = { welcome: "Welcome", setup: "Get set up", project: "Your project", tools: "Your tools", workflow: "Your workflow", finish: "Finish" };
 
@@ -528,6 +531,11 @@ function Setup({ f, step }: SceneProps) {
   }, []);
   const required = (checks ?? []).filter((c) => REQUIRED.includes(c.id));
   const missing = required.filter((c) => !c.ok);
+  // nothing ships with the app, so anything absent is something to install.
+  // Only what's missing is listed — a tool you already have needs no row.
+  const extras = ALSO_USEFUL
+    .map((id) => (checks ?? []).find((c) => c.id === id))
+    .filter((c): c is DoctorCheck => !!c && !c.ok);
   const installed = (rows ?? []).filter((r) => r.installed);
   const ready = readyAis(rows ?? []);
 
@@ -584,11 +592,33 @@ function Setup({ f, step }: SceneProps) {
                   <span className="mark">!</span>
                   <b>{c.label}</b>
                   <small>{c.why}</small>
-                  <button type="button" className="forge-btn small primary" disabled={!!busy} onClick={() => void install(c)}>{busy === c.id ? "Installing…" : "Install"}</button>
+                  {c.install
+                    ? <button type="button" className="forge-btn small primary" disabled={!!busy} onClick={() => void install(c)}>{busy === c.id ? "Installing…" : "Install"}</button>
+                    : <small className="forge-manual">{c.fix}</small>}
                 </div>
               ))}
             </div>
           )}
+        {/* Nothing ships inside the app, so anything absent is something to
+            install. These switch on a feature rather than the app, so they are
+            offered here but never block Continue. */}
+        {extras.length ? (
+          <div className="forge-also">
+            <div className="forge-dim">Also useful — you can start without these:</div>
+            <div className="forge-checks">
+              {extras.map((c) => (
+                <div key={c.id} className="forge-check">
+                  <span className="mark">+</span>
+                  <b>{c.label}</b>
+                  <small>{c.why}</small>
+                  {c.install
+                    ? <button type="button" className="forge-btn small" disabled={!!busy} onClick={() => void install(c)}>{busy === c.id ? "Installing…" : "Install"}</button>
+                    : <small className="forge-manual">{c.fix}</small>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
       <div className="forge-part">
         <div className="forge-parthead">

@@ -7,7 +7,12 @@ import { Icon } from "./Icon";
 // command that fixes each. Required items break sessions; the rest unlock
 // features (Claude app bridge, PRs, team rooms).
 
-export interface DoctorCheck { id: string; label: string; required: boolean; ok: boolean; detail: string; why: string; fix: string }
+export interface DoctorCheck {
+  id: string; label: string; required: boolean; ok: boolean; detail: string; why: string; fix: string;
+  /** The command "Install" would run, or null when it needs a human — admin
+   *  rights, a browser, an Apple dialog. Null means show `fix`, not a button. */
+  install: string | null;
+}
 
 const native = () => "__TAURI_INTERNALS__" in window;
 
@@ -32,8 +37,19 @@ export function useDoctorOnLaunch() {
 export function DoctorTab() {
   const toast = useApp((s) => s.toast);
   const [checks, setChecks] = useState<DoctorCheck[] | null>(null);
+  const [busy, setBusy] = useState("");
   const refresh = () => { setChecks(null); void runDoctor().then(setChecks); };
   useEffect(refresh, []);
+  // same fixed-command list onboarding uses; `install` is null when the tool
+  // needs a human (admin password, a browser, an Apple dialog) and then the
+  // command is only offered to copy.
+  const install = async (c: DoctorCheck) => {
+    setBusy(c.id);
+    const { invoke } = await import("@tauri-apps/api/core");
+    try { await invoke("doctor_install", { id: c.id }); toast(`${c.label} installed`); refresh(); }
+    catch (e) { toast(`Couldn't install ${c.label}: ${e}`, "warn"); }
+    finally { setBusy(""); }
+  };
   const uninstall = async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const r = await invoke<{ checked: number; cleaned: number }>("uninstall_all").catch(() => null);
@@ -72,11 +88,18 @@ export function DoctorTab() {
             </div>
             <div className="text-dim text-[11px] mt-0.5">{c.why}</div>
             {c.ok ? null : (
-              <button className="mt-1.5 font-mono text-[10.5px] text-ink bg-raised hairline rounded-sm px-2 py-1 flex items-center gap-1.5 max-w-full"
-                title="Copy — paste in Terminal"
-                onClick={() => void navigator.clipboard.writeText(c.fix).then(() => toast("Copied — paste it in Terminal, then Re-check"))}>
-                <Icon name="doc" size={10} /><span className="truncate">{c.fix}</span>
-              </button>
+              <div className="mt-1.5 flex items-center gap-1.5 max-w-full">
+                {c.install ? (
+                  <button className="btn flex-none" disabled={!!busy} title={`Runs: ${c.install}`} onClick={() => void install(c)}>
+                    {busy === c.id ? "Installing…" : "Install"}
+                  </button>
+                ) : null}
+                <button className="font-mono text-[10.5px] text-ink bg-raised hairline rounded-sm px-2 py-1 flex items-center gap-1.5 min-w-0"
+                  title="Copy — paste in Terminal"
+                  onClick={() => void navigator.clipboard.writeText(c.fix).then(() => toast("Copied — paste it in Terminal, then Re-check"))}>
+                  <Icon name="doc" size={10} /><span className="truncate">{c.fix}</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

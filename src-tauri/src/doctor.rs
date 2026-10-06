@@ -1,8 +1,12 @@
 // ---------------------------------------------------------------------------
 // Doctor: one screen that says what this Mac is missing. New users otherwise
-// hit silent failures (no claude → no sessions, no gh → no PRs). The MCP
-// bridge is built into the app binary, so Node is no longer needed.
+// hit silent failures (no claude → no sessions, no gh → no PRs, no node → the
+// Ship page's README and deck buttons do nothing).
 // Each check runs in a login shell — the same PATH sessions get.
+//
+// Nothing here is bundled with the app: it ships one binary and shells out to
+// whatever the Mac already has. So this screen is the install list, and
+// anything it can install unattended carries the command to do it.
 // ---------------------------------------------------------------------------
 
 use serde_json::{json, Value};
@@ -20,7 +24,18 @@ fn first_line(s: String) -> String {
 
 fn check(id: &str, label: &str, required: bool, found: Option<String>, why: &str, fix: &str) -> Value {
     json!({ "id": id, "label": label, "required": required, "ok": found.is_some(),
-            "detail": found.map(first_line).unwrap_or_default(), "why": why, "fix": fix })
+            "detail": found.map(first_line).unwrap_or_default(), "why": why, "fix": fix,
+            // the exact command "Install" would run, or null when this one needs
+            // a human (admin rights, a browser, an Apple dialog). The UI shows a
+            // button for the first and the `fix` text for the second.
+            "install": install_cmd(id) })
+}
+
+/// Homebrew is how gh and node get installed unattended. Without it both need
+/// admin rights and a .pkg or a tarball, which a GUI app should not attempt
+/// behind the user's back — so those offers are withheld rather than failing.
+fn has_brew() -> bool {
+    login("command -v brew").is_some()
 }
 
 /// `claude auth status` prints JSON with `loggedIn`; anything else (not
@@ -40,6 +55,13 @@ fn install_cmd(id: &str) -> Option<&'static str> {
         "claude-login" => Some("claude auth login"),
         // macOS: Apple's own installer dialog for git + python3
         "git" | "python3" => Some("xcode-select --install"),
+        // brew only. `gh auth login` is left to the user: it wants a browser
+        // and a keypress, and run_fixed gives it no stdin.
+        "gh" => has_brew().then_some("brew install gh"),
+        "node" => has_brew().then_some("brew install node"),
+        "tmux" => has_brew().then_some("brew install tmux"),
+        // Homebrew's own installer asks for the admin password at a prompt, so
+        // it cannot run unattended from here.
         _ => None,
     }
 }
@@ -100,14 +122,49 @@ fn last_lines(text: &str, n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{install_cmd, last_lines};
+    use super::{has_brew, install_cmd, last_lines};
 
     #[test]
     fn install_only_runs_known_fixes() {
         assert!(install_cmd("claude").unwrap().contains("claude.ai/install.sh"));
         assert_eq!(install_cmd("claude-login"), Some("claude auth login"));
-        assert!(install_cmd("gh").is_none());
+        // anything not on the list, whatever it looks like
         assert!(install_cmd("rm -rf /").is_none());
+        assert!(install_cmd("brew").is_none(), "brew's own installer needs a password prompt");
+        assert!(install_cmd("tailscale").is_none(), "a .app download, not a command");
+    }
+
+    #[test]
+    fn brew_installs_are_offered_only_when_brew_is_there() {
+        // asserted as a relationship, not a fixed answer: whether this machine
+        // has brew is a fact about the machine, and CI runners differ
+        for id in ["gh", "node", "tmux"] {
+            assert_eq!(
+                install_cmd(id).is_some(),
+                has_brew(),
+                "{id} must be offered exactly when brew can run it"
+            );
+            if let Some(cmd) = install_cmd(id) {
+                assert_eq!(cmd, format!("brew install {id}"));
+            }
+        }
+    }
+
+    /// What this Mac looks like to the doctor, including which rows offer an
+    /// Install button. Ignored because the answer is a fact about the machine:
+    ///   cargo test --lib doctor -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn print_this_macs_doctor_table() {
+        for c in super::system_doctor() {
+            println!(
+                "  {:<7} {:<14} {:<9} {}",
+                if c["ok"] == true { "ok" } else if c["required"] == true { "MISSING" } else { "off" },
+                c["label"].as_str().unwrap_or(""),
+                if c["install"].is_null() { "manual" } else { "[Install]" },
+                c["install"].as_str().unwrap_or_else(|| c["fix"].as_str().unwrap_or("")),
+            );
+        }
     }
 
     #[test]
@@ -137,7 +194,18 @@ pub(crate) fn system_doctor() -> Vec<Value> {
         check("python3", "Python 3", true, login("python3 --version"),
             "Runs the safety hook that blocks dangerous commands.", "xcode-select --install"),
         check("gh", "GitHub CLI", false, login("gh --version"),
-            "Opens and merges PRs from the Ship queue.", "brew install gh && gh auth login"),
+            "Opens and merges PRs from the Ship queue.",
+            if has_brew() { "brew install gh, then gh auth login" }
+            else { "Install Homebrew first (brew.sh), then: brew install gh && gh auth login" }),
+        check("node", "Node", false, login("node --version"),
+            "The Ship page renders your README and deck with it.",
+            if has_brew() { "brew install node" } else { "Install from nodejs.org, or Homebrew first (brew.sh)" }),
+        check("tmux", "tmux", false, login("tmux -V"),
+            "Lets a session attach to a tmux window instead of its own terminal.",
+            if has_brew() { "brew install tmux" } else { "Install Homebrew first (brew.sh), then: brew install tmux" }),
+        check("brew", "Homebrew", false, login("brew --version"),
+            "How Grill Me installs gh and node for you.",
+            "Paste the line from brew.sh into Terminal — it asks for your password, so it can't be done from here"),
         check("tailscale", "Tailscale", false, ts_detail,
             "Team rooms across Wi-Fis and the claude.ai connection.", "Install from tailscale.com/download/mac, then sign in"),
         check("api", "Control API", true, api_up.then(|| format!("127.0.0.1:{}", crate::api_port())),
