@@ -1053,7 +1053,6 @@ button.topbar-chip:disabled { opacity: 0.4; cursor: default; background: none; }
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #b8562a, #e8833f 60%, #ffb36b);
-  box-shadow: 0 0 12px color-mix(in srgb, #e8833f 55%, transparent);
   transition: width 600ms cubic-bezier(.2, .8, .2, 1);
   position: relative;
   overflow: hidden;
@@ -1066,8 +1065,8 @@ button.topbar-chip:disabled { opacity: 0.4; cursor: default; background: none; }
   transform: translateX(-100%);
   animation: limit-sheen 3.2s ease-in-out infinite;
 }
-.limit-bar.warn .limit-fill { background: linear-gradient(90deg, #c07a1c, #f0b13e 70%, #ffd27a); box-shadow: 0 0 14px rgba(240, 177, 62, 0.55); }
-.limit-bar.hot .limit-fill { background: linear-gradient(90deg, #a8261f, #e5483a 70%, #ff7b62); box-shadow: 0 0 16px rgba(229, 72, 58, 0.6); }
+.limit-bar.warn .limit-fill { background: linear-gradient(90deg, #c07a1c, #f0b13e 70%, #ffd27a); }
+.limit-bar.hot .limit-fill { background: linear-gradient(90deg, #a8261f, #e5483a 70%, #ff7b62); }
 .limit-pace {
   position: absolute;
   top: -4px;
