@@ -20,32 +20,57 @@ something lands, and say *where* it landed (branch, PR, commit).
 Everything open, in the order to do it. Work top to bottom. Tick items as they
 land and say where they landed. Sections below this one are reference for *why*.
 
-### Step 1 — Save what exists  ⟵ START HERE
-Five finished, tested features live only in the working tree. Nothing else starts first.
+### Step 1 — Save what exists  ✅ DONE 2026-10-05
+- [x] 1.1 Five commits, not four: settings restructure, glow, manager agent, teammates fixes, chrome
+- [x] 1.2 Kept as one PR (#246) — the manager's card lives in the Sessions tab the
+      restructure creates, so splitting would have made a stacked chain
+- [x] 1.3 **#245 merged**, then #246 rebased onto it and merged. Zero open PRs.
+      Two real conflicts resolved: CHANGELOG (both added `## Unreleased`) and
+      DoctorTab (#245 added `install`, this branch removed `uninstall`).
 
-- [ ] 1.1 Commit as four separate commits:
-      a. Settings restructure (`Settings.tsx`, `DoctorTab.tsx`)
-      b. Progress-bar glow (`styles.css`)
-      c. Manager agent (`manager.ts`, `manager.test.ts`, `lib.rs`)
-      d. Teammates fixes + preview (`TeammatesPage.tsx`) + `PLAN.md`
-- [ ] 1.2 Split `feat/quiet-chrome` into reviewable PRs (it holds 5 features)
-- [ ] 1.3 Merge or close **#245** (onboarding installs — CI green since this morning)
+### Step 2 — Signing  ⏸ DEFERRED (reassessed 2026-10-09)
 
-### Step 2 — Make it installable by a teammate
-At a hackathon people install on the day. Aryan cannot open the app at all today.
+An earlier version of this file called signing a blocker because "Aryan cannot
+open the app". That was wrong: Aryan owns the repo and builds from source, so no
+signature is involved. Gatekeeper only checks the quarantine attribute, which
+macOS stamps on *downloaded* files and never on something compiled locally.
+Running `src-tauri/target/release/grill-me` directly — what this session has done
+all along — needs nothing.
 
-- [ ] 2.1 Create a *Developer ID Application* certificate (user — needs Apple login)
-- [ ] 2.2 Verify locally: `security find-identity -v -p codesigning`, then a signed `tauri build`
+Signing matters when someone who is **not a developer on this repo** installs
+from a link: a judge, another team. Real, but not this week.
+
+Workarounds until then: build from source, or
+`xattr -d com.apple.quarantine /Applications/grill-me.app`, or right-click → Open.
+
+- [ ] 2.1 Developer ID Application certificate (user — needs Apple login)
+- [ ] 2.2 Verify locally: `security find-identity -v -p codesigning`, then a signed build
 - [ ] 2.3 Add the six GitHub secrets `release.yml` already expects
-- [ ] 2.4 Tag `v0.2.0`, confirm the draft release carries a notarized `.dmg`
+- [ ] 2.4 Tag a version, confirm the draft release carries a notarized `.dmg`
 - [ ] 2.5 Fix the `.dmg` being labelled `x64` when the contents are arm64
 
-### Step 3 — Shared sessions, the cheap way
+### Step 3 — Shared sessions, the cheap way  ✅ BUILT 2026-10-14
 One room, one Wi-Fi. ssh over LAN is fair to require; a relay protocol is not.
 
-- [ ] 3.1 Start local sessions inside tmux (`exec tmux new -A -s grillme-<id>`), opt-in per session
-- [ ] 3.2 Make "Open their tmux session" actually join a teammate's running session
-- [ ] 3.3 Needs tmux installed — depends on #245 landing (Step 1.3)
+- [x] 3.1 Sessions run inside tmux behind a per-session `share` flag. Verified end to end:
+      the session starts with the app's exact argv, survives with zero clients attached,
+      `new -A` rejoins the same one rather than starting a second, and `attach -r` is
+      flagged `read-only=1` by tmux itself.
+- [x] 3.2 Scoped access instead of plain ssh. A teammate gets a forced-command line for
+      their `authorized_keys`, so their key can only enter one tmux session — no shell,
+      no file browsing, no forwarding. Watch-only is `attach -r`.
+- [ ] 3.3 **Two-machine test still outstanding.** Everything above was verified on this
+      Mac. Nobody has yet pasted the line on a second machine and attached across ssh.
+
+**Found while testing: `brew install tmux` fails on macOS 14.**
+Homebrew dropped bottles for it ("Tier 3"), and the source build dies in cmake. So the
+Install button #245 added for tmux does not work on this Mac, and silently will not for
+anyone on 14.x. tmux 3.5a was installed here by building from source against brew's
+libevent and ncurses, into `~/.local/bin`.
+- [ ] 3.4 Doctor should say so rather than offering a button that fails — detect the
+      macOS version, or verify the install afterwards and report what happened.
+
+
 
 ### Step 4 — The graded artifact
 - [ ] 4.1 Fill the six blocked pitch sections (user: problem, market, model, traction, team, ask)

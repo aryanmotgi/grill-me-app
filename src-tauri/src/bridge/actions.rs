@@ -268,7 +268,7 @@ fn restart(app: &tauri::AppHandle, member: &str) -> Result<(), String> {
     crate::pty_kill(id.clone())?;
     // let the old reader see EOF before the new session takes the id
     std::thread::sleep(std::time::Duration::from_millis(300));
-    crate::pty_ensure_inner(app.clone(), id, m.repo_path, false, m.remote, m.tmux_session, m.agent)
+    crate::pty_ensure_inner(app.clone(), id, m.repo_path, false, m.remote, m.tmux_session, m.agent, false)
 }
 
 /// A running dev server for this worktree, or start its dev script in the
@@ -288,7 +288,7 @@ fn preview(app: &tauri::AppHandle, member: Option<&str>, repo: &str, extra: &mut
         return (false, json!({ "ok": false, "summary": "No session to start the dev server in." }));
     };
     let tab = format!("{}:devserver", pty_id(member));
-    let started = crate::pty_ensure_inner(app.clone(), tab.clone(), repo.to_string(), true, None, None, None).and_then(|_| {
+    let started = crate::pty_ensure_inner(app.clone(), tab.clone(), repo.to_string(), true, None, None, None, false).and_then(|_| {
         // like the Preview page's autorun: only into a fresh shell
         if crate::pty_scrollback(tab.clone()).is_empty() {
             std::thread::sleep(std::time::Duration::from_millis(400));
