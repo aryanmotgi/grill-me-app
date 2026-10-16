@@ -37,8 +37,17 @@ macOS stamps on *downloaded* files and never on something compiled locally.
 Running `src-tauri/target/release/grill-me` directly — what this session has done
 all along — needs nothing.
 
-Signing matters when someone who is **not a developer on this repo** installs
-from a link: a judge, another team. Real, but not this week.
+**Trigger (sharpened 2026-10-16):** this is a *release* task, and there is no
+release. Gatekeeper inspects the quarantine attribute, which only exists on a
+downloaded file — so until there is a download URL there is nothing for it to
+check. Everyone today builds from source and never meets it.
+
+Note the app is already signed, ad-hoc: on Apple Silicon the kernel refuses an
+unsigned binary, so Tauri signs every build (`linker-signed` in the codesign
+output). The cert buys an *identity*, not a signature.
+
+Do this when, and only when, a non-developer needs to run it from a link. For a
+hackathon that may be never — judges watch a demo on your machine.
 
 Workarounds until then: build from source, or
 `xattr -d com.apple.quarantine /Applications/grill-me.app`, or right-click → Open.
