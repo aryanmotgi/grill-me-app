@@ -67,6 +67,21 @@ Homebrew dropped bottles for it ("Tier 3"), and the source build dies in cmake. 
 Install button #245 added for tmux does not work on this Mac, and silently will not for
 anyone on 14.x. tmux 3.5a was installed here by building from source against brew's
 libevent and ncurses, into `~/.local/bin`.
+**Verified against tmux 3.5a what each access level really grants (2026-10-16):**
+- `watch` (`attach -r`) is a genuine boundary. An interactive client is refused
+  `new-window`, `run-shell` and `switch-client`, so it sees one session and nothing
+  else. (Those same commands DO work as `tmux attach -r … \; new-window …`, but that
+  runs through a second, non-readonly command client — which the ssh forced command
+  prevents, since sshd ignores what the client asks to run.)
+- `type` (`new -A`) is **not** contained and cannot be: prefix + `:new-window` runs
+  anything, and typing into an agent started with `--dangerously-skip-permissions` is
+  arbitrary execution anyway. It is equivalent to handing over the laptop, and the UI
+  now says exactly that.
+- [ ] 3.5 Consider a dedicated tmux socket per shared session (`tmux -L grillme-<id>`).
+      Verified it isolates — `switch-client` to a session on the default socket fails.
+      Not needed for `watch` (already blocked) but it is cheap defence in depth, and for
+      `type` it would at least keep other sessions out of reach.
+
 - [ ] 3.4 Doctor should say so rather than offering a button that fails — detect the
       macOS version, or verify the install afterwards and report what happened.
 
@@ -84,6 +99,12 @@ libevent and ncurses, into `~/.local/bin`.
 - [ ] 5.4 Manager `model: inherit` — pin something cheaper for a polling agent? (DECISION)
 - [ ] 5.5 CI skips the MCP tests (`--exclude src/lib/mcpServer.node.test.ts`)
 - [ ] 5.6 `BLOCKS.md` — 25 blocks, used by nothing. Wire up or delete.
+- [ ] 5.7 `.claude/settings.json` is tracked but holds absolute home paths, so Grill Me's
+      hooks rewrite it on whichever Mac runs the app — a permanent phantom diff that
+      flips between `aryanmotgi` and `shreymoney`, and committing either breaks the other.
+      Gitignore it, or template the paths.
+- [ ] 5.8 `docs/rogue/alerts-v1.md` — the v1 alert decision, written by another session and
+      never committed. Commit on a rogue-detection branch or delete.
 
 ### Step 6 — Native footer (deprioritised: nice, wins no hackathon)
 - [ ] 6.1 DECISION: chain or replace the user's `~/.claude/statusline.sh` — blocks the rest

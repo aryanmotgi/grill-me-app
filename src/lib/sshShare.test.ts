@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { authorizedKeyLine, connectCommand, looksLikePublicKey, tmuxName } from "./sshShare";
+import { ACCESS_COPY, authorizedKeyLine, connectCommand, looksLikePublicKey, tmuxName } from "./sshShare";
 
 const KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJx5Q2v8bW9yZXN0dWZmaGVyZQ== aryan@mac";
 
@@ -72,5 +72,28 @@ describe("the tmux name stays inside what the Rust side validates", () => {
 describe("what the teammate runs", () => {
   it("is just ssh — the forced command decides the rest", () => {
     expect(connectCommand("aryan@macbook.local")).toBe("ssh -t aryan@macbook.local");
+  });
+});
+
+describe("what each level actually grants, verified against tmux 3.5a", () => {
+  it("watch-only is attach -r, which an interactive client cannot escape", () => {
+    // tested by hand against a live server: with `attach -r`, new-window,
+    // run-shell and switch-client are all refused for the attached client.
+    // So the line really does grant one session and nothing else.
+    expect(authorizedKeyLine("watch", KEY, "me")).toContain("tmux attach -r -t");
+  });
+
+  it("type mode is not contained, and the copy must not imply it is", () => {
+    // `new -A` attaches a normal client: prefix + :new-window runs anything.
+    // Even without that, typing into an agent started with
+    // --dangerously-skip-permissions is arbitrary execution by another route.
+    expect(authorizedKeyLine("type", KEY, "me")).toContain("tmux new -A -s");
+    expect(ACCESS_COPY.type.detail).toMatch(/shell on your Mac/i);
+    expect(ACCESS_COPY.type.detail).toMatch(/any command/i);
+  });
+
+  it("watch-only copy does not overclaim either", () => {
+    expect(ACCESS_COPY.watch.detail).toMatch(/read-only/i);
+    expect(ACCESS_COPY.watch.detail).not.toMatch(/shell on your Mac/i);
   });
 });

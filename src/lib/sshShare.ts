@@ -17,6 +17,22 @@
 // So the levels below are not a request Grill Me makes of a well-behaved
 // client. They are what the owner's own sshd will permit, and revoking one is
 // deleting one line.
+//
+// The two levels are not the same kind of thing, and the UI says so:
+//
+//   watch  attach -r. Tested against an interactive client: new-window,
+//          run-shell and switch-client are all refused, so it really is one
+//          session and nothing else. (Those commands DO work when passed as
+//          `tmux attach -r ... \; new-window ...`, but that runs through a
+//          second, non-readonly command client — which is exactly what the
+//          forced command prevents, since sshd ignores what the client asks
+//          to run.)
+//
+//   type   new -A. Not contained and cannot be: an interactive client can
+//          open a window and run anything, and even without that, typing into
+//          an agent started with --dangerously-skip-permissions is arbitrary
+//          execution by another route. Grant it only to someone you would
+//          hand the laptop to.
 // ---------------------------------------------------------------------------
 
 export const SSH_ACCESS = ["off", "watch", "type"] as const;
@@ -24,8 +40,14 @@ export type SshAccess = (typeof SSH_ACCESS)[number];
 
 export const ACCESS_COPY: Record<SshAccess, { label: string; detail: string }> = {
   off: { label: "No access", detail: "They cannot connect. Remove the line from authorized_keys to revoke." },
-  watch: { label: "Watch only", detail: "They see the session live. tmux attaches them read-only, so their keystrokes go nowhere." },
-  type: { label: "Watch and type", detail: "You share one terminal. Anything they type reaches the agent, as if they were sitting here." },
+  watch: {
+    label: "Watch only",
+    detail: "They see this session and nothing else on your Mac. tmux attaches them read-only, which blocks opening a window, running a command, and switching to another session — tested, not assumed.",
+  },
+  type: {
+    label: "Watch and type",
+    detail: "Effectively a shell on your Mac. They can run any command — through tmux directly, and by asking the agent, which runs with permissions skipped. Only for someone you would hand the laptop to.",
+  },
 };
 
 /** Options that close the doors a forced command leaves open. */
