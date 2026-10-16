@@ -94,3 +94,25 @@ export function sharedSessions(settings: Record<string, unknown> | undefined): s
   const v = settings?.sharedSessions;
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
+
+/** Where a teammate's Mac can be reached, keyed by their room member id.
+ *
+ *  Kept out of the team config on purpose: a teammate who joined the room is
+ *  not in this Mac's config at all, so there would be nothing to attach the
+ *  host to. */
+export function teammateHosts(settings: Record<string, unknown> | undefined): Record<string, string> {
+  const v = settings?.teammateHosts;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, h] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof h === "string" && h.trim()) out[k] = h.trim();
+  }
+  return out;
+}
+
+/** Same rule the Rust side validates before this reaches ssh: no leading '-'
+ *  (which ssh would read as an option) and nothing outside the safe set. */
+export function looksLikeSshHost(host: string): boolean {
+  const h = host.trim();
+  return h.length > 0 && !h.startsWith("-") && /^[A-Za-z0-9@._-]+$/.test(h);
+}

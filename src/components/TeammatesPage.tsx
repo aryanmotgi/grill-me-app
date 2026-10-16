@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useApp, ptyIdFor } from "../store";
+import { useApp } from "../store";
 import { Icon } from "./Icon";
 import { teamSessionsByMember } from "../lib/flow";
-import { ACCESS_COPY, SSH_ACCESS, authorizedKeyLine, looksLikePublicKey, sharedSessions, type SshAccess } from "../lib/sshShare";
+import { ACCESS_COPY, SSH_ACCESS, authorizedKeyLine, looksLikePublicKey, looksLikeSshHost, sharedSessions, teammateHosts, tmuxName, type SshAccess } from "../lib/sshShare";
 import { sessionTitle } from "../lib/sessionTitle";
 import { sessionSentence } from "../lib/sessionSentence";
 import type { TeamSession } from "../types";
@@ -133,6 +133,8 @@ export function TeammatesPage() {
   const setView = useApp((s) => s.setView);
   const setActive = useApp((s) => s.setActive);
   const toast = useApp((s) => s.toast);
+  const appSettings = useApp((s) => s.appSettings);
+  const setAppSetting = useApp((s) => s.setAppSetting);
   // Two ids for the same person: the local config calls you "me", the room
   // publishes your sessions under roomSelf.memberId. Mixing them up listed you
   // twice, once with your sessions and once without.
@@ -162,29 +164,38 @@ export function TeammatesPage() {
         branch: t.branch, tests: null, files: (t.changes ?? []).map((c) => c.file),
       } as TeamSession))
     : byMember.get(chosen?.id ?? "") ?? [];
-  const canAttach = !!cfg?.remote && !!cfg?.tmuxSession;
-
   const open = (d: TeamSession) => { setActive(d.session); setView("session"); };
   // clicking a session previews it here; going to the workspace is the explicit
   // button, so looking at a teammate never throws you out of this page
   const [peek, setPeek] = useState("");
   const peeked = rows.find((r) => r.session === peek) ?? rows[0];
   const peekedLocal = mine ? local.find((t) => t.id === peeked?.session) : undefined;
+  // Where their Mac is. Kept in settings rather than the team config, because a
+  // teammate who joined the room is not in this Mac's config at all.
+  const hosts = teammateHosts(appSettings);
+  const host = hosts[chosen?.id ?? ""] ?? cfg?.remote ?? "";
+  const canAttach = !mine && !!peeked && looksLikeSshHost(host);
   const tail = (peekedLocal?.terminal ?? []).slice(-24);
 
   // shares the terminal they are in, rather than showing a copy of it
+  // The tmux name is derived from the session they published, never typed:
+  // a mistyped name attaches to a session that does not exist and shows an
+  // empty terminal with no error, which is the worst possible failure here.
+  // It is also harmless when they set up a forced command — sshd runs that
+  // instead of whatever we ask for — so this works with or without one.
   const attach = async () => {
-    if (!cfg?.remote || !cfg.tmuxSession) return;
+    if (!peeked || !looksLikeSshHost(host)) return;
     setBusy(true);
+    const paneId = `attach:${chosen?.id ?? "x"}:${peeked.session}`;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("pty_ensure", {
-        id: ptyIdFor(cfg.id), cwd: cfg.repoPath || ".", shell: false,
-        remote: cfg.remote, tmux: cfg.tmuxSession, agent: cfg.agent ?? null,
+        id: paneId, cwd: ".", shell: false,
+        remote: host, tmux: tmuxName(peeked.session), agent: null,
       });
-      setActive(cfg.id);
+      setActive(paneId);
       setView("session");
-      toast(`Attached to ${chosen?.name}'s tmux session over ssh — you are both typing into the same terminal`);
+      toast(`Connected to ${chosen?.name} over ssh. What you can do there is set by them, not by Grill Me.`);
     } catch (e) {
       toast(`Couldn't attach: ${e}`, "warn");
     } finally { setBusy(false); }
@@ -247,6 +258,31 @@ export function TeammatesPage() {
             </div>
           ) : null}
 
+          {!mine && rows.length > 0 ? (
+            <div className="hairline rounded-lg p-3 flex flex-col gap-2">
+              <div className="text-[12px] text-ink">Connect to {chosen?.name}'s Mac</div>
+              <div className="text-[11.5px] text-faint leading-snug">
+                Their Tailscale name or <span className="font-mono">user@host</span> on your Wi-Fi.
+                They decide what you can do once you are there — Grill Me only makes the connection.
+              </div>
+              <input className="input" spellCheck={false} placeholder="aryan@macbook.local"
+                value={host}
+                onChange={(e) => setAppSetting("teammateHosts", { ...hosts, [chosen?.id ?? ""]: e.target.value })} />
+              {host && !looksLikeSshHost(host) ? (
+                <div className="text-[11.5px] text-warn">
+                  That isn't a plain ssh destination. Letters, digits and <span className="font-mono">@ . _ -</span> only,
+                  and it can't start with a dash — ssh would read that as an option.
+                </div>
+              ) : null}
+              {canAttach ? (
+                <div className="text-[11.5px] text-faint">
+                  Opens <span className="font-mono">{tmuxName(peeked!.session)}</span> on their Mac.
+                  If you land at a shell prompt instead of their session, they haven't added the
+                  key line yet. If you see an empty terminal, their session isn't running in tmux.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {!mine && !canAttach && rows.length > 0 ? (
             <div className="hairline rounded-lg px-3 py-2.5 text-[12px] text-dim">
               You're seeing what {chosen?.name} publishes — title, branch, status, files — not their
