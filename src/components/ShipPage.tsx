@@ -294,6 +294,17 @@ export function ShipPage() {
             </p>
           </Card>
 
+          <Card title="Submission" hint="the same pitch again — what judges read">
+            <RunBtn script="submission.cjs" label="Draft the submission" />
+            <Cmd>{`node ~/.grillme/deck-kit/submission.cjs ${pitchFile ?? "PITCH.<slug>.md"} > SUBMISSION.md`}</Cmd>
+            <p className="text-[11px] text-faint leading-relaxed">
+              Platform-neutral, so it suits whatever form the event uses. What the pitch answers
+              is filled in; what only you can answer — the challenges, what you learned — stays a
+              question with room to answer it. A generated war story is the first thing a judge
+              punctures. Ends with the pre-deadline checklist.
+            </p>
+          </Card>
+
           <Card title="Check before you call it done">
             <RunBtn script="catalog.cjs" label="Run the audit" />
             <Cmd>{`node ~/.grillme/deck-kit/catalog.cjs ${slug}`}</Cmd>

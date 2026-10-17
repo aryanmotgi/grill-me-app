@@ -15,6 +15,7 @@ an entry. "Refactored agent spawn" is not.
 ## Unreleased
 
 **Added**
+- Submissions are generated from the pitch, like the deck and the README: `node ~/.grillme/deck-kit/submission.cjs PITCH.<slug>.md`, or the Submission card on the Ship page. Platform-neutral, so it suits whatever form the event uses.
 - A session can run inside tmux (tick the box on its share panel). It then outlives Grill Me — quit or crash and the agent is still there to reattach to — and it becomes something a teammate can join, which a bare terminal is not.
 - Scoped ssh access: pick a teammate's access level, paste their public key, and Grill Me composes the one line for their `~/.ssh/authorized_keys`. That key can then enter one tmux session and nothing else — no shell, no file browsing, no port forwarding. "Watch only" is tmux's read-only attach, so their keystrokes go nowhere.
 

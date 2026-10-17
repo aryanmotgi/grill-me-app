@@ -98,7 +98,16 @@ libevent and ncurses, into `~/.local/bin`.
 
 ### Step 4 — The graded artifact
 - [ ] 4.1 Fill the six blocked pitch sections (user: problem, market, model, traction, team, ask)
-- [ ] 4.2 Build `SUBMISSION.md` — last of the original four documents, never written
+- [x] 4.2 **Submissions are generated now** (2026-10-16). `docs/deck-kit/submission.cjs`
+      renders SUBMISSION.md from the same `PITCH.<slug>.md` the deck and README come from,
+      so it cannot go stale the way the hand-written one did. Platform-neutral.
+      What the pitch answers is filled; Challenges / What we learned / How we built it stay
+      questions, because a generated war story is the first thing a judge punctures.
+      Ends with the pre-deadline checklist. 6 tests; wired into `deck_kit_run` and the Ship page.
+      The old hand-written one is archived at `docs/SUBMISSION.example-2026-09.md`.
+      - [ ] 4.2f The generator maps pitch sections 1–5, 11, 13, 14. Sections 6–10
+            (market, competition, model, traction, team) are not used — decide whether a
+            submission should carry any of them.
 - [ ] 4.3 Publish the Grill Me deck as an artifact (only DealGhost has live URLs)
 
 ### Step 5 — Loose ends, cheap

@@ -3423,7 +3423,7 @@ fn manager_agent_write(repo_path: String, body: Option<String>) -> Result<String
 
 #[tauri::command]
 fn deck_kit_run(script: String, repo_path: String, pitch_file: String, slug: String, layout: Option<String>) -> Result<String, String> {
-    const SCRIPTS: [&str; 4] = ["readme.cjs", "pitch-to-project.cjs", "build.cjs", "catalog.cjs"];
+    const SCRIPTS: [&str; 5] = ["readme.cjs", "pitch-to-project.cjs", "build.cjs", "catalog.cjs", "submission.cjs"];
     if !SCRIPTS.contains(&script.as_str()) {
         return Err(format!("unknown script {script:?}"));
     }
@@ -3452,6 +3452,8 @@ fn deck_kit_run(script: String, repo_path: String, pitch_file: String, slug: Str
                 _ => "plain".into(),
             });
         }
+        // takes the pitch file, like readme.cjs, and prints the document
+        "submission.cjs" => args.push(pitch_file.clone()),
         "catalog.cjs" => args.push(slug.clone()),
         "build.cjs" => args.push(slug.clone()),
         _ => {
