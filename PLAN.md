@@ -111,12 +111,19 @@ libevent and ncurses, into `~/.local/bin`.
 - [ ] 4.3 Publish the Grill Me deck as an artifact (only DealGhost has live URLs)
 
 ### Step 5 — Loose ends, cheap
+- [x] 5.0 **Two kits became one** (2026-10-16). `docs/readme-kit/` was dead: its layouts
+      were byte-identical to deck-kit's, its PITCH.template.md was the superseded
+      14-section version from before moat folded into competition, and nothing in the code
+      read any of it — `readme.cjs` loads `__dirname/layouts`, its own copy. BLOCKS.md and
+      examples/ moved into deck-kit, HOW-TO-USE folded into its README, the rest deleted.
 - [ ] 5.1 Animated sheen still sweeps the limit bars — remove? (DECISION)
 - [ ] 5.2 Dormant `pill.rs` / `pillBridge.ts` — delete for real or keep? (DECISION)
 - [ ] 5.3 Shortcuts tab — kept as its own tab against the earlier plan of folding it (DECISION)
 - [ ] 5.4 Manager `model: inherit` — pin something cheaper for a polling agent? (DECISION)
 - [ ] 5.5 CI skips the MCP tests (`--exclude src/lib/mcpServer.node.test.ts`)
-- [ ] 5.6 `BLOCKS.md` — 25 blocks, used by nothing. Wire up or delete.
+- [x] 5.6 `BLOCKS.md` — kept, and moved into the one kit. It documents the swappable
+      visual blocks for the README layouts, which is real reference for anyone editing
+      them; it was only "used by nothing" because it sat in a dead second kit.
 - [ ] 5.7 `.claude/settings.json` is tracked but holds absolute home paths, so Grill Me's
       hooks rewrite it on whichever Mac runs the app — a permanent phantom diff that
       flips between `aryanmotgi` and `shreymoney`, and committing either breaks the other.
