@@ -111,6 +111,11 @@ libevent and ncurses, into `~/.local/bin`.
 - [ ] 4.3 Publish the Grill Me deck as an artifact (only DealGhost has live URLs)
 
 ### Step 5 — Loose ends, cheap
+
+**Three of these were phantoms** (checked 2026-10-16). 5.5 and 5.7 were already
+correct or already fixed, and I had recorded them from stale evidence — a stash
+predating the fix, and a `--exclude` read without checking which job it was in.
+Worth remembering when adding items here: check the current tree, not a memory.
 - [x] 5.0 **Two kits became one** (2026-10-16). `docs/readme-kit/` was dead: its layouts
       were byte-identical to deck-kit's, its PITCH.template.md was the superseded
       14-section version from before moat folded into competition, and nothing in the code
@@ -120,16 +125,22 @@ libevent and ncurses, into `~/.local/bin`.
 - [ ] 5.2 Dormant `pill.rs` / `pillBridge.ts` — delete for real or keep? (DECISION)
 - [ ] 5.3 Shortcuts tab — kept as its own tab against the earlier plan of folding it (DECISION)
 - [ ] 5.4 Manager `model: inherit` — pin something cheaper for a polling agent? (DECISION)
-- [ ] 5.5 CI skips the MCP tests (`--exclude src/lib/mcpServer.node.test.ts`)
+- [x] 5.5 **Not a gap — I was wrong.** The MCP tests do run in CI, in the `rust` job
+      (ci.yml:95) after `cargo build`, because they spawn the real binary. The
+      `--exclude` on line 64 is in the `web` job, which has no Rust toolchain. Correct
+      as designed; nothing to fix.
 - [x] 5.6 `BLOCKS.md` — kept, and moved into the one kit. It documents the swappable
       visual blocks for the README layouts, which is real reference for anyone editing
       them; it was only "used by nothing" because it sat in a dead second kit.
-- [ ] 5.7 `.claude/settings.json` is tracked but holds absolute home paths, so Grill Me's
-      hooks rewrite it on whichever Mac runs the app — a permanent phantom diff that
-      flips between `aryanmotgi` and `shreymoney`, and committing either breaks the other.
-      Gitignore it, or template the paths.
-- [ ] 5.8 `docs/rogue/alerts-v1.md` — the v1 alert decision, written by another session and
-      never committed. Commit on a rogue-detection branch or delete.
+- [x] 5.7 **Already fixed — I was wrong.** `.claude/settings.json` was untracked in #151
+      ("per-machine hooks go in settings.local.json"), which is the right fix. I raised
+      this off a stash made before that landed. Nothing to do.
+- [x] 5.8 Committed — but swept in by a `git add -A docs` in ecbec4f (the kit merge),
+      so that commit's message does not mention it. The file belonged in the repo, so
+      the outcome is right and the packaging was sloppy. Not worth a rebase to fix.
+      - [ ] 5.8a The decision it records (v1 warns, never auto-pauses; who gets which
+            alert) has no implementation — `grep rogue src src-tauri/src` finds nothing.
+            The doc is a plan for a feature nobody has started.
 
 ### Step 6 — Native footer (deprioritised: nice, wins no hackathon)
 - [ ] 6.1 DECISION: chain or replace the user's `~/.claude/statusline.sh` — blocks the rest
