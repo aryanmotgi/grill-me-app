@@ -46,7 +46,7 @@ const g = (n, k) => { const v = P[n]?.fields?.[k]; return BLANK(v) ? null : un(v
 const rows = (n, k) => (P[n]?.rows?.[k] ?? []).filter((r) => !r.some(BLANK)).map((r) => r.map(un));
 
 /* ---------- template mode ----------
- * Renders docs/readme-kit/layouts/<name>.md: fill {{TOKENS}} from the pitch
+ * Renders this kit's layouts/<name>.md: fill {{TOKENS}} from the pitch
  * and DELETE any block whose tokens the pitch has not answered, rather than
  * shipping a README with {{TAM}} in it. Same rule the deck follows. */
 function renderTemplate(name) {

@@ -5,6 +5,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { isTauri } from "../data/sources/git";
 import { memberIdFromPtyId, useApp } from "../store";
+import { sharedSessions } from "../lib/sshShare";
 import { TERM_PALETTES, hexWithOpacity } from "../theme/termPalettes";
 
 function b64ToU8(b64: string) {
@@ -109,6 +110,9 @@ export function XtermPane({ id, cwd, themeName, shell = false, autorun, readOnly
           remote: (!shell && member?.remote) || null,
           tmux: (!shell && member?.tmuxSession) || null,
           agent: (!shell && member?.agent) || null,
+          // sessions marked shareable run inside tmux: they outlive the app and
+          // a teammate with a scoped key can attach to them
+          share: !shell && sharedSessions(useApp.getState().appSettings).includes(id),
         });
         if (autorun && !readOnly) {
           const sb0 = await invoke<string>("pty_scrollback", { id });

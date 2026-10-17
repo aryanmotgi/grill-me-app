@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useApp, ptyIdFor } from "../store";
+import { useApp } from "../store";
 import { Icon } from "./Icon";
 import { teamSessionsByMember } from "../lib/flow";
+import { ACCESS_COPY, SSH_ACCESS, authorizedKeyLine, looksLikePublicKey, looksLikeSshHost, sharedSessions, teammateHosts, tmuxName, type SshAccess } from "../lib/sshShare";
 import { sessionTitle } from "../lib/sessionTitle";
 import { sessionSentence } from "../lib/sessionSentence";
 import type { TeamSession } from "../types";
@@ -46,12 +47,94 @@ function SessionRow({ d, on, onPick, onOpen }: {
   );
 }
 
+/** Letting one teammate into one session.
+ *
+ *  Grill Me does not touch their machine or yours: it composes the line and you
+ *  send it. Granting is them pasting it into ~/.ssh/authorized_keys; revoking
+ *  is them deleting it. The forced command in that line is what limits the
+ *  access — sshd runs it whatever the client asks for, so "watch only" is
+ *  tmux's read-only attach rather than a promise. */
+function ShareAccess({ sessionId }: { sessionId: string }) {
+  const toast = useApp((s) => s.toast);
+  const appSettings = useApp((s) => s.appSettings);
+  const setAppSetting = useApp((s) => s.setAppSetting);
+  const [access, setAccess] = useState<SshAccess>("off");
+  const [key, setKey] = useState("");
+  const shared = sharedSessions(appSettings);
+  const inTmux = shared.includes(sessionId);
+  const line = authorizedKeyLine(access, key, sessionId);
+  const bad = access !== "off" && key.trim().length > 0 && !looksLikePublicKey(key);
+
+  return (
+    <div className="hairline rounded-lg p-3 flex flex-col gap-2.5">
+      <div className="text-[12px] text-ink">Let a teammate into this session</div>
+      <div className="text-[11.5px] text-faint leading-snug">
+        Plain ssh access is a shell on your Mac — every file, every command. This grants one
+        tmux session and nothing else, and they revoke it by deleting one line.
+      </div>
+      <label className="flex items-start gap-2 text-[12px] text-dim cursor-pointer">
+        <input type="checkbox" className="mt-0.5" checked={inTmux}
+          onChange={(e) => setAppSetting("sharedSessions",
+            e.target.checked ? [...shared, sessionId] : shared.filter((x) => x !== sessionId))} />
+        <span>
+          Run this session inside tmux
+          <span className="block text-[11.5px] text-faint leading-snug">
+            Required before anyone can join it, and it keeps the session alive if Grill Me quits.
+            Takes effect the next time the session starts. tmux brings its own key bindings into the pane.
+          </span>
+        </span>
+      </label>
+      <div className="flex flex-col gap-1">
+        {SSH_ACCESS.map((a) => (
+          <button key={a} type="button"
+            className={`flex items-start gap-2 text-left rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
+              access === a ? "bg-raised text-ink" : "text-dim hover:text-ink hover:bg-raised/60"}`}
+            onClick={() => setAccess(a)}>
+            <span className={`status-dot mt-1 flex-none ${access === a ? "working" : "idle"}`} style={{ width: 6, height: 6 }} />
+            <span className="min-w-0">
+              <span className="block text-[12.5px]">{ACCESS_COPY[a].label}</span>
+              <span className="block text-[11.5px] text-faint leading-snug">{ACCESS_COPY[a].detail}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      {access !== "off" ? (
+        <>
+          <input className="input" spellCheck={false} placeholder="Paste their public key — ssh-ed25519 AAAA…"
+            value={key} onChange={(e) => setKey(e.target.value)} />
+          {bad ? (
+            <div className="text-[11.5px] text-warn">
+              That isn't one public key. A key with a line break in it would add a second
+              authorized_keys entry carrying no restriction at all, so it is refused.
+            </div>
+          ) : null}
+          {line ? (
+            <>
+              <pre className="text-[10.5px] font-mono text-dim bg-raised hairline rounded-md p-2 whitespace-pre-wrap break-all">{line}</pre>
+              <div className="flex items-center gap-2">
+                <button className="btn" onClick={() => void navigator.clipboard.writeText(line)
+                  .then(() => toast("Copied — they add it to ~/.ssh/authorized_keys"))}>Copy the line</button>
+                <span className="text-[11px] text-faint">
+                  They also need Remote Login on, in System Settings → General → Sharing.
+                  {inTmux ? "" : " And this session is not in tmux yet — tick the box above."}
+                </span>
+              </div>
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function TeammatesPage() {
   const members = useApp((s) => s.members);
   const teamSessions = useApp((s) => s.teamSessions);
   const setView = useApp((s) => s.setView);
   const setActive = useApp((s) => s.setActive);
   const toast = useApp((s) => s.toast);
+  const appSettings = useApp((s) => s.appSettings);
+  const setAppSetting = useApp((s) => s.setAppSetting);
   // Two ids for the same person: the local config calls you "me", the room
   // publishes your sessions under roomSelf.memberId. Mixing them up listed you
   // twice, once with your sessions and once without.
@@ -81,29 +164,38 @@ export function TeammatesPage() {
         branch: t.branch, tests: null, files: (t.changes ?? []).map((c) => c.file),
       } as TeamSession))
     : byMember.get(chosen?.id ?? "") ?? [];
-  const canAttach = !!cfg?.remote && !!cfg?.tmuxSession;
-
   const open = (d: TeamSession) => { setActive(d.session); setView("session"); };
   // clicking a session previews it here; going to the workspace is the explicit
   // button, so looking at a teammate never throws you out of this page
   const [peek, setPeek] = useState("");
   const peeked = rows.find((r) => r.session === peek) ?? rows[0];
   const peekedLocal = mine ? local.find((t) => t.id === peeked?.session) : undefined;
+  // Where their Mac is. Kept in settings rather than the team config, because a
+  // teammate who joined the room is not in this Mac's config at all.
+  const hosts = teammateHosts(appSettings);
+  const host = hosts[chosen?.id ?? ""] ?? cfg?.remote ?? "";
+  const canAttach = !mine && !!peeked && looksLikeSshHost(host);
   const tail = (peekedLocal?.terminal ?? []).slice(-24);
 
   // shares the terminal they are in, rather than showing a copy of it
+  // The tmux name is derived from the session they published, never typed:
+  // a mistyped name attaches to a session that does not exist and shows an
+  // empty terminal with no error, which is the worst possible failure here.
+  // It is also harmless when they set up a forced command — sshd runs that
+  // instead of whatever we ask for — so this works with or without one.
   const attach = async () => {
-    if (!cfg?.remote || !cfg.tmuxSession) return;
+    if (!peeked || !looksLikeSshHost(host)) return;
     setBusy(true);
+    const paneId = `attach:${chosen?.id ?? "x"}:${peeked.session}`;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("pty_ensure", {
-        id: ptyIdFor(cfg.id), cwd: cfg.repoPath || ".", shell: false,
-        remote: cfg.remote, tmux: cfg.tmuxSession, agent: cfg.agent ?? null,
+        id: paneId, cwd: ".", shell: false,
+        remote: host, tmux: tmuxName(peeked.session), agent: null,
       });
-      setActive(cfg.id);
+      setActive(paneId);
       setView("session");
-      toast(`Attached to ${chosen?.name}'s tmux session over ssh — you are both typing into the same terminal`);
+      toast(`Connected to ${chosen?.name} over ssh. What you can do there is set by them, not by Grill Me.`);
     } catch (e) {
       toast(`Couldn't attach: ${e}`, "warn");
     } finally { setBusy(false); }
@@ -150,6 +242,7 @@ export function TeammatesPage() {
               onPick={() => setPeek(d.session)} onOpen={mine ? () => open(d) : undefined} />
           ))}
 
+          {peeked && mine ? <ShareAccess sessionId={peeked.session} /> : null}
           {peeked && mine ? (
             <div className="hairline rounded-lg overflow-hidden">
               <div className="px-3 py-1.5 border-b border-line text-[11px] tracking-[0.12em] uppercase text-faint">
@@ -165,6 +258,31 @@ export function TeammatesPage() {
             </div>
           ) : null}
 
+          {!mine && rows.length > 0 ? (
+            <div className="hairline rounded-lg p-3 flex flex-col gap-2">
+              <div className="text-[12px] text-ink">Connect to {chosen?.name}'s Mac</div>
+              <div className="text-[11.5px] text-faint leading-snug">
+                Their Tailscale name or <span className="font-mono">user@host</span> on your Wi-Fi.
+                They decide what you can do once you are there — Grill Me only makes the connection.
+              </div>
+              <input className="input" spellCheck={false} placeholder="aryan@macbook.local"
+                value={host}
+                onChange={(e) => setAppSetting("teammateHosts", { ...hosts, [chosen?.id ?? ""]: e.target.value })} />
+              {host && !looksLikeSshHost(host) ? (
+                <div className="text-[11.5px] text-warn">
+                  That isn't a plain ssh destination. Letters, digits and <span className="font-mono">@ . _ -</span> only,
+                  and it can't start with a dash — ssh would read that as an option.
+                </div>
+              ) : null}
+              {canAttach ? (
+                <div className="text-[11.5px] text-faint">
+                  Opens <span className="font-mono">{tmuxName(peeked!.session)}</span> on their Mac.
+                  If you land at a shell prompt instead of their session, they haven't added the
+                  key line yet. If you see an empty terminal, their session isn't running in tmux.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {!mine && !canAttach && rows.length > 0 ? (
             <div className="hairline rounded-lg px-3 py-2.5 text-[12px] text-dim">
               You're seeing what {chosen?.name} publishes — title, branch, status, files — not their

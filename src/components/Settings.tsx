@@ -615,6 +615,9 @@ export function SettingsModal() {
                   raise one, which is not what they are. */}
               {tab === "sessions" ? (
                 <>
+                  <Row label="Tell sessions when the plan changes" hint="A decision or goal change reaches every running session, so none keeps building against something the team reversed. Queued: a session mid-turn is told at its next turn, never interrupted.">
+                    <Toggle checked={appSettings.planNudge !== false} onChange={(v) => setAppSetting("planNudge", v)} />
+                  </Row>
                   <ManagerRows />
                   <Row label="Auto-pause idle sessions" hint="Idle Claude terminals burn CPU repainting — freeze after quiet period, instant resume on view/type">
                     <Toggle checked={appSettings.autoPauseIdle !== false} onChange={(v) => setAppSetting("autoPauseIdle", v)} />

@@ -20,45 +20,150 @@ something lands, and say *where* it landed (branch, PR, commit).
 Everything open, in the order to do it. Work top to bottom. Tick items as they
 land and say where they landed. Sections below this one are reference for *why*.
 
-### Step 1 — Save what exists  ⟵ START HERE
-Five finished, tested features live only in the working tree. Nothing else starts first.
+### Step 1 — Save what exists  ✅ DONE 2026-10-05
+- [x] 1.1 Five commits, not four: settings restructure, glow, manager agent, teammates fixes, chrome
+- [x] 1.2 Kept as one PR (#246) — the manager's card lives in the Sessions tab the
+      restructure creates, so splitting would have made a stacked chain
+- [x] 1.3 **#245 merged**, then #246 rebased onto it and merged. Zero open PRs.
+      Two real conflicts resolved: CHANGELOG (both added `## Unreleased`) and
+      DoctorTab (#245 added `install`, this branch removed `uninstall`).
 
-- [ ] 1.1 Commit as four separate commits:
-      a. Settings restructure (`Settings.tsx`, `DoctorTab.tsx`)
-      b. Progress-bar glow (`styles.css`)
-      c. Manager agent (`manager.ts`, `manager.test.ts`, `lib.rs`)
-      d. Teammates fixes + preview (`TeammatesPage.tsx`) + `PLAN.md`
-- [ ] 1.2 Split `feat/quiet-chrome` into reviewable PRs (it holds 5 features)
-- [ ] 1.3 Merge or close **#245** (onboarding installs — CI green since this morning)
+### Step 2 — Signing  ⏸ DEFERRED (reassessed 2026-10-09)
 
-### Step 2 — Make it installable by a teammate
-At a hackathon people install on the day. Aryan cannot open the app at all today.
+An earlier version of this file called signing a blocker because "Aryan cannot
+open the app". That was wrong: Aryan owns the repo and builds from source, so no
+signature is involved. Gatekeeper only checks the quarantine attribute, which
+macOS stamps on *downloaded* files and never on something compiled locally.
+Running `src-tauri/target/release/grill-me` directly — what this session has done
+all along — needs nothing.
 
-- [ ] 2.1 Create a *Developer ID Application* certificate (user — needs Apple login)
-- [ ] 2.2 Verify locally: `security find-identity -v -p codesigning`, then a signed `tauri build`
+**Trigger (sharpened 2026-10-16):** this is a *release* task, and there is no
+release. Gatekeeper inspects the quarantine attribute, which only exists on a
+downloaded file — so until there is a download URL there is nothing for it to
+check. Everyone today builds from source and never meets it.
+
+Note the app is already signed, ad-hoc: on Apple Silicon the kernel refuses an
+unsigned binary, so Tauri signs every build (`linker-signed` in the codesign
+output). The cert buys an *identity*, not a signature.
+
+Do this when, and only when, a non-developer needs to run it from a link. For a
+hackathon that may be never — judges watch a demo on your machine.
+
+Workarounds until then: build from source, or
+`xattr -d com.apple.quarantine /Applications/grill-me.app`, or right-click → Open.
+
+- [ ] 2.1 Developer ID Application certificate (user — needs Apple login)
+- [ ] 2.2 Verify locally: `security find-identity -v -p codesigning`, then a signed build
 - [ ] 2.3 Add the six GitHub secrets `release.yml` already expects
-- [ ] 2.4 Tag `v0.2.0`, confirm the draft release carries a notarized `.dmg`
+- [ ] 2.4 Tag a version, confirm the draft release carries a notarized `.dmg`
 - [ ] 2.5 Fix the `.dmg` being labelled `x64` when the contents are arm64
 
-### Step 3 — Shared sessions, the cheap way
+### Step 3 — Shared sessions, the cheap way  ✅ BUILT 2026-10-14
 One room, one Wi-Fi. ssh over LAN is fair to require; a relay protocol is not.
 
-- [ ] 3.1 Start local sessions inside tmux (`exec tmux new -A -s grillme-<id>`), opt-in per session
-- [ ] 3.2 Make "Open their tmux session" actually join a teammate's running session
-- [ ] 3.3 Needs tmux installed — depends on #245 landing (Step 1.3)
+- [x] 3.1 Sessions run inside tmux behind a per-session `share` flag. Verified end to end:
+      the session starts with the app's exact argv, survives with zero clients attached,
+      `new -A` rejoins the same one rather than starting a second, and `attach -r` is
+      flagged `read-only=1` by tmux itself.
+- [x] 3.2 Scoped access instead of plain ssh. A teammate gets a forced-command line for
+      their `authorized_keys`, so their key can only enter one tmux session — no shell,
+      no file browsing, no forwarding. Watch-only is `attach -r`.
+- [ ] 3.3 **Two-machine test still outstanding.** Everything above was verified on this
+      Mac. Nobody has yet pasted the line on a second machine and attached across ssh.
+
+**Found while testing: `brew install tmux` fails on macOS 14.**
+Homebrew dropped bottles for it ("Tier 3"), and the source build dies in cmake. So the
+Install button #245 added for tmux does not work on this Mac, and silently will not for
+anyone on 14.x. tmux 3.5a was installed here by building from source against brew's
+libevent and ncurses, into `~/.local/bin`.
+**Verified against tmux 3.5a what each access level really grants (2026-10-16):**
+- `watch` (`attach -r`) is a genuine boundary. An interactive client is refused
+  `new-window`, `run-shell` and `switch-client`, so it sees one session and nothing
+  else. (Those same commands DO work as `tmux attach -r … \; new-window …`, but that
+  runs through a second, non-readonly command client — which the ssh forced command
+  prevents, since sshd ignores what the client asks to run.)
+- `type` (`new -A`) is **not** contained and cannot be: prefix + `:new-window` runs
+  anything, and typing into an agent started with `--dangerously-skip-permissions` is
+  arbitrary execution anyway. It is equivalent to handing over the laptop, and the UI
+  now says exactly that.
+- [ ] 3.5 Consider a dedicated tmux socket per shared session (`tmux -L grillme-<id>`).
+      Verified it isolates — `switch-client` to a session on the default socket fails.
+      Not needed for `watch` (already blocked) but it is cheap defence in depth, and for
+      `type` it would at least keep other sessions out of reach.
+
+- [ ] 3.4 Doctor should say so rather than offering a button that fails — detect the
+      macOS version, or verify the install afterwards and report what happened.
+
+
+
+### Step 8 — Keeping the plan and the work together  ⟵ the actual problem
+
+Clarified 2026-10-16: the problem is not that someone gets stuck and needs
+taking over. It is **discoordination** — the plan moves constantly, and the
+running work does not hear about it. Session monitoring (Step 3) answers a
+different, rarer question and should not be the headline.
+
+What already existed, and is why this was small: goal, decisions and tasks sync
+to every Mac (`ROOM_SYNC_FILES`), and `catch_up` already reports what changed
+since an agent last looked (`brain.rs:239`). The gap was only that nothing told
+an agent to look.
+
+- [x] 8.1 `planNudge.ts` — when to deliver. Queued, never interrupting: a session
+      mid-turn is reconsidered next pass. 11 tests.
+- [x] 8.2 `planWatch.ts` — runs on the room tick, right after reconcile, so a
+      teammate's decision triggers it the moment it lands here.
+- [x] 8.3 Setting in Settings → Sessions.
+- [ ] 8.4 **Untested with a real second person.** Verified in unit tests only; nobody
+      has made a decision on one Mac and watched a session on another hear about it.
+- [ ] 8.5 The nudge says "run catch_up" rather than what changed, because catch_up
+      knows what that agent has already seen. Check in practice that agents actually
+      act on it rather than acknowledging and carrying on.
 
 ### Step 4 — The graded artifact
 - [ ] 4.1 Fill the six blocked pitch sections (user: problem, market, model, traction, team, ask)
-- [ ] 4.2 Build `SUBMISSION.md` — last of the original four documents, never written
+- [x] 4.2 **Submissions are generated now** (2026-10-16). `docs/deck-kit/submission.cjs`
+      renders SUBMISSION.md from the same `PITCH.<slug>.md` the deck and README come from,
+      so it cannot go stale the way the hand-written one did. Platform-neutral.
+      What the pitch answers is filled; Challenges / What we learned / How we built it stay
+      questions, because a generated war story is the first thing a judge punctures.
+      Ends with the pre-deadline checklist. 6 tests; wired into `deck_kit_run` and the Ship page.
+      The old hand-written one is archived at `docs/SUBMISSION.example-2026-09.md`.
+      - [ ] 4.2f The generator maps pitch sections 1–5, 11, 13, 14. Sections 6–10
+            (market, competition, model, traction, team) are not used — decide whether a
+            submission should carry any of them.
 - [ ] 4.3 Publish the Grill Me deck as an artifact (only DealGhost has live URLs)
 
 ### Step 5 — Loose ends, cheap
+
+**Three of these were phantoms** (checked 2026-10-16). 5.5 and 5.7 were already
+correct or already fixed, and I had recorded them from stale evidence — a stash
+predating the fix, and a `--exclude` read without checking which job it was in.
+Worth remembering when adding items here: check the current tree, not a memory.
+- [x] 5.0 **Two kits became one** (2026-10-16). `docs/readme-kit/` was dead: its layouts
+      were byte-identical to deck-kit's, its PITCH.template.md was the superseded
+      14-section version from before moat folded into competition, and nothing in the code
+      read any of it — `readme.cjs` loads `__dirname/layouts`, its own copy. BLOCKS.md and
+      examples/ moved into deck-kit, HOW-TO-USE folded into its README, the rest deleted.
 - [ ] 5.1 Animated sheen still sweeps the limit bars — remove? (DECISION)
 - [ ] 5.2 Dormant `pill.rs` / `pillBridge.ts` — delete for real or keep? (DECISION)
 - [ ] 5.3 Shortcuts tab — kept as its own tab against the earlier plan of folding it (DECISION)
 - [ ] 5.4 Manager `model: inherit` — pin something cheaper for a polling agent? (DECISION)
-- [ ] 5.5 CI skips the MCP tests (`--exclude src/lib/mcpServer.node.test.ts`)
-- [ ] 5.6 `BLOCKS.md` — 25 blocks, used by nothing. Wire up or delete.
+- [x] 5.5 **Not a gap — I was wrong.** The MCP tests do run in CI, in the `rust` job
+      (ci.yml:95) after `cargo build`, because they spawn the real binary. The
+      `--exclude` on line 64 is in the `web` job, which has no Rust toolchain. Correct
+      as designed; nothing to fix.
+- [x] 5.6 `BLOCKS.md` — kept, and moved into the one kit. It documents the swappable
+      visual blocks for the README layouts, which is real reference for anyone editing
+      them; it was only "used by nothing" because it sat in a dead second kit.
+- [x] 5.7 **Already fixed — I was wrong.** `.claude/settings.json` was untracked in #151
+      ("per-machine hooks go in settings.local.json"), which is the right fix. I raised
+      this off a stash made before that landed. Nothing to do.
+- [x] 5.8 Committed — but swept in by a `git add -A docs` in ecbec4f (the kit merge),
+      so that commit's message does not mention it. The file belonged in the repo, so
+      the outcome is right and the packaging was sloppy. Not worth a rebase to fix.
+      - [ ] 5.8a The decision it records (v1 warns, never auto-pauses; who gets which
+            alert) has no implementation — `grep rogue src src-tauri/src` finds nothing.
+            The doc is a plan for a feature nobody has started.
 
 ### Step 6 — Native footer (deprioritised: nice, wins no hackathon)
 - [ ] 6.1 DECISION: chain or replace the user's `~/.claude/statusline.sh` — blocks the rest

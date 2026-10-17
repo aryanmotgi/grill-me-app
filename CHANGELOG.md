@@ -15,6 +15,20 @@ an entry. "Refactored agent spawn" is not.
 ## Unreleased
 
 **Added**
+- When the plan changes, every running session is told. A decision or a new goal reaches all your sessions, so none keeps building against something the team reversed an hour ago. Queued rather than interrupting: a session mid-turn is told at its next turn, and you are told immediately either way, so a long turn can be stopped by hand. Off with one switch in Settings → Sessions.
+- One docs kit instead of two. `docs/readme-kit/` was a dead copy — identical layouts, a superseded pitch template, and nothing reading it. What was worth keeping (the block library, the worked examples, the how-to) moved into `docs/deck-kit/`.
+- Submissions are generated from the pitch, like the deck and the README: `node ~/.grillme/deck-kit/submission.cjs PITCH.<slug>.md`, or the Submission card on the Ship page. Platform-neutral, so it suits whatever form the event uses.
+- A session can run inside tmux (tick the box on its share panel). It then outlives Grill Me — quit or crash and the agent is still there to reattach to — and it becomes something a teammate can join, which a bare terminal is not.
+- Scoped ssh access: pick a teammate's access level, paste their public key, and Grill Me composes the one line for their `~/.ssh/authorized_keys`. That key can then enter one tmux session and nothing else — no shell, no file browsing, no port forwarding. "Watch only" is tmux's read-only attach, so their keystrokes go nowhere.
+
+- Connecting to a teammate: enter where their Mac is on the Teammates page, pick one of their sessions, and open it. The tmux session name is worked out from the session they published rather than typed — a typo there attaches to a session that does not exist and shows an empty terminal with no error.
+
+**Why it is shaped this way**
+- Plain ssh access is not "access to a session", it is a shell on the machine as that user: every file, every command, their keys. Asking a teammate to turn that on so you can watch an agent work is asking for their laptop. The forced command is what makes the grant specific, and revoking it is deleting one line.
+- A pasted key containing a newline is refused. `authorized_keys` is line-oriented, so a second line would be an entry carrying no restriction at all — unrestricted shell access, added by someone trying to grant read-only.
+
+
+**Added**
 - Teammates is a page in the hub now, next to Overview and Brain: people on the left, their sessions on the right, open one of your own from there.
 - "Take over their session" on that page for a teammate with an ssh host and tmux session configured — `tmux new -A` attaches to the terminal they are already in, so you share one rather than watching a copy.
 - A "What teammates can see" setting with four levels: nothing, that you're working, what you're working on, and the list of files you changed.

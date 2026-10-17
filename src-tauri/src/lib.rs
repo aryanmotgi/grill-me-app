@@ -866,8 +866,10 @@ fn pty_ensure(
     remote: Option<String>,
     tmux: Option<String>,
     agent: Option<String>,
+    // share: run the agent inside tmux, so it outlives the app and a teammate can join
+    share: Option<bool>,
 ) -> Result<(), String> {
-    pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux, agent)
+    pty_ensure_inner(app, id, cwd, shell.unwrap_or(false), remote, tmux, agent, share.unwrap_or(false))
 }
 
 /// Validate an ssh destination (e.g. "vm", "user@host") before it is passed to
@@ -889,6 +891,20 @@ fn validate_ssh_host(host: &str) -> Result<(), String> {
 }
 
 /// Validate a tmux session name before it is used in a command line.
+/// tmux session name for a Grill Me session id.
+///
+/// Mirrors `tmuxName()` in src/lib/sshShare.ts — the two must agree, because
+/// the frontend writes this name into the teammate's authorized_keys forced
+/// command and the session has to be the one actually running here.
+pub(crate) fn tmux_session_name(id: &str) -> String {
+    let safe: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' })
+        .collect();
+    let safe = safe.trim_start_matches('-');
+    format!("grillme-{}", if safe.is_empty() { "session" } else { safe })
+}
+
 fn validate_tmux_session(sess: &str) -> Result<(), String> {
     let ok = !sess.is_empty()
         && !sess.starts_with('-')
@@ -912,6 +928,7 @@ fn pty_ensure_inner(
     remote: Option<String>,
     tmux: Option<String>,
     agent: Option<String>,
+    share: bool,
 ) -> Result<(), String> {
     use tauri::Emitter;
     {
@@ -995,9 +1012,31 @@ fn pty_ensure_inner(
                     format!("{agent} isn't installed, or isn't where this app can see it")
                 })?;
                 let resume = agent == "claude" && newest_transcript_exact(&cwd).is_some();
-                let mut argv = vec!["-lc", "exec \"$@\"", "zsh"];
                 let bin = bin.to_string_lossy().into_owned();
-                argv.push(&bin);
+                // `share`: run the agent inside tmux instead of directly under
+                // this pty. Two things follow. The session outlives Grill Me —
+                // quit or crash and it is still there to reattach to. And it
+                // becomes something a teammate can join, which a bare pty is
+                // not: there is no handle on it from outside this process.
+                //
+                // Opt-in per session, because tmux brings its own key bindings
+                // into the pane and that should never be a surprise.
+                let mut argv: Vec<&str> = vec!["-lc", "exec \"$@\"", "zsh"];
+                let tmux_bin;
+                let tmux_sess;
+                if share {
+                    tmux_bin = user_bin("tmux")
+                        .ok_or_else(|| "tmux isn't installed — Settings → Setup check can install it".to_string())?
+                        .to_string_lossy().into_owned();
+                    tmux_sess = tmux_session_name(&id);
+                    validate_tmux_session(&tmux_sess)?;
+                    // new -A: attach if this session already exists, else start
+                    // it. So reopening a shared session rejoins the running
+                    // agent rather than starting a second one beside it.
+                    argv.extend_from_slice(&[&tmux_bin, "new", "-A", "-s", &tmux_sess, "--", &bin]);
+                } else {
+                    argv.push(&bin);
+                }
                 argv.extend_from_slice(agent_flags(agent, resume));
                 c.args(&argv);
             }
@@ -1839,6 +1878,35 @@ fn git_revert_file(repo_path: String, file: String) -> Result<(), String> {
         git(&repo_path, &["clean", "-f", "--", &file]).map(|_| ())
     } else {
         git(&repo_path, &["checkout", "--", &file]).map(|_| ())
+    }
+}
+
+#[cfg(test)]
+mod tmux_name_tests {
+    use super::{tmux_session_name, validate_tmux_session};
+
+    /// These cases are copied from src/lib/sshShare.test.ts on purpose. The
+    /// frontend writes this name into a teammate's authorized_keys forced
+    /// command; if the two sides disagree the key opens a session that is not
+    /// the one running here, and the teammate silently sees an empty terminal.
+    #[test]
+    fn agrees_with_the_frontend_on_every_shared_case() {
+        for (id, want) in [
+            ("me", "grillme-me"),
+            ("feat/some branch", "grillme-feat-some-branch"),
+            ("--rm", "grillme-rm"),
+            ("", "grillme-session"),
+        ] {
+            assert_eq!(tmux_session_name(id), want, "id {id:?}");
+        }
+    }
+
+    #[test]
+    fn whatever_the_session_id_is_the_name_is_one_tmux_accepts() {
+        for id in ["me", "a b", "x;rm -rf /", "../../etc", "", "--", "ünïcödé"] {
+            let n = tmux_session_name(id);
+            assert!(validate_tmux_session(&n).is_ok(), "{id:?} -> {n:?}");
+        }
     }
 }
 
@@ -3355,7 +3423,7 @@ fn manager_agent_write(repo_path: String, body: Option<String>) -> Result<String
 
 #[tauri::command]
 fn deck_kit_run(script: String, repo_path: String, pitch_file: String, slug: String, layout: Option<String>) -> Result<String, String> {
-    const SCRIPTS: [&str; 4] = ["readme.cjs", "pitch-to-project.cjs", "build.cjs", "catalog.cjs"];
+    const SCRIPTS: [&str; 5] = ["readme.cjs", "pitch-to-project.cjs", "build.cjs", "catalog.cjs", "submission.cjs"];
     if !SCRIPTS.contains(&script.as_str()) {
         return Err(format!("unknown script {script:?}"));
     }
@@ -3384,6 +3452,8 @@ fn deck_kit_run(script: String, repo_path: String, pitch_file: String, slug: Str
                 _ => "plain".into(),
             });
         }
+        // takes the pitch file, like readme.cjs, and prints the document
+        "submission.cjs" => args.push(pitch_file.clone()),
         "catalog.cjs" => args.push(slug.clone()),
         "build.cjs" => args.push(slug.clone()),
         _ => {
@@ -4215,7 +4285,7 @@ fn handle_api_conn(app: &tauri::AppHandle, token: &str, stream: std::net::TcpStr
             let _ = team_config_write(cfg);
             // the same id the app uses, or it ignores this session and
             // starts a second agent in the same worktree when you open it
-            match pty_ensure_inner(app.clone(), pty_id_for(&id), path_new, false, None, None, None) {
+            match pty_ensure_inner(app.clone(), pty_id_for(&id), path_new, false, None, None, None, false) {
                 Ok(_) => respond(&mut stream, 200, "{\"ok\":true}"),
                 Err(e) => respond(&mut stream, 400, &format!("{{\"error\":\"{e}\"}}")),
             }
