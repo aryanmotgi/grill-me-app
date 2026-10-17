@@ -288,9 +288,9 @@ export function ShipPage() {
             </div>
             <Cmd>{`node ~/.grillme/deck-kit/readme.cjs ${pitchFile ?? "PITCH.<slug>.md"} > README.md`}</Cmd>
             <p className="text-[11px] text-faint leading-relaxed">
-              Three layouts from the readme kit. Showcase has the logo, badges, hero image and
-              feature grid; dev tool is leaner; plain is prose only. Blocks the pitch has not
-              answered are deleted, not printed as placeholders.
+              Showcase has the logo, badges, hero image and feature grid; dev tool is leaner;
+              plain is prose only. Blocks the pitch has not answered are deleted, not printed
+              as placeholders.
             </p>
           </Card>
 
