@@ -96,6 +96,29 @@ libevent and ncurses, into `~/.local/bin`.
 
 
 
+### Step 8 — Keeping the plan and the work together  ⟵ the actual problem
+
+Clarified 2026-10-16: the problem is not that someone gets stuck and needs
+taking over. It is **discoordination** — the plan moves constantly, and the
+running work does not hear about it. Session monitoring (Step 3) answers a
+different, rarer question and should not be the headline.
+
+What already existed, and is why this was small: goal, decisions and tasks sync
+to every Mac (`ROOM_SYNC_FILES`), and `catch_up` already reports what changed
+since an agent last looked (`brain.rs:239`). The gap was only that nothing told
+an agent to look.
+
+- [x] 8.1 `planNudge.ts` — when to deliver. Queued, never interrupting: a session
+      mid-turn is reconsidered next pass. 11 tests.
+- [x] 8.2 `planWatch.ts` — runs on the room tick, right after reconcile, so a
+      teammate's decision triggers it the moment it lands here.
+- [x] 8.3 Setting in Settings → Sessions.
+- [ ] 8.4 **Untested with a real second person.** Verified in unit tests only; nobody
+      has made a decision on one Mac and watched a session on another hear about it.
+- [ ] 8.5 The nudge says "run catch_up" rather than what changed, because catch_up
+      knows what that agent has already seen. Check in practice that agents actually
+      act on it rather than acknowledging and carrying on.
+
 ### Step 4 — The graded artifact
 - [ ] 4.1 Fill the six blocked pitch sections (user: problem, market, model, traction, team, ask)
 - [x] 4.2 **Submissions are generated now** (2026-10-16). `docs/deck-kit/submission.cjs`

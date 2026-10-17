@@ -15,6 +15,7 @@ an entry. "Refactored agent spawn" is not.
 ## Unreleased
 
 **Added**
+- When the plan changes, every running session is told. A decision or a new goal reaches all your sessions, so none keeps building against something the team reversed an hour ago. Queued rather than interrupting: a session mid-turn is told at its next turn, and you are told immediately either way, so a long turn can be stopped by hand. Off with one switch in Settings → Sessions.
 - One docs kit instead of two. `docs/readme-kit/` was a dead copy — identical layouts, a superseded pitch template, and nothing reading it. What was worth keeping (the block library, the worked examples, the how-to) moved into `docs/deck-kit/`.
 - Submissions are generated from the pitch, like the deck and the README: `node ~/.grillme/deck-kit/submission.cjs PITCH.<slug>.md`, or the Submission card on the Ship page. Platform-neutral, so it suits whatever form the event uses.
 - A session can run inside tmux (tick the box on its share panel). It then outlives Grill Me — quit or crash and the agent is still there to reattach to — and it becomes something a teammate can join, which a bare terminal is not.

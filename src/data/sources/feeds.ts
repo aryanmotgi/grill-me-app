@@ -301,6 +301,10 @@ export function startRoomFeed(store: UseBoundStore<StoreApi<FeedStore>>) {
       }
       fails = 0;
       if (store.getState().roomOffline) store.setState({ roomOffline: false });
+      // the plan has just been reconciled from the room, so this is the moment
+      // a teammate's decision becomes visible on this Mac
+      const { planWatchTick } = await import("../../lib/planWatch");
+      await planWatchTick().catch(() => {});
     } catch (e) {
       fails += 1;
       if (fails >= ROOM_OFFLINE_AFTER_FAILS && !store.getState().roomOffline) {
